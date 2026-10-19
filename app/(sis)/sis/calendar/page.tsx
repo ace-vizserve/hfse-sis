@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation';
 
 import { CalendarAdminClient } from '@/components/attendance/calendar/calendar-admin-client';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
-import { Badge } from '@/components/ui/badge';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -42,7 +43,7 @@ function formatShortDate(iso: string): string {
 export default async function SisCalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ audience?: string; term_id?: string }>;
+  searchParams: Promise<{ audience?: string; term_id?: string; ay?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
@@ -58,11 +59,20 @@ export default async function SisCalendarPage({
   const audience = parseAudience(sp.audience);
   const supabase = await createClient();
 
-  const { data: ay } = await supabase
-    .from('academic_years')
-    .select('id, ay_code, label')
-    .eq('is_current', true)
-    .single();
+  const [currentAy, ayCodes] = await Promise.all([
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  const selectedAyCode =
+    sp.ay && ayCodes.includes(sp.ay) ? sp.ay : currentAy?.ay_code;
+  const isCurrentAy = selectedAyCode === currentAy?.ay_code;
+  const { data: ay } = selectedAyCode
+    ? await supabase
+        .from('academic_years')
+        .select('id, ay_code, label')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
 
   const { data: termsRaw } = ay
     ? await supabase
@@ -87,8 +97,11 @@ export default async function SisCalendarPage({
   // from school_calendar, so existing overrides (public_holiday, hbl, etc.) are
   // preserved and partially-seeded terms get backfilled. Run before reading the
   // calendar so a freshly-set-up AY renders fully on first visit.
+  //
+  // ⚠ Only for the CURRENT year. Merely opening a past year to look at it must
+  // not write school days into its calendar.
   let totalInserted = 0;
-  if (dated.length > 0) {
+  if (dated.length > 0 && isCurrentAy) {
     const insertedCounts = await Promise.all(
       dated.map((t) =>
         ensureTermSeeded(
@@ -155,13 +168,13 @@ export default async function SisCalendarPage({
         title="School days & events."
         description="Mark school days, closures, and calendar events per term — the attendance grid follows this calendar."
         chips={
-          ay && (
-            <Badge
-              variant="outline"
-              className="h-7 border-border bg-card px-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-foreground"
-            >
-              {ay.ay_code}
-            </Badge>
+          ay &&
+          ayCodes.length > 0 && (
+            <AySwitcher
+              current={ay.ay_code}
+              options={ayCodes}
+              className="w-36"
+            />
           )
         }
       />
@@ -242,6 +255,8 @@ export default async function SisCalendarPage({
             </div>
           )}
           <CalendarAdminClient
+            // Fresh term selection when the year changes.
+            key={ay!.id}
             ayId={ay!.id}
             terms={dated.map((t) => ({
               id: t.id,
@@ -257,7 +272,15 @@ export default async function SisCalendarPage({
             // doesn't map cleanly onto the AY-wide surface. Passed null for now —
             // to be re-wired as a follow-up once the target-term picker lands.
             copyFromPriorAyProps={null}
-            initialTermId={sp.term_id}
+            // The linked term when it belongs to this year; a past or future
+            // year opens on its last term; the current year picks its own.
+            initialTermId={
+              dated.some((t) => t.id === sp.term_id)
+                ? sp.term_id
+                : isCurrentAy
+                  ? undefined
+                  : dated[dated.length - 1]?.id
+            }
           />
         </>
       )}
