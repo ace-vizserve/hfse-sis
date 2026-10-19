@@ -27,6 +27,7 @@ import {
 import type { LabeledPieSlice } from '@/components/dashboard/charts/labeled-pie-chart';
 import { DashboardHero } from '@/components/dashboard/dashboard-hero';
 import { Skeleton } from '@/components/ui/skeleton';
+import { AySwitcher } from '@/components/admissions/ay-switcher';
 import { CompareAyPicker } from '@/components/dashboard/insights/compare-ay-picker';
 import {
   TermPicker,
@@ -383,7 +384,9 @@ export default async function AttendanceInsightsPage({
     (t) => t.termNumber === termParam
   )
     ? (termParam as 1 | 2 | 3 | 4)
-    : (currentTermNumber ?? termOptions[0]?.termNumber ?? 1);
+    : isCurrentAy
+      ? (currentTermNumber ?? termOptions[0]?.termNumber ?? 1)
+      : (termOptions[termOptions.length - 1]?.termNumber ?? 1);
 
   // An AY with no term dates at all falls back to the whole year — that is a
   // setup gap, not a user choice, and the page still has to render.
@@ -694,6 +697,7 @@ export default async function AttendanceInsightsPage({
           looking at, and what am I holding it against. A date range picker sat
           here briefly and was the wrong control — see <TermPicker>. */}
       <div className="flex flex-wrap items-center justify-end gap-3">
+        <AySwitcher current={selectedAy} options={ayCodes} className="w-36" />
         {termOptions.length > 0 && (
           <TermPicker terms={termOptions} selectedTerm={selectedTermNumber} />
         )}

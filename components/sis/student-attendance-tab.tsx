@@ -43,9 +43,12 @@ const STATUS_TONE: Record<AttendanceStatus, string> = {
 export async function StudentAttendanceTab({
   studentNumber,
   fullName,
+  ayCode,
 }: {
   studentNumber: string | null;
   fullName: string;
+  /** Which year's log to show; defaults to the current academic year. */
+  ayCode?: string;
 }) {
   if (!studentNumber) {
     return (
@@ -59,11 +62,17 @@ export async function StudentAttendanceTab({
   const service = createServiceClient();
 
   // Find the current-AY section_students row for this studentNumber.
-  const { data: currentAy } = await service
-    .from('academic_years')
-    .select('id, ay_code')
-    .eq('is_current', true)
-    .maybeSingle();
+  const { data: currentAy } = await (ayCode
+    ? service
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('ay_code', ayCode)
+        .maybeSingle()
+    : service
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('is_current', true)
+        .maybeSingle());
   if (!currentAy) {
     return (
       <EmptyState

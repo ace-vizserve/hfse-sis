@@ -8,6 +8,9 @@ import {
   UserSquare2,
 } from 'lucide-react';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { TermSwitcher } from '@/components/evaluation/term-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { CompassionateAllowanceInline } from '@/components/sis/compassionate-allowance-inline';
 import { StudentAttendanceTab } from '@/components/sis/student-attendance-tab';
 import { VacationAllowanceInline } from '@/components/sis/vacation-allowance-inline';
@@ -46,10 +49,13 @@ import { cn } from '@/lib/utils';
 // via /attendance/[sectionId].
 export default async function AttendanceStudentDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ studentNumber: string }>;
+  searchParams: Promise<{ ay?: string; term_id?: string }>;
 }) {
   const { studentNumber: rawStudentNumber } = await params;
+  const { ay: ayParam, term_id: termIdParam } = await searchParams;
   const studentNumber = decodeURIComponent(rawStudentNumber).trim();
 
   const session = await getSessionUser();
@@ -74,7 +80,7 @@ export default async function AttendanceStudentDetailPage({
   // `academic_years` read (a one-row lookup on an indexed flag) is wasted.
   // Stated rather than left implicit: it is one cheap query on the rarest
   // path, against one fewer serial round trip on every real load.
-  const [{ data: student }, { data: currentAy }, schoolConfig] =
+  const [{ data: student }, currentAcademicYear, ayCodes, schoolConfig] =
     await Promise.all([
       service
         .from('students')
@@ -87,14 +93,25 @@ export default async function AttendanceStudentDetailPage({
       // enroleeNumber (for the allowance PATCH route, which keys by
       // enroleeNumber per KD #4 — studentNumber is the cross-AY anchor, but
       // admissions writes use the per-AY key).
-      service
-        .from('academic_years')
-        .select('id, ay_code')
-        .eq('is_current', true)
-        .maybeSingle(),
+      getCurrentAcademicYear(),
+      listAyCodes(service),
       getSchoolConfig(),
     ]);
   if (!student) notFound();
+
+  // The year on screen: ?ay= when it names a real year, else the current one.
+  const selectedAyCode =
+    ayParam && ayCodes.includes(ayParam)
+      ? ayParam
+      : (currentAcademicYear?.ay_code ?? null);
+  const isCurrentAy = selectedAyCode === (currentAcademicYear?.ay_code ?? null);
+  const { data: currentAy } = selectedAyCode
+    ? await service
+        .from('academic_years')
+        .select('id, ay_code')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
   const studentRow = student as {
     id: string;
     student_number: string;
@@ -128,7 +145,13 @@ export default async function AttendanceStudentDetailPage({
       | { id: string; name: string }
       | Array<{ id: string; name: string }>;
   };
-  const [enroleeNumber, usage, currentTerm, ssRows] = await Promise.all([
+  type TermOpt = {
+    id: string;
+    label: string;
+    term_number: number;
+    is_current: boolean;
+  };
+  const [enroleeNumber, usage, termOptions, ssRows] = await Promise.all([
     ayCode
       ? (async () => {
           const admissions = createAdmissionsClient();
@@ -150,30 +173,16 @@ export default async function AttendanceStudentDetailPage({
     ayId
       ? getCompassionateUsage(studentRow.id, ayId)
       : Promise.resolve({ allowance, used: 0, remaining: allowance }),
-    // Resolve current term in this AY for the per-term VL quota lookup
-    // (KD #94 — VL is per-term, no carry-forward). The T1 fallback below IS
-    // a genuine dependency and stays serial: it is only asked when no term
-    // carries the current flag, which the first read is what tells us.
+    // Every term of the selected AY: feeds the term tabs and the per-term VL
+    // quota lookup (KD #94 — VL is per-term, no carry-forward).
     ayId
-      ? (async (): Promise<{ id: string; label: string } | null> => {
-          const { data: termRow } = await service
-            .from('terms')
-            .select('id, label')
-            .eq('academic_year_id', ayId)
-            .eq('is_current', true)
-            .maybeSingle();
-          if (termRow) return termRow as { id: string; label: string };
-          // Fall back to T1 if no term is flagged current (early-AY state).
-          const { data: t1 } = await service
-            .from('terms')
-            .select('id, label, term_number')
-            .eq('academic_year_id', ayId)
-            .order('term_number', { ascending: true })
-            .limit(1)
-            .maybeSingle();
-          return t1 ? (t1 as { id: string; label: string }) : null;
-        })()
-      : Promise.resolve(null),
+      ? service
+          .from('terms')
+          .select('id, label, term_number, is_current')
+          .eq('academic_year_id', ayId)
+          .order('term_number', { ascending: true })
+          .then(({ data }) => (data ?? []) as TermOpt[])
+      : Promise.resolve([] as TermOpt[]),
     // Resolve the student's active section in the current AY so the hero
     // copy can link to the actual daily writer at /attendance/{sectionId}
     // instead of a placeholder. Withdrawn rows excluded; if the student is
@@ -189,6 +198,15 @@ export default async function AttendanceStudentDetailPage({
       : Promise.resolve(null),
   ]);
 
+  // ?term_id= only counts when it belongs to the selected year. Default: the
+  // current year's current term (first term if none is flagged); any other
+  // year opens on its last term.
+  const currentTerm =
+    termOptions.find((t) => t.id === termIdParam) ??
+    (isCurrentAy
+      ? (termOptions.find((t) => t.is_current) ?? termOptions[0])
+      : termOptions[termOptions.length - 1]) ??
+    null;
   const currentTermId = currentTerm?.id ?? null;
   const currentTermLabel = currentTerm?.label ?? null;
 
@@ -310,10 +328,8 @@ export default async function AttendanceStudentDetailPage({
             <Badge variant="default" className="h-7 px-3">
               {studentRow.student_number}
             </Badge>
-            {ayCode && (
-              <Badge variant="default" className="h-7 px-3">
-                {ayCode}
-              </Badge>
+            {ayCode && ayCodes.length > 0 && (
+              <AySwitcher current={ayCode} options={ayCodes} className="w-36" />
             )}
           </div>
           <Button asChild variant="outline" size="sm">
@@ -331,6 +347,10 @@ export default async function AttendanceStudentDetailPage({
       {/* Leave quota cards — compassionate (AY-wide) + vacation (per-term).
           Side-by-side at md+, stacked on mobile. Each card carries its own
           progress bar + inline allowance editor. */}
+      {termOptions.length > 0 && currentTermId && (
+        <TermSwitcher current={currentTermId} options={termOptions} />
+      )}
+
       <div className="grid gap-5 md:grid-cols-2">
         {/* Compassionate-leave quota — rich card with status-keyed visual */}
         <Card className="@container/card gap-0 overflow-hidden p-0">
@@ -483,6 +503,7 @@ export default async function AttendanceStudentDetailPage({
       <StudentAttendanceTab
         studentNumber={studentRow.student_number}
         fullName={fullName}
+        ayCode={ayCode ?? undefined}
       />
 
       {/* Trust strip */}

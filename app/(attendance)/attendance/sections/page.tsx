@@ -1,5 +1,7 @@
 import { School, Users } from 'lucide-react';
 
+import { AySwitcher } from '@/components/admissions/ay-switcher';
+import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { DeclarationsWaitingPanel } from '@/components/attendance/declarations-waiting-panel';
 import { countInboxActionable } from '@/lib/approvals/inbox';
@@ -32,7 +34,12 @@ type LevelLite = {
   level_type: 'primary' | 'secondary';
 };
 
-export default async function AttendanceSectionsListPage() {
+export default async function AttendanceSectionsListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
+  const { ay: ayParam } = await searchParams;
   const session = await getSessionUser();
   const role = session?.role ?? null;
   // ONE FLAG, FIVE DECISIONS, deliberately kept as one: the adviser-only
@@ -55,35 +62,45 @@ export default async function AttendanceSectionsListPage() {
   // The upcoming-cover panel and the declarations badge are keyed on the
   // session alone, and the current academic year on nothing at all. They were
   // three consecutive `await`s.
-  const [upcomingCover, declarationsWaiting, { data: ay }] = await Promise.all([
-    // Cover booked for this teacher that has not started yet (migration 123).
-    // Caller's client on purpose: the row-read policy is deliberately
-    // unwindowed.
-    isTeacherOnly && session
-      ? loadUpcomingCoverForUser(supabase, session.id)
-      : Promise.resolve([]),
-    // Declarations waiting on this person. Never throws — one panel must not
-    // be able to take the section picker down with it, and zero is honest: the
-    // queue at /attendance/declarations is the authority either way.
-    session
-      ? countInboxActionable(createServiceClient(), {
-          flow: DECLARATION_APPROVAL_FLOW,
-          userId: session.id,
-          role: session.role,
-        }).catch((e) => {
-          console.error(
-            '[attendance] declarations count failed:',
-            e instanceof Error ? e.message : String(e)
-          );
-          return 0;
-        })
-      : Promise.resolve(0),
-    supabase
-      .from('academic_years')
-      .select('id, ay_code, label')
-      .eq('is_current', true)
-      .single(),
-  ]);
+  const [upcomingCover, declarationsWaiting, currentAy, ayCodes] =
+    await Promise.all([
+      // Cover booked for this teacher that has not started yet (migration 123).
+      // Caller's client on purpose: the row-read policy is deliberately
+      // unwindowed.
+      isTeacherOnly && session
+        ? loadUpcomingCoverForUser(supabase, session.id)
+        : Promise.resolve([]),
+      // Declarations waiting on this person. Never throws — one panel must not
+      // be able to take the section picker down with it, and zero is honest: the
+      // queue at /attendance/declarations is the authority either way.
+      session
+        ? countInboxActionable(createServiceClient(), {
+            flow: DECLARATION_APPROVAL_FLOW,
+            userId: session.id,
+            role: session.role,
+          }).catch((e) => {
+            console.error(
+              '[attendance] declarations count failed:',
+              e instanceof Error ? e.message : String(e)
+            );
+            return 0;
+          })
+        : Promise.resolve(0),
+      getCurrentAcademicYear(),
+      listAyCodes(supabase),
+    ]);
+
+  // The year on screen: ?ay= when it names a real year, else the current one.
+  const selectedAyCode =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
+  const isCurrentAy = selectedAyCode === currentAy?.ay_code;
+  const { data: ay } = selectedAyCode
+    ? await supabase
+        .from('academic_years')
+        .select('id, ay_code, label')
+        .eq('ay_code', selectedAyCode)
+        .maybeSingle()
+    : { data: null };
 
   // Scope by academic_year_id — terms.is_current can be true across
   // multiple AYs (the wipe-AY2026/27 script preserved terms rows along
@@ -163,16 +180,17 @@ export default async function AttendanceSectionsListPage() {
     ]);
 
   const termRows = (currentTerm ?? []) as TermRow[];
-  const activeTerm =
-    termRows.find(
-      (t) =>
-        t.start_date &&
-        t.end_date &&
-        t.start_date <= today &&
-        t.end_date >= today
-    ) ??
-    termRows.find((t) => t.is_current) ??
-    null;
+  const activeTerm = isCurrentAy
+    ? (termRows.find(
+        (t) =>
+          t.start_date &&
+          t.end_date &&
+          t.start_date <= today &&
+          t.end_date >= today
+      ) ??
+      termRows.find((t) => t.is_current) ??
+      null)
+    : (termRows[termRows.length - 1] ?? null);
 
   const getLevel = (l: LevelLite | LevelLite[] | null): LevelLite | null =>
     Array.isArray(l) ? (l[0] ?? null) : l;
@@ -257,10 +275,17 @@ export default async function AttendanceSectionsListPage() {
                 "form adviser" — it is a column header on the table below. */}
             {isTeacherOnly
               ? 'The sections you are the form adviser for. Click through to mark daily attendance for the chosen date.'
-              : 'Every section in the current academic year. Click through to mark or review daily attendance.'}
+              : 'Every section in the chosen academic year. Click through to mark or review daily attendance.'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          {ayCodes.length > 0 && selectedAyCode && (
+            <AySwitcher
+              current={selectedAyCode}
+              options={ayCodes}
+              className="w-36"
+            />
+          )}
           {ay && (
             <Badge
               variant="outline"
