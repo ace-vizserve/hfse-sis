@@ -909,7 +909,15 @@ export function StaffAccountsClient({
         u.id !== currentUserId &&
         (kind === 'delete' || (kind === 'disable' ? !u.disabled : u.disabled))
     );
-    if (eligible.length > 0) setPending({ kind, users: eligible });
+    if (eligible.length === 0) {
+      toast.error(
+        kind === 'disable'
+          ? 'None of the selected accounts can be disabled.'
+          : 'None of the selected accounts can be enabled.'
+      );
+      return;
+    }
+    setPending({ kind, users: eligible });
   }
 
   async function confirmBulk() {

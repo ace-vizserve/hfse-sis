@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
+import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 
@@ -25,38 +26,61 @@ export type BulkOptions<R> = {
 
 type Outcome = { ok: number; failed: string[] };
 
+// One bulk run at a time, app-wide. The footer re-enables the moment a dialog
+// opens and the confirm closes before the loop finishes, so without this the
+// same rows could be confirmed twice mid-run. A second start is refused, not
+// queued.
+let bulkRunning = false;
+
+export async function runExclusively<T>(
+  work: () => Promise<T>
+): Promise<T | undefined> {
+  if (bulkRunning) {
+    toast.info('Still working on the last batch. Wait for it to finish.');
+    return undefined;
+  }
+  bulkRunning = true;
+  try {
+    return await work();
+  } finally {
+    bulkRunning = false;
+  }
+}
+
 export function useBulkAction() {
   const run = useWriteAction();
   return useCallback(
     <R>(rows: R[], o: BulkOptions<R>) =>
-      run<Outcome>(
-        async () => {
-          let ok = 0;
-          const failed: string[] = [];
-          let firstError = '';
-          for (const row of rows) {
-            try {
-              await o.one(row);
-              ok += 1;
-            } catch (e) {
-              failed.push(o.label(row));
-              if (!firstError && e instanceof Error) firstError = e.message;
+      runExclusively(() =>
+        run<Outcome>(
+          async () => {
+            let ok = 0;
+            const failed: string[] = [];
+            let firstError = '';
+            for (const row of rows) {
+              try {
+                await o.one(row);
+                ok += 1;
+              } catch (e) {
+                failed.push(o.label(row));
+                if (!firstError && e instanceof Error) firstError = e.message;
+              }
             }
+            if (ok === 0) {
+              throw new Error(
+                `${o.failed}${failed.length === 1 ? ` ${failed[0]}` : ` any of the ${failed.length} selected`}. ${firstError}`.trim()
+              );
+            }
+            return { ok, failed };
+          },
+          {
+            pending: o.pending,
+            success: (d) =>
+              d.failed.length
+                ? `${o.done(d.ok)}. Not done: ${d.failed.join(', ')}.`
+                : o.done(d.ok),
           }
-          if (ok === 0) {
-            throw new Error(
-              `${o.failed}${failed.length === 1 ? ` ${failed[0]}` : ` any of the ${failed.length} selected`}. ${firstError}`.trim()
-            );
-          }
-          return { ok, failed };
-        },
-        {
-          pending: o.pending,
-          success: (d) =>
-            d.failed.length
-              ? `${o.done(d.ok)}. Not done: ${d.failed.join(', ')}.`
-              : o.done(d.ok),
-        }
+        )
       ),
     [run]
   );

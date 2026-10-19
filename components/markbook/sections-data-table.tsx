@@ -21,7 +21,7 @@ import { ArrowDownAZ, FilePlus2, Layers } from 'lucide-react';
 import { useState } from 'react';
 
 import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
-import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { runExclusively, useBulkAction } from '@/lib/hooks/use-bulk-action';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
@@ -201,24 +201,26 @@ export function MarkbookSectionsDataTable({
     const sections = `${n} ${n === 1 ? 'section' : 'sections'}`;
     if (kind === 'sheets') {
       // One call: the route takes the whole list of sections.
-      await run(
-        () =>
-          apiFetch<{ inserted?: number }>(
-            '/api/grading-sheets/bulk-create',
-            jsonInit('POST', {
-              ay_id: ayId,
-              section_ids: picked.map((s) => s.id),
-            })
-          ),
-        {
-          pending: `Generating sheets for ${sections}…`,
-          success: (json) => {
-            const inserted = Number(json?.inserted ?? 0);
-            return inserted === 0
-              ? 'Nothing to generate. Every sheet already exists.'
-              : `Generated ${inserted.toLocaleString('en-SG')} ${inserted === 1 ? 'sheet' : 'sheets'} for ${sections}`;
-          },
-        }
+      await runExclusively(() =>
+        run(
+          () =>
+            apiFetch<{ inserted?: number }>(
+              '/api/grading-sheets/bulk-create',
+              jsonInit('POST', {
+                ay_id: ayId,
+                section_ids: picked.map((s) => s.id),
+              })
+            ),
+          {
+            pending: `Generating sheets for ${sections}…`,
+            success: (json) => {
+              const inserted = Number(json?.inserted ?? 0);
+              return inserted === 0
+                ? 'Nothing to generate. Every sheet already exists.'
+                : `Generated ${inserted.toLocaleString('en-SG')} ${inserted === 1 ? 'sheet' : 'sheets'} for ${sections}`;
+            },
+          }
+        )
       );
     } else {
       await bulk(picked, {
