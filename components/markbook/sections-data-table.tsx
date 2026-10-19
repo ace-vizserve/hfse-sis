@@ -17,7 +17,13 @@
 // The `Students` header label replaces `Active` — cleaner for teacher view.
 
 import { type ColumnDef } from '@tanstack/react-table';
-import { Layers } from 'lucide-react';
+import { ArrowDownAZ, FilePlus2, Layers } from 'lucide-react';
+import { useState } from 'react';
+
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
@@ -172,6 +178,66 @@ export function MarkbookSectionsDataTable({
 }) {
   const columns = buildColumns(role, termStarted, ayId, isOversight);
 
+  // Bulk Generate sheets / Renumber A–Z: the same registrar-and-above actions
+  // the row menu offers (SectionRowActions' showGenerateItems), run on every
+  // ticked section.
+  const canBulk =
+    role === 'academic_coordinator' ||
+    role === 'school_admin' ||
+    role === 'superadmin';
+  const run = useWriteAction();
+  const bulk = useBulkAction();
+  const [confirm, setConfirm] = useState<{
+    kind: 'sheets' | 'index';
+    rows: MarkbookSectionRow[];
+  } | null>(null);
+  const [resetSignal, setResetSignal] = useState(0);
+
+  async function confirmBulk() {
+    if (!confirm) return;
+    const { kind, rows: picked } = confirm;
+    setConfirm(null);
+    const n = picked.length;
+    const sections = `${n} ${n === 1 ? 'section' : 'sections'}`;
+    if (kind === 'sheets') {
+      // One call: the route takes the whole list of sections.
+      await run(
+        () =>
+          apiFetch<{ inserted?: number }>(
+            '/api/grading-sheets/bulk-create',
+            jsonInit('POST', {
+              ay_id: ayId,
+              section_ids: picked.map((s) => s.id),
+            })
+          ),
+        {
+          pending: `Generating sheets for ${sections}…`,
+          success: (json) => {
+            const inserted = Number(json?.inserted ?? 0);
+            return inserted === 0
+              ? 'Nothing to generate. Every sheet already exists.'
+              : `Generated ${inserted.toLocaleString('en-SG')} ${inserted === 1 ? 'sheet' : 'sheets'} for ${sections}`;
+          },
+        }
+      );
+    } else {
+      await bulk(picked, {
+        pending: `Renumbering ${sections}…`,
+        done: (c) => `${c} ${c === 1 ? 'section' : 'sections'} renumbered`,
+        failed: 'Could not renumber',
+        label: (s) => s.name,
+        one: (s) =>
+          apiFetch(
+            `/api/sections/${encodeURIComponent(s.id)}/generate-index`,
+            jsonInit('POST')
+          ),
+      });
+    }
+    setResetSignal((s) => s + 1);
+  }
+  const confirmCount = confirm?.rows.length ?? 0;
+  const confirmNoun = confirmCount === 1 ? 'section' : 'sections';
+
   const facets: FacetConfig[] =
     levels.length > 1
       ? [
@@ -184,31 +250,75 @@ export function MarkbookSectionsDataTable({
       : [];
 
   return (
-    <DataTable<MarkbookSectionRow>
-      data={rows}
-      columns={columns}
-      getRowId={(r) => r.id}
-      searchKeys={['name', 'levelLabel']}
-      searchPlaceholder="Search section or level…"
-      facets={facets}
-      initialSort={[
-        { id: 'levelLabel', desc: false },
-        { id: 'name', desc: false },
-      ]}
-      pageSize={25}
-      csv={{ filename: 'markbook-sections.csv' }}
-      url={{ enabled: true, namespace: 'sections' }}
-      emptyState={{
-        icon: Layers,
-        title: isOversight ? 'No sections yet.' : 'No classes assigned yet.',
-        body: isOversight
-          ? 'Sections appear here once they are created and a roster is synced. Ask the registrar to set up sections in SIS Admin.'
-          : "You don't have any classes assigned this year. Ask your coordinator to add you as a form adviser or subject teacher.",
-      }}
-      emptyFilteredState={{
-        title: 'No sections match the current filters.',
-        body: 'Try a different level, or clear the search.',
-      }}
-    />
+    <>
+      <DataTable<MarkbookSectionRow>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchKeys={['name', 'levelLabel']}
+        searchPlaceholder="Search section or level…"
+        facets={facets}
+        initialSort={[
+          { id: 'levelLabel', desc: false },
+          { id: 'name', desc: false },
+        ]}
+        pageSize={25}
+        csv={{ filename: 'markbook-sections.csv' }}
+        url={{ enabled: true, namespace: 'sections' }}
+        selection={{
+          enabled: canBulk,
+          bulkActions: [
+            {
+              key: 'sheets',
+              label: 'Generate sheets',
+              icon: FilePlus2,
+              onTrigger: (picked) =>
+                setConfirm({ kind: 'sheets', rows: picked }),
+            },
+            {
+              key: 'index',
+              label: 'Renumber A–Z',
+              icon: ArrowDownAZ,
+              destructive: true,
+              onTrigger: (picked) =>
+                setConfirm({ kind: 'index', rows: picked }),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
+        emptyState={{
+          icon: Layers,
+          title: isOversight ? 'No sections yet.' : 'No classes assigned yet.',
+          body: isOversight
+            ? 'Sections appear here once they are created and a roster is synced. Ask the registrar to set up sections in SIS Admin.'
+            : "You don't have any classes assigned this year. Ask your coordinator to add you as a form adviser or subject teacher.",
+        }}
+        emptyFilteredState={{
+          title: 'No sections match the current filters.',
+          body: 'Try a different level, or clear the search.',
+        }}
+      />
+      <BulkActionDialog
+        open={confirm !== null}
+        onOpenChange={(o) => !o && setConfirm(null)}
+        title={
+          confirm?.kind === 'sheets'
+            ? `Generate grading sheets for ${confirmCount} ${confirmNoun}?`
+            : `Renumber ${confirmCount} ${confirmNoun} A–Z?`
+        }
+        description={
+          confirm?.kind === 'sheets'
+            ? 'Creates every missing grading sheet (section, subject and term) for the ticked sections. Sheets that already exist are skipped, so it is safe to run again.'
+            : termStarted
+              ? 'The term has started. Renumbering changes the index numbers students already use in class, in every ticked section.'
+              : 'Gives each ticked section a fresh A–Z index-number order.'
+        }
+        confirmLabel={
+          confirm?.kind === 'sheets' ? 'Generate sheets' : 'Renumber'
+        }
+        destructive={confirm?.kind === 'index' && termStarted}
+        onConfirm={confirmBulk}
+      />
+    </>
   );
 }
