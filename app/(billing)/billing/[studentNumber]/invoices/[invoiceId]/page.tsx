@@ -165,6 +165,7 @@ export default async function BillingInvoicePage({
               }}
               credits={page.credits}
               depositAccounts={page.depositAccounts}
+              customerBalance={page.profile?.balance ?? null}
             />
           )}
         </div>

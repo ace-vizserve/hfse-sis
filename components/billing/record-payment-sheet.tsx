@@ -60,6 +60,7 @@ export function RecordPaymentSheet({
   credits,
   depositAccounts,
   mode,
+  customerBalance,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -70,6 +71,9 @@ export function RecordPaymentSheet({
   depositAccounts: Array<{ id: string; label: string }>;
   /** 'credit' opens it as Use credit: credit ticked, no new money. */
   mode: 'pay' | 'credit';
+  /** QuickBooks' balance for the whole customer; without it the header shows
+   *  what is owed on the invoices listed. */
+  customerBalance?: number | null;
 }) {
   const run = useWriteAction();
   const invoices = useMemo(() => oldestFirst(openInvoices), [openInvoices]);
@@ -211,9 +215,11 @@ export function RecordPaymentSheet({
                   {formatSgd(amountValid ? cash : 0)}
                 </p>
                 <p className="mt-1.5 text-[12px] text-muted-foreground">
-                  Customer balance{' '}
+                  {customerBalance != null
+                    ? 'Customer balance'
+                    : 'Owed on these invoices'}{' '}
                   <span className="tabular-nums text-foreground">
-                    {formatSgd(owed)}
+                    {formatSgd(customerBalance ?? owed)}
                   </span>
                 </p>
               </div>

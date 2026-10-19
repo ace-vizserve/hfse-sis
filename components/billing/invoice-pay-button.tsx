@@ -15,6 +15,7 @@ export function InvoicePayButton(props: {
   invoice: PayableInvoice;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  customerBalance?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState(0);
@@ -40,6 +41,7 @@ export function InvoicePayButton(props: {
           credits={props.credits}
           depositAccounts={props.depositAccounts}
           mode="pay"
+          customerBalance={props.customerBalance}
         />
       )}
     </>

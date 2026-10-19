@@ -220,7 +220,10 @@ export async function loadCustomersList(
   let byId: Map<string, { total: number; overdue: number }> | null = null;
   let byName: Map<string, { total: number; overdue: number }> | null = null;
   let balanceError: string | null = null;
-  const contacts = readCustomerContacts(service).catch(
+  const contacts = readCustomerContacts(
+    service,
+    links.map((l) => l.qbo_customer_id)
+  ).catch(
     () =>
       new Map<string, { companyName: string | null; phone: string | null }>()
   );

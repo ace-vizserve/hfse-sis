@@ -37,15 +37,13 @@ export default async function BillingCustomerPage({
   searchParams,
 }: {
   params: Promise<{ studentNumber: string }>;
-  searchParams: Promise<{ tab?: string; new?: string }>;
+  searchParams: Promise<{ tab?: string; new?: string; invoice?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
-  const [{ studentNumber }, { tab, new: newSheet }] = await Promise.all([
-    params,
-    searchParams,
-  ]);
+  const [{ studentNumber }, { tab, new: newSheet, invoice: newInvoice }] =
+    await Promise.all([params, searchParams]);
   const initialTab =
     tab === 'payments' || tab === 'details' ? tab : 'transactions';
   const page = await loadCustomerPage(
@@ -140,10 +138,14 @@ export default async function BillingCustomerPage({
                 openInvoices={page.openInvoices}
                 credits={page.credits}
                 depositAccounts={page.depositAccounts}
+                customerBalance={b.openBalance}
                 initialSheet={
                   newSheet === 'payment' || newSheet === 'invoice'
                     ? newSheet
                     : null
+                }
+                initialInvoiceId={
+                  newSheet === 'payment' ? (newInvoice ?? null) : null
                 }
               />
             </>
@@ -338,6 +340,7 @@ export default async function BillingCustomerPage({
               openInvoices={page.openInvoices}
               credits={page.credits}
               depositAccounts={page.depositAccounts}
+              customerBalance={b.openBalance}
             />
           )}
 
@@ -353,6 +356,7 @@ export default async function BillingCustomerPage({
             credits={page.credits}
             depositAccounts={page.depositAccounts}
             canRecord={page.connected}
+            customerBalance={b.openBalance}
             initialTab={initialTab}
           />
 

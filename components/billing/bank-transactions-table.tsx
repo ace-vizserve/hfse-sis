@@ -23,8 +23,14 @@ const money = (n: number) => (n > 0 ? formatSgd(n) : '');
 const columns: ColumnDef<Row, unknown>[] = [
   {
     id: 'date',
+    accessorFn: (r) => r.date,
     // Ties on a date keep QuickBooks' order, so the running balance reads.
-    accessorFn: (r) => `${r.date}|${String(r.seq).padStart(6, '0')}`,
+    sortingFn: (a, b) =>
+      a.original.date === b.original.date
+        ? a.original.seq - b.original.seq
+        : a.original.date < b.original.date
+          ? -1
+          : 1,
     header: ({ column }) => (
       <SortableHeader column={column}>Date</SortableHeader>
     ),

@@ -187,6 +187,7 @@ export function CustomerTabs({
   credits,
   depositAccounts,
   canRecord,
+  customerBalance,
   initialTab,
 }: {
   studentNumber: string;
@@ -200,6 +201,7 @@ export function CustomerTabs({
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   canRecord: boolean;
+  customerBalance?: number | null;
   /** `?tab=payments` (the invoice page's "View payment") opens the list on
    *  Payments; `?tab=details` opens Customer Details. */
   initialTab: 'transactions' | 'payments' | 'details';
@@ -224,6 +226,7 @@ export function CustomerTabs({
           credits={credits}
           depositAccounts={depositAccounts}
           canRecord={canRecord}
+          customerBalance={customerBalance}
           initialType={initialTab === 'payments' ? 'payments' : 'all'}
         />
       </TabsContent>

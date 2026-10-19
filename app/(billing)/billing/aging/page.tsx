@@ -16,6 +16,7 @@ import { connectedRealmId, qboErrorMessage } from '@/lib/qbo/client';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { fetchAllPages } from '@/lib/supabase/paginate';
 
 // Billing → A/R aging: QuickBooks' Accounts receivable aging summary as of a
 // date, read live. Customers linked to a student open their Billing page.
@@ -39,17 +40,26 @@ export default async function BillingAgingPage({
     try {
       const [r, links] = await Promise.all([
         readAgingReport(service, asOf),
-        service
-          .from('qbo_customers')
-          .select('student_number, qbo_customer_id')
-          .eq('realm_id', realmId),
+        fetchAllPages<{ student_number: string; qbo_customer_id: string }>(
+          (from, to) =>
+            service
+              .from('qbo_customers')
+              .select('student_number, qbo_customer_id')
+              .eq('realm_id', realmId)
+              .range(from, to) as unknown as PromiseLike<{
+              data: Array<{
+                student_number: string;
+                qbo_customer_id: string;
+              }> | null;
+              error: { message: string } | null;
+            }>,
+          1000,
+          { tieBreak: 'student_number' }
+        ),
       ]);
       report = r;
       const snOf = new Map<string, string>();
-      for (const l of (links.data ?? []) as Array<{
-        student_number: string;
-        qbo_customer_id: string;
-      }>)
+      for (const l of links)
         if (!snOf.has(l.qbo_customer_id))
           snOf.set(l.qbo_customer_id, l.student_number);
       rows = r.rows.map((x) => ({

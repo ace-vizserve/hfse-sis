@@ -194,7 +194,15 @@ export function dateRange(
     case 'last-month':
       return [ymd(y, mi - 1, 1), ymd(y, mi, 0)];
     case 'last-3-months':
-      return [ymd(y, mi - 3, d), today];
+      // Same day three months back, clamped to that month's last day.
+      return [
+        ymd(
+          y,
+          mi - 3,
+          Math.min(d, new Date(Date.UTC(y, mi - 2, 0)).getUTCDate())
+        ),
+        today,
+      ];
     case 'this-year':
       return [`${y}-01-01`, today];
     case 'last-year':
@@ -312,6 +320,7 @@ export function CustomerTransactions({
   credits,
   depositAccounts,
   canRecord,
+  customerBalance,
   initialType = 'all',
 }: {
   studentNumber: string;
@@ -324,6 +333,7 @@ export function CustomerTransactions({
   depositAccounts: Array<{ id: string; label: string }>;
   /** False when QuickBooks isn't connected — Receive payment is hidden. */
   canRecord: boolean;
+  customerBalance?: number | null;
   initialType?: TypeFilter;
 }) {
   const today = React.useMemo(() => todaySg(), []);
@@ -331,6 +341,7 @@ export function CustomerTransactions({
   const [status, setStatus] = React.useState<StatusFilter>('all');
   const [date, setDate] = React.useState<DateFilter>('all');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
+  const [reset, setReset] = React.useState(0);
   const [paying, setPaying] = React.useState<{
     key: number;
     invoices: PayableInvoice[];
@@ -656,6 +667,7 @@ export function CustomerTransactions({
         data={shown}
         columns={columns}
         getRowId={(r) => r.key}
+        selectionResetSignal={reset}
         selection={
           canRecord
             ? {
@@ -706,13 +718,18 @@ export function CustomerTransactions({
         <RecordPaymentSheet
           key={paying.key}
           open
-          onOpenChange={(o) => !o && setPaying(null)}
+          onOpenChange={(o) => {
+            if (o) return;
+            setPaying(null);
+            setReset((n) => n + 1);
+          }}
           studentNumber={studentNumber}
           studentName={studentName}
           openInvoices={paying.invoices}
           credits={credits}
           depositAccounts={depositAccounts}
           mode="pay"
+          customerBalance={customerBalance}
         />
       )}
     </>

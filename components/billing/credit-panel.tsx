@@ -18,6 +18,7 @@ export function CreditPanel(props: {
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  customerBalance?: number | null;
 }) {
   const [open, setOpen] = useState(false);
   const [key, setKey] = useState(0);
@@ -64,6 +65,7 @@ export function CreditPanel(props: {
           credits={props.credits}
           depositAccounts={props.depositAccounts}
           mode="credit"
+          customerBalance={props.customerBalance}
         />
       )}
     </div>

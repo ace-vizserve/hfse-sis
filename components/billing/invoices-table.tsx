@@ -42,6 +42,7 @@ import type {
   InvoiceListRow,
   InvoicesList,
 } from '@/lib/billing/invoices-list.server';
+import { shouldRenewRequestId } from '@/lib/billing/request-id';
 import { formatDay, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
@@ -90,30 +91,44 @@ const customerHref = (r: InvoiceListRow, next?: 'payment') =>
   `/billing/${encodeURIComponent(r.studentNumber)}${next ? `?new=${next}` : ''}`;
 
 /** Emails invoices through QuickBooks one after another (the send route
- *  takes one invoice); says how many went. Each send carries its own id, so
- *  a retry after a lost answer is replayed by QuickBooks, not emailed twice. */
+ *  takes one invoice); says how many went. Each invoice keeps its request id
+ *  until our route says nothing was sent (`shouldRenewRequestId`), exactly as
+ *  the single Send button does — so a retry after a lost or unclear answer
+ *  is replayed by QuickBooks, never emailed twice. */
 function useSendInvoices() {
   const run = useWriteAction();
+  const ids = React.useRef(new Map<string, string>());
   const send = useMutation({
     mutationFn: async (rows: InvoiceListRow[]) => {
       let sent = 0;
       const failed: string[] = [];
+      const unclear: string[] = [];
       for (const r of rows) {
+        let id = ids.current.get(r.id);
+        if (!id) {
+          id = crypto.randomUUID();
+          ids.current.set(r.id, id);
+        }
         try {
           await apiFetch(
             `/api/billing/invoices/${encodeURIComponent(r.id)}/send`,
-            jsonInit('POST', { requestId: crypto.randomUUID() })
+            jsonInit('POST', { requestId: id })
           );
+          ids.current.delete(r.id);
           sent += 1;
-        } catch {
-          failed.push(r.docNumber ?? r.id);
+        } catch (err) {
+          const name = r.docNumber ?? r.id;
+          if (shouldRenewRequestId(err)) {
+            ids.current.delete(r.id);
+            failed.push(name);
+          } else unclear.push(name);
         }
       }
-      if (sent === 0)
+      if (sent === 0 && unclear.length === 0)
         throw new Error(
           `QuickBooks didn't send ${failed.length === 1 ? failed[0] : `any of the ${failed.length} invoices`}. Check the customer has an email address.`
         );
-      return { sent, failed };
+      return { sent, failed, unclear };
     },
   });
   return (rows: InvoiceListRow[]) =>
@@ -123,11 +138,15 @@ function useSendInvoices() {
           ? 'Emailing through QuickBooks…'
           : `Emailing ${rows.length} invoices through QuickBooks…`,
       success: (d) =>
-        d.failed.length
-          ? `${d.sent} emailed · not sent: ${d.failed.join(', ')}`
-          : d.sent === 1
-            ? 'Invoice emailed'
-            : `${d.sent} invoices emailed`,
+        [
+          d.sent === 1 ? '1 invoice emailed' : `${d.sent} invoices emailed`,
+          d.failed.length ? `not sent: ${d.failed.join(', ')}` : null,
+          d.unclear.length
+            ? `no answer from QuickBooks for ${d.unclear.join(', ')} — they may have gone; Send again is safe`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
     });
 }
 
@@ -295,7 +314,11 @@ export function InvoicesTable({
             <div className="flex items-center justify-end gap-1">
               <Button asChild variant="link" size="sm" className="h-auto p-0">
                 {owing ? (
-                  <Link href={customerHref(r, 'payment')}>Receive payment</Link>
+                  <Link
+                    href={`${customerHref(r)}?new=payment&invoice=${encodeURIComponent(r.id)}`}
+                  >
+                    Receive payment
+                  </Link>
                 ) : (
                   <Link href={invoiceHref(r)}>View</Link>
                 )}

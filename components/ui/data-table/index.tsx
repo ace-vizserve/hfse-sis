@@ -852,7 +852,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
             <TableBody>
               {showEmpty ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="p-0">
+                  <TableCell colSpan={tableColumns.length} className="p-0">
                     <DataTableEmptyState
                       {...(emptyState ?? { title: 'No data.' })}
                     />
@@ -860,7 +860,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                 </TableRow>
               ) : showFilteredEmpty ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="p-0">
+                  <TableCell colSpan={tableColumns.length} className="p-0">
                     <DataTableEmptyState
                       title={emptyFilteredState?.title ?? 'No matches.'}
                       body={emptyFilteredState?.body ?? 'Try clearing filters.'}
@@ -883,7 +883,10 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                   return (
                     <Fragment key={g.key}>
                       <TableRow className="bg-muted/30 hover:bg-muted/30">
-                        <TableCell colSpan={columns.length} className="p-0">
+                        <TableCell
+                          colSpan={tableColumns.length}
+                          className="p-0"
+                        >
                           {expandable.renderGroupHeader({
                             key: g.key,
                             rows: g.rows.map((r) => r.original),

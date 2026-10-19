@@ -31,9 +31,12 @@ export function CustomerActions(props: {
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
+  customerBalance?: number | null;
   /** Opened from the Customers list' Receive payment / Create invoice
    *  (`?new=payment` / `?new=invoice`), as QuickBooks opens the form. */
   initialSheet?: 'invoice' | 'payment' | null;
+  /** With `?new=payment&invoice=<id>`: the form lists only that invoice. */
+  initialInvoiceId?: string | null;
 }) {
   const [sheet, setSheet] = useState<'invoice' | 'payment' | null>(
     props.initialSheet ?? null
@@ -43,10 +46,17 @@ export function CustomerActions(props: {
     if (!props.initialSheet) return;
     const u = new URL(window.location.href);
     u.searchParams.delete('new');
+    u.searchParams.delete('invoice');
     window.history.replaceState(window.history.state, '', u);
   }, [props.initialSheet]);
   const [key, setKey] = useState(0);
+  // Only the first open honours the row's invoice; New transaction → Payment
+  // later lists everything owing.
+  const [onlyInvoice, setOnlyInvoice] = useState(
+    props.initialInvoiceId ?? null
+  );
   const open = (s: 'invoice' | 'payment') => {
+    setOnlyInvoice(null);
     setKey((k) => k + 1);
     setSheet(s);
   };
@@ -89,10 +99,15 @@ export function CustomerActions(props: {
           onOpenChange={(o) => !o && setSheet(null)}
           studentNumber={props.studentNumber}
           studentName={props.studentName}
-          openInvoices={props.openInvoices}
+          openInvoices={
+            onlyInvoice && props.openInvoices.some((o) => o.id === onlyInvoice)
+              ? props.openInvoices.filter((o) => o.id === onlyInvoice)
+              : props.openInvoices
+          }
           credits={props.credits}
           depositAccounts={props.depositAccounts}
           mode="pay"
+          customerBalance={props.customerBalance}
         />
       )}
     </>

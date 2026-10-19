@@ -311,17 +311,33 @@ export async function readInvoiceDetail(
   };
 }
 
-/** Every QuickBooks customer's Company name and Phone, by customer id — the
- *  Customers list's two contact columns. */
+/** The Company name and Phone of the given QuickBooks customers, by id — the
+ *  Customers list's two contact columns. Asked 200 ids at a time, so the
+ *  read grows with the linked students, not every customer QuickBooks has. */
 export async function readCustomerContacts(
-  service: SupabaseClient
+  service: SupabaseClient,
+  customerIds: string[]
 ): Promise<Map<string, { companyName: string | null; phone: string | null }>> {
-  const rows = await qboQueryAll<{
+  type C = {
     Id: string;
     CompanyName?: string;
     PrimaryPhone?: { FreeFormNumber?: string };
     Mobile?: { FreeFormNumber?: string };
-  }>(service, 'Customer');
+  };
+  const ids = [...new Set(customerIds)];
+  const chunks: string[][] = [];
+  for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
+  const rows = (
+    await Promise.all(
+      chunks.map((c) =>
+        qboQueryAll<C>(
+          service,
+          'Customer',
+          `Id IN (${c.map((id) => `'${qbEscape(id)}'`).join(', ')})`
+        )
+      )
+    )
+  ).flat();
   return new Map(
     rows.map((c) => [
       c.Id,
