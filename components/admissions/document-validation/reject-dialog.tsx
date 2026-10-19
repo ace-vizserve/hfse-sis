@@ -24,6 +24,10 @@ type Props = {
   slotLabel: string;
   studentName: string;
   onConfirm: (reason: string) => Promise<void> | void;
+  /** Overrides the one-document wording when several are rejected at once. */
+  title?: string;
+  description?: string;
+  confirmLabel?: string;
 };
 
 export function RejectDialog({
@@ -32,6 +36,9 @@ export function RejectDialog({
   slotLabel,
   studentName,
   onConfirm,
+  title,
+  description,
+  confirmLabel,
 }: Props) {
   const [reason, setReason] = React.useState('');
   const [busy, setBusy] = React.useState(false);
@@ -64,10 +71,10 @@ export function RejectDialog({
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Reject {slotLabel}?</AlertDialogTitle>
+          <AlertDialogTitle>{title ?? `Reject ${slotLabel}?`}</AlertDialogTitle>
           <AlertDialogDescription>
-            {studentName} will be notified by email with the reason below. The
-            parent can re-upload after seeing the message.
+            {description ??
+              `${studentName} will be notified by email with the reason below. The parent can re-upload after seeing the message.`}
           </AlertDialogDescription>
         </AlertDialogHeader>
         <div className="space-y-2">
@@ -97,7 +104,7 @@ export function RejectDialog({
             }}
             disabled={!canConfirm || busy}
           >
-            {busy ? 'Rejecting…' : 'Reject document'}
+            {busy ? 'Rejecting…' : (confirmLabel ?? 'Reject document')}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
