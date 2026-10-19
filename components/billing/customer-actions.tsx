@@ -1,16 +1,22 @@
 'use client';
 
-import { FilePlus2, HandCoins } from 'lucide-react';
+import { ChevronDown, FilePlus2, HandCoins } from 'lucide-react';
 import { useState } from 'react';
 
 import { CreateInvoiceSheet } from '@/components/billing/create-invoice-sheet';
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
 import type { MapsData } from '@/lib/billing/view';
 
-// The customer page's two actions. Create invoice is the page's one primary
-// button; Record payment is outline. Each sheet mounts fresh on every open.
+// The customer page's New transaction menu, as QuickBooks has it: Invoice or
+// Payment. Each sheet mounts fresh on every open.
 export function CustomerActions(props: {
   studentNumber: string;
   studentName: string;
@@ -34,14 +40,24 @@ export function CustomerActions(props: {
   };
   return (
     <>
-      <Button variant="outline" onClick={() => open('payment')}>
-        <HandCoins className="size-4" />
-        Record payment
-      </Button>
-      <Button onClick={() => open('invoice')}>
-        <FilePlus2 className="size-4" />
-        Create invoice
-      </Button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button>
+            New transaction
+            <ChevronDown className="size-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onSelect={() => open('invoice')}>
+            <FilePlus2 className="size-4" />
+            Invoice
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => open('payment')}>
+            <HandCoins className="size-4" />
+            Payment
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
       {sheet === 'invoice' && (
         <CreateInvoiceSheet
           key={`i${key}`}

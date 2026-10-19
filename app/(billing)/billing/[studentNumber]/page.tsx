@@ -1,13 +1,13 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  Coins,
+  ExternalLink,
   FileText,
   FolderOpen,
-  Layers,
+  Mail,
+  Phone,
   UserRound,
   UserSearch,
-  Wallet,
 } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
@@ -17,8 +17,8 @@ import { CustomerActions } from '@/components/billing/customer-actions';
 import { CustomerTabs } from '@/components/billing/customer-tabs';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
-import { MetricCard } from '@/components/dashboard/metric-card';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadCustomerPage } from '@/lib/billing/customer-page.server';
 import { formatDay } from '@/lib/billing/view';
@@ -46,7 +46,8 @@ export default async function BillingCustomerPage({
     params,
     searchParams,
   ]);
-  const initialTab = tab === 'payments' || tab === 'details' ? tab : 'invoices';
+  const initialTab =
+    tab === 'payments' || tab === 'details' ? tab : 'transactions';
   const page = await loadCustomerPage(
     createServiceClient(),
     decodeURIComponent(studentNumber)
@@ -85,79 +86,79 @@ export default async function BillingCustomerPage({
       !!l && isRouteAllowed(hrefPathname(l.href), sessionUser.role)
   );
 
+  // QuickBooks' own page for this customer, where Edit lives.
+  const qbHref =
+    page.link && page.environment
+      ? `https://${page.environment === 'sandbox' ? 'app.sandbox.' : ''}qbo.intuit.com/app/customerdetail?nameId=${encodeURIComponent(page.link.customerId)}`
+      : null;
+  const p = page.profile;
+
   return (
     <PageShell>
-      <Link
-        href="/billing"
-        className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Customers
-      </Link>
-
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Billing · {page.studentNumber}
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            {name}.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            {page.link ? (
-              <>
-                QuickBooks customer{' '}
-                <span className="font-mono text-[13px] text-foreground">
-                  {page.link.displayName}
-                </span>
-                {page.profile?.companyName
-                  ? ` · Parents: ${page.profile.companyName}`
-                  : ''}
-                {page.student?.level
-                  ? ` · ${page.student.level}, ${page.student.ayCode}`
-                  : ''}
-              </>
-            ) : (
-              'Not linked to a QuickBooks customer yet.'
-            )}
-          </p>
-          {related.length > 0 && (
-            <nav
-              aria-label="This student elsewhere"
-              className="flex flex-wrap gap-2"
-            >
-              {related.map((l) => (
-                <Button key={l.href} asChild variant="outline" size="sm">
-                  <Link href={l.href}>
-                    <l.icon className="size-3.5" />
-                    {l.label}
-                  </Link>
+      {/* Laid out as QuickBooks' customer page: back to Customers, Edit and
+          New transaction on the right, the customer card beside a Summary,
+          then Transaction List / Customer Details. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href="/billing"
+          className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Customers
+        </Link>
+        <div className="flex flex-wrap items-center gap-2">
+          {related.map((l) => (
+            <Button key={l.href} asChild variant="ghost" size="sm">
+              <Link href={l.href}>
+                <l.icon className="size-3.5" />
+                {l.label}
+              </Link>
+            </Button>
+          ))}
+          {page.link && page.connected && (
+            <>
+              <RefreshButton label="Refresh" />
+              {qbHref && (
+                <Button asChild variant="outline">
+                  <a href={qbHref} target="_blank" rel="noreferrer">
+                    Edit in QuickBooks
+                    <ExternalLink className="size-3.5" />
+                  </a>
                 </Button>
-              ))}
-            </nav>
+              )}
+              <CustomerActions
+                studentNumber={page.studentNumber}
+                studentName={name}
+                customerEmail={p?.email ?? null}
+                maps={page.maps}
+                existing={page.invoices.map((i) => ({
+                  docNumber: i.docNumber,
+                  ayCode: i.ayCode,
+                  stageKeys: i.stageKeys,
+                  state: i.state,
+                }))}
+                openInvoices={page.openInvoices}
+                credits={page.credits}
+                depositAccounts={page.depositAccounts}
+              />
+            </>
           )}
         </div>
-        {page.link && page.connected && (
-          <div className="flex flex-wrap items-center gap-2">
-            <RefreshButton label="Refresh" />
-            <CustomerActions
-              studentNumber={page.studentNumber}
-              studentName={name}
-              customerEmail={page.profile?.email ?? null}
-              maps={page.maps}
-              existing={page.invoices.map((i) => ({
-                docNumber: i.docNumber,
-                ayCode: i.ayCode,
-                stageKeys: i.stageKeys,
-                state: i.state,
-              }))}
-              openInvoices={page.openInvoices}
-              credits={page.credits}
-              depositAccounts={page.depositAccounts}
-            />
-          </div>
-        )}
-      </header>
+      </div>
+
+      {!page.connected || !page.link ? (
+        <header className="space-y-2">
+          <h1 className="font-serif text-[30px] font-semibold leading-tight tracking-tight text-foreground">
+            {name}
+          </h1>
+          <p className="font-mono text-[12px] tabular-nums text-muted-foreground">
+            {page.studentNumber}
+            {page.student?.level
+              ? ` · ${page.student.level}, ${page.student.ayCode}`
+              : ''}
+          </p>
+        </header>
+      ) : null}
 
       {!page.connected ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
@@ -208,53 +209,120 @@ export default async function BillingCustomerPage({
             </p>
           )}
 
-          <div className="@container/main">
-            <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2 @3xl/main:grid-cols-4">
-              <MetricCard
-                label="Owed on invoices"
-                value={formatSgd(b.owedOnInvoices)}
-                icon={Wallet}
-                subtext={
-                  b.credit > 0
-                    ? `${openCount} open invoices · ${formatSgd(b.openBalance)} after credit, as QuickBooks shows it`
-                    : `${openCount} open invoices`
-                }
-              />
-              <MetricCard
-                label="Overdue"
-                value={formatSgd(b.overdue)}
-                icon={AlertTriangle}
-                intent={b.overdue > 0 ? 'bad' : 'default'}
-                subtext={
-                  page.overdueOldest
-                    ? `${page.overdueOldest.docNumber ?? 'An invoice'}, due ${formatDay(page.overdueOldest.dueDate)}`
-                    : 'Nothing past its due date'
-                }
-              />
-              <MetricCard
-                label="Credit"
-                value={formatSgd(b.credit)}
-                icon={Coins}
-                intent={b.credit > 0 ? 'warning' : 'default'}
-                subtext={
-                  b.credit > 0 ? 'Unused — see below' : 'No unused credit'
-                }
-              />
-              <MetricCard
-                label="Registration · Fees"
-                value={
-                  page.stages
-                    ? `${page.stages.registration ?? '—'} · ${page.stages.fees ?? '—'}`
-                    : '—'
-                }
-                icon={Layers}
-                subtext={
-                  page.stages
-                    ? `${page.stages.ayCode} stages, filled from these invoices`
-                    : 'No application on record'
-                }
-              />
-            </div>
+          <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <Card>
+              <CardContent className="space-y-5">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h1 className="font-serif text-[30px] font-semibold leading-tight tracking-tight text-foreground">
+                      {page.link.displayName}
+                    </h1>
+                    {p?.email && (
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                      >
+                        <a
+                          href={`mailto:${p.email}`}
+                          aria-label={`Email ${p.email}`}
+                          title={p.email}
+                        >
+                          <Mail className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                    {(p?.phone || p?.mobile) && (
+                      <Button
+                        asChild
+                        variant="ghost"
+                        size="icon"
+                        className="size-8"
+                      >
+                        <a
+                          href={`tel:${p.phone ?? p.mobile}`}
+                          aria-label={`Call ${p.phone ?? p.mobile}`}
+                          title={p.phone ?? p.mobile ?? undefined}
+                        >
+                          <Phone className="size-4" />
+                        </a>
+                      </Button>
+                    )}
+                  </div>
+                  <p className="font-mono text-[12px] tabular-nums text-muted-foreground">
+                    {page.studentNumber}
+                    {page.student?.level
+                      ? ` · ${page.student.level}, ${page.student.ayCode}`
+                      : ''}
+                  </p>
+                </div>
+                <dl className="grid grid-cols-1 gap-x-10 gap-y-4 text-sm sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <dt className="text-[12px] text-muted-foreground">
+                      Company
+                    </dt>
+                    <dd className="text-foreground">{p?.companyName ?? '—'}</dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-[12px] text-muted-foreground">
+                      Billing address
+                    </dt>
+                    <dd className="text-foreground">
+                      {p?.billAddress.length ? p.billAddress.join(', ') : '—'}
+                    </dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-[12px] text-muted-foreground">Notes</dt>
+                    <dd className="text-foreground">{p?.notes || '—'}</dd>
+                  </div>
+                  <div className="space-y-1">
+                    <dt className="text-[12px] text-muted-foreground">
+                      {page.stages
+                        ? `Admissions · ${page.stages.ayCode}`
+                        : 'Admissions'}
+                    </dt>
+                    <dd className="text-foreground">
+                      {page.stages
+                        ? `Registration: ${page.stages.registration ?? '—'} · Fees: ${page.stages.fees ?? '—'}`
+                        : 'No application on record'}
+                    </dd>
+                  </div>
+                </dl>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <CardTitle className="font-serif text-lg font-semibold tracking-tight">
+                  Summary
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <SummaryLine
+                  bar="bg-brand-amber"
+                  value={formatSgd(b.openBalance)}
+                  label="Open balance"
+                  note={`${openCount} open ${openCount === 1 ? 'invoice' : 'invoices'}`}
+                />
+                <SummaryLine
+                  bar="bg-destructive"
+                  value={formatSgd(b.overdue)}
+                  label="Overdue payment"
+                  note={
+                    page.overdueOldest
+                      ? `Oldest: ${page.overdueOldest.docNumber ?? 'an invoice'}, due ${formatDay(page.overdueOldest.dueDate)}`
+                      : undefined
+                  }
+                />
+                {b.credit > 0 && (
+                  <SummaryLine
+                    bar="bg-brand-mint"
+                    value={formatSgd(b.credit)}
+                    label="Unused credit"
+                  />
+                )}
+              </CardContent>
+            </Card>
           </div>
 
           {b.credit > 0 && (
@@ -276,6 +344,10 @@ export default async function BillingCustomerPage({
             invoices={page.invoices}
             payments={page.payments}
             profile={page.profile}
+            openInvoices={page.openInvoices}
+            credits={page.credits}
+            depositAccounts={page.depositAccounts}
+            canRecord={page.connected}
             initialTab={initialTab}
           />
 
@@ -289,5 +361,31 @@ export default async function BillingCustomerPage({
         </>
       )}
     </PageShell>
+  );
+}
+
+/** One figure in the Summary card, with QuickBooks' coloured bar beside it. */
+function SummaryLine({
+  bar,
+  value,
+  label,
+  note,
+}: {
+  bar: string;
+  value: string;
+  label: string;
+  note?: string;
+}) {
+  return (
+    <div className="flex gap-3">
+      <span aria-hidden className={`w-1 shrink-0 rounded-full ${bar}`} />
+      <div className="space-y-0.5">
+        <p className="font-serif text-[24px] font-semibold leading-none tabular-nums text-foreground">
+          {value}
+        </p>
+        <p className="text-sm text-foreground">{label}</p>
+        {note && <p className="text-[12px] text-muted-foreground">{note}</p>}
+      </div>
+    </div>
   );
 }

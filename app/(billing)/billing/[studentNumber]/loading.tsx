@@ -1,32 +1,27 @@
 import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  SkeletonCards,
-  SkeletonTable,
-  SkeletonText,
-} from '@/components/ui/skeleton-layouts';
+import { SkeletonTable } from '@/components/ui/skeleton-layouts';
 
-/** Mirrors `[studentNumber]/page.tsx` — back link, header, four stat cards, tabs + table. */
+/** Mirrors `[studentNumber]/page.tsx` — top bar, customer card + Summary,
+ *  tabs, the three filters, the transaction list. */
 export default function Loading() {
   return (
     <PageShell>
-      <Skeleton className="h-5 w-28" />
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <SkeletonText variant="eyebrow" className="w-40" />
-          <SkeletonText variant="headline" className="w-96 max-w-full" />
-          <SkeletonText variant="body" className="w-120 max-w-full" />
-        </div>
-        <Skeleton className="h-9 w-80" />
-      </header>
-      <div className="@container/main">
-        <SkeletonCards
-          count={4}
-          grid="grid grid-cols-1 gap-4 @xl/main:grid-cols-2 @3xl/main:grid-cols-4"
-        />
+      <div className="flex items-center justify-between gap-3">
+        <Skeleton className="h-5 w-28" />
+        <Skeleton className="h-9 w-96 max-w-full" />
+      </div>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <Skeleton className="h-64 rounded-xl" />
+        <Skeleton className="h-64 rounded-xl" />
       </div>
       <Skeleton className="h-9 w-80" />
-      <SkeletonTable columns={7} rows={10} />
+      <div className="flex gap-3">
+        <Skeleton className="h-14 w-44" />
+        <Skeleton className="h-14 w-36" />
+        <Skeleton className="h-14 w-40" />
+      </div>
+      <SkeletonTable columns={8} rows={8} />
     </PageShell>
   );
 }
