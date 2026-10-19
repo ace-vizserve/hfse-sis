@@ -33,6 +33,7 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'qbo.invoice.link',
   'qbo.invoice.send',
   'qbo.customer.create',
+  'qbo.customer.update',
   'qbo.customer.link',
   'qbo.payment.create',
   'qbo.payment.apply_credit',

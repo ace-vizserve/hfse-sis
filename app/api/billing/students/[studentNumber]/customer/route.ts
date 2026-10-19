@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
@@ -10,6 +11,10 @@ import {
   type StudentInfo,
 } from '@/lib/billing/students.server';
 import {
+  readCustomerForm,
+  updateCustomer,
+} from '@/lib/billing/customer-edit.server';
+import {
   connectedRealmId,
   qbEscape,
   QboError,
@@ -17,6 +22,7 @@ import {
   QboNotConnectedError,
   qboQuery,
   qboRequest,
+  writeOutcomeUnknown,
 } from '@/lib/qbo/client';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -157,4 +163,148 @@ export async function POST(
     );
   }
   return NextResponse.json({ ok: true, displayName: r.displayName });
+}
+
+const str = (max: number) => z.string().max(max).default('');
+const CustomerFormBody = z.object({
+  title: str(16),
+  givenName: str(100),
+  middleName: str(100),
+  familyName: str(100),
+  suffix: str(16),
+  companyName: str(100),
+  displayName: z
+    .string()
+    .trim()
+    .min(1, 'Customer display name is required.')
+    .max(500),
+  email: z.union([z.literal(''), z.email('That is not an email address.')]),
+  phone: str(30),
+  mobile: str(30),
+  fax: str(30),
+  other: str(30),
+  website: str(1000),
+  billLine1: str(500),
+  billLine2: str(500),
+  billCity: str(255),
+  billState: str(255),
+  billPostalCode: str(30),
+  billCountry: str(255),
+  notes: str(2000),
+  /** One id per Save; QuickBooks replays a repeated update. */
+  requestId: z.string().uuid(),
+});
+
+/** The linked QuickBooks customer of a student, or a ready error response. */
+async function linkedCustomer(studentNumber: string) {
+  const service = createServiceClient();
+  const realmId = await connectedRealmId(service).catch(() => null);
+  if (!realmId)
+    return {
+      error: NextResponse.json(
+        { error: qboErrorMessage(new QboNotConnectedError()) },
+        { status: 502 }
+      ),
+    } as const;
+  const { data, error } = await service
+    .from('qbo_customers')
+    .select('qbo_customer_id, display_name')
+    .eq('student_number', studentNumber)
+    .eq('realm_id', realmId)
+    .maybeSingle();
+  if (error) {
+    console.error('[billing] edit customer, link lookup:', error.message);
+    return {
+      error: NextResponse.json({ error: SIS_READ_FAILED }, { status: 500 }),
+    } as const;
+  }
+  if (!data)
+    return {
+      error: NextResponse.json(
+        { error: 'This student isn’t linked to a QuickBooks customer.' },
+        { status: 404 }
+      ),
+    } as const;
+  return {
+    service,
+    realmId,
+    customerId: data.qbo_customer_id as string,
+  } as const;
+}
+
+// GET /api/billing/students/[studentNumber]/customer — the customer's Edit
+// form, read from QuickBooks.
+export async function GET(
+  _request: Request,
+  { params }: { params: Promise<{ studentNumber: string }> }
+) {
+  const auth = await requireRole([...QBO_INVOICE_ROLES]);
+  if ('error' in auth) return auth.error;
+  const { studentNumber } = await params;
+  const c = await linkedCustomer(studentNumber);
+  if ('error' in c) return c.error;
+  try {
+    return NextResponse.json({
+      form: await readCustomerForm(c.service, c.customerId),
+    });
+  } catch (e) {
+    return NextResponse.json({ error: qboErrorMessage(e) }, { status: 502 });
+  }
+}
+
+// PATCH /api/billing/students/[studentNumber]/customer — Edit → Save: the
+// form written to the customer in QuickBooks (sparse update).
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ studentNumber: string }> }
+) {
+  const auth = await requireRole([...QBO_INVOICE_ROLES]);
+  if ('error' in auth) return auth.error;
+  const { studentNumber } = await params;
+  const parsed = CustomerFormBody.safeParse(
+    (await request.json().catch(() => ({}))) ?? {}
+  );
+  if (!parsed.success)
+    return NextResponse.json(
+      { error: parsed.error.issues[0]?.message ?? 'Invalid payload' },
+      { status: 400 }
+    );
+  const c = await linkedCustomer(studentNumber);
+  if ('error' in c) return c.error;
+  const { requestId, ...form } = parsed.data;
+  let result: Awaited<ReturnType<typeof updateCustomer>>;
+  try {
+    result = await updateCustomer(c.service, c.customerId, form, requestId);
+  } catch (e) {
+    const status = e instanceof QboError && e.status === 400 ? 422 : 502;
+    return NextResponse.json(
+      { error: qboErrorMessage(e), keepRequestId: writeOutcomeUnknown(e) },
+      { status }
+    );
+  }
+  // QuickBooks has it; from here nothing reports failure.
+  if (result.changed.length > 0) {
+    if (result.saved.displayName !== result.before.displayName) {
+      const { error } = await c.service
+        .from('qbo_customers')
+        .update({ display_name: result.saved.displayName })
+        .eq('qbo_customer_id', c.customerId)
+        .eq('realm_id', c.realmId);
+      if (error)
+        console.error('[billing] edit customer, link name:', error.message);
+    }
+    await logAction({
+      service: c.service,
+      actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
+      action: 'qbo.customer.update',
+      entityType: 'qbo_customer',
+      entityId: c.customerId,
+      context: {
+        display_name: result.saved.displayName,
+        student_number: studentNumber,
+        changed: result.changed,
+      },
+    });
+  }
+  return NextResponse.json({ form: result.saved, changed: result.changed });
 }

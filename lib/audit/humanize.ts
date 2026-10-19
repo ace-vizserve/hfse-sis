@@ -204,6 +204,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.invoice.link': 'QuickBooks invoice linked',
   'qbo.invoice.send': 'QuickBooks invoice emailed',
   'qbo.customer.create': 'QuickBooks customer added',
+  'qbo.customer.update': 'QuickBooks customer edited',
   'qbo.connection.connect': 'QuickBooks connected',
   'qbo.connection.disconnect': 'QuickBooks disconnected',
   'qbo.customer.link': 'Student linked to QuickBooks customer',
@@ -1937,6 +1938,15 @@ function templateSummary(
       );
     case 'qbo.customer.create':
       return joinParts([str(ctx.display_name)].filter(Boolean));
+    case 'qbo.customer.update':
+      return joinParts(
+        [
+          str(ctx.display_name),
+          Array.isArray(ctx.changed)
+            ? (ctx.changed as string[]).join(', ')
+            : '',
+        ].filter(Boolean)
+      );
     case 'qbo.connection.connect':
     case 'qbo.connection.disconnect':
       return joinParts([str(ctx.company_name)].filter(Boolean));

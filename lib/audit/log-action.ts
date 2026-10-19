@@ -105,6 +105,7 @@ export const ALL_AUDIT_ACTIONS = [
   'qbo.invoice.link',
   'qbo.invoice.send',
   'qbo.customer.create',
+  'qbo.customer.update',
   'qbo.connection.connect',
   'qbo.connection.disconnect',
   // Billing module (migration 189).

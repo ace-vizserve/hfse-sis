@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   ArrowLeft,
-  ExternalLink,
   FileText,
   FolderOpen,
   Mail,
@@ -14,6 +13,7 @@ import { notFound, redirect } from 'next/navigation';
 
 import { CreditPanel } from '@/components/billing/credit-panel';
 import { CustomerActions } from '@/components/billing/customer-actions';
+import { EditCustomerButton } from '@/components/billing/edit-customer-button';
 import { CustomerTabs } from '@/components/billing/customer-tabs';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
@@ -116,14 +116,10 @@ export default async function BillingCustomerPage({
           {page.link && page.connected && (
             <>
               <RefreshButton label="Refresh" />
-              {qbHref && (
-                <Button asChild variant="outline">
-                  <a href={qbHref} target="_blank" rel="noreferrer">
-                    Edit in QuickBooks
-                    <ExternalLink className="size-3.5" />
-                  </a>
-                </Button>
-              )}
+              <EditCustomerButton
+                studentNumber={page.studentNumber}
+                qbHref={qbHref}
+              />
               <CustomerActions
                 studentNumber={page.studentNumber}
                 studentName={name}
