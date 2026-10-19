@@ -1,11 +1,10 @@
-import { Landmark } from 'lucide-react';
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
-import { BankPeriodPicker } from '@/components/billing/bank-period-picker';
+import { BillingPageHeader } from '@/components/billing/billing-page-header';
+import { BankAccountSelect } from '@/components/billing/bank-period-picker';
 import { BankTransactionsTable } from '@/components/billing/bank-transactions-table';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
-import { RefreshButton } from '@/components/billing/refresh-button';
+import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
 import type { BankLedger } from '@/lib/billing/bank-ledger';
 import {
@@ -14,18 +13,34 @@ import {
   type BankAccount,
 } from '@/lib/billing/banks.server';
 import { isRealDate } from '@/lib/billing/settings-helpers';
-import { formatDay, todaySg } from '@/lib/billing/view';
+import { todaySg } from '@/lib/billing/view';
 import { connectedRealmId } from '@/lib/qbo/client';
+import { qboAppUrl, qboEnv } from '@/lib/qbo/env';
 import { formatSgd } from '@/lib/qbo/format';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { cn } from '@/lib/utils';
 
-// Billing → Bank accounts. QuickBooks' Bank accounts with the balance
-// QuickBooks shows, and one account's transactions for a period — its
-// General Ledger, read when the page loads. Nothing is added up by the SIS
-// beyond the period's money in and out.
+// Billing → Bank accounts, as QuickBooks' Bank Register: the account
+// dropdown, Reconcile and the Ending balance at the top, then the account's
+// transactions for a period — its General Ledger, read when the page loads.
+// The figures are QuickBooks' own.
+
+const CRUMBS = [
+  { label: 'Accounting' },
+  { label: 'Chart of accounts', href: '/billing/accounts' },
+  { label: 'Bank Register' },
+];
+
+/** The same day a year earlier (29 Feb → 28 Feb). */
+function yearBefore(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  const back = new Date(Date.UTC(y - 1, m - 1, d));
+  if (back.getUTCMonth() !== m - 1) back.setUTCDate(0);
+  return back.toISOString().slice(0, 10);
+}
+
 export default async function BillingBanksPage({
   searchParams,
 }: {
@@ -45,7 +60,7 @@ export default async function BillingBanksPage({
   const from =
     params.from && isRealDate(params.from) && params.from <= to
       ? params.from
-      : `${to.slice(0, 8)}01`;
+      : yearBefore(to);
 
   let accounts: BankAccount[] = [];
   let ledger: BankLedger | null = null;
@@ -62,27 +77,46 @@ export default async function BillingBanksPage({
       error = e instanceof Error ? e.message : 'QuickBooks could not be read.';
     }
   }
-
-  const href = (id: string) =>
-    `/billing/banks?${new URLSearchParams({ account: id, from, to }).toString()}`;
+  const qbBase = qboAppUrl(qboEnv()?.environment ?? 'sandbox', '');
 
   return (
     <PageShell>
-      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
-        <div className="space-y-4">
-          <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Billing · QuickBooks
-          </p>
-          <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
-            Bank accounts.
-          </h1>
-          <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            The balance of each bank account in QuickBooks, and every
-            transaction in and out of it.
-          </p>
-        </div>
-        {realmId && !error && <RefreshButton />}
-      </header>
+      <BillingPageHeader
+        crumbs={CRUMBS}
+        title="Bank Register"
+        actions={
+          realmId && selected ? (
+            <Button asChild>
+              <a
+                href={`${qbBase}/app/reconcile?accountId=${encodeURIComponent(selected.id)}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Reconcile
+              </a>
+            </Button>
+          ) : undefined
+        }
+      >
+        {realmId && !error && selected && ledger && (
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <BankAccountSelect accounts={accounts} value={selected.id} />
+            <div className="text-right">
+              <p className="text-[12px] text-muted-foreground">
+                Ending balance
+              </p>
+              <p
+                className={cn(
+                  'font-serif text-[26px] font-semibold leading-none tabular-nums',
+                  selected.balance < 0 ? 'text-destructive' : 'text-foreground'
+                )}
+              >
+                {formatSgd(selected.balance)}
+              </p>
+            </div>
+          </div>
+        )}
+      </BillingPageHeader>
 
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
@@ -106,125 +140,13 @@ export default async function BillingBanksPage({
           </p>
         </div>
       ) : (
-        <>
-          <nav
-            aria-label="Bank accounts"
-            className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-          >
-            {accounts.map((a) => {
-              const on = a.id === selected.id;
-              return (
-                <Link
-                  key={a.id}
-                  href={href(a.id)}
-                  aria-current={on ? 'page' : undefined}
-                  className={cn(
-                    'group flex items-center gap-3 rounded-xl border bg-card p-4 transition-colors',
-                    on
-                      ? 'border-primary ring-1 ring-primary'
-                      : 'border-border hover:border-primary/40'
-                  )}
-                >
-                  <div
-                    className={cn(
-                      'flex size-9 shrink-0 items-center justify-center rounded-lg',
-                      on
-                        ? 'bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile'
-                        : 'bg-muted text-muted-foreground'
-                    )}
-                  >
-                    <Landmark className="size-4" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-foreground">
-                      {a.name}
-                    </p>
-                    <p
-                      className={cn(
-                        'font-serif text-lg font-semibold tabular-nums',
-                        a.balance < 0 ? 'text-destructive' : 'text-foreground'
-                      )}
-                    >
-                      {formatSgd(a.balance)}
-                    </p>
-                  </div>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <section className="space-y-4">
-            {/* QuickBooks' Bank Register head: the account, its period, and
-                the Ending balance on the right. */}
-            <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <h2 className="font-serif text-2xl font-semibold tracking-tight text-foreground">
-                    Bank Register · {selected.name}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {formatDay(from)} to {formatDay(to)}
-                  </p>
-                </div>
-                <BankPeriodPicker from={from} to={to} />
-              </div>
-              <div className="space-y-2 md:text-right">
-                <p className="text-[12px] text-muted-foreground">
-                  Ending balance
-                </p>
-                <p
-                  className={cn(
-                    'font-serif text-[30px] font-semibold leading-none tabular-nums',
-                    selected.balance < 0
-                      ? 'text-destructive'
-                      : 'text-foreground'
-                  )}
-                >
-                  {formatSgd(selected.balance)}
-                </p>
-                <dl className="flex flex-wrap gap-x-5 gap-y-1 text-sm md:justify-end">
-                  <div className="flex gap-1.5">
-                    <dt className="text-muted-foreground">At start</dt>
-                    <dd className="tabular-nums">
-                      {ledger.opening === null
-                        ? '—'
-                        : formatSgd(ledger.opening)}
-                    </dd>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <dt className="text-muted-foreground">Deposits</dt>
-                    <dd className="tabular-nums">
-                      {formatSgd(ledger.moneyIn)}
-                    </dd>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <dt className="text-muted-foreground">Payments</dt>
-                    <dd className="tabular-nums">
-                      {formatSgd(ledger.moneyOut)}
-                    </dd>
-                  </div>
-                  <div className="flex gap-1.5">
-                    <dt className="text-muted-foreground">
-                      At {formatDay(to)}
-                    </dt>
-                    <dd className="tabular-nums">
-                      {ledger.closing === null
-                        ? '—'
-                        : formatSgd(ledger.closing)}
-                    </dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-
-            <BankTransactionsTable rows={ledger.rows} />
-          </section>
-
-          <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-            Read from QuickBooks just now · Balances and transactions are
-            QuickBooks&rsquo; own
-          </p>
-        </>
+        <BankTransactionsTable
+          key={selected.id}
+          rows={ledger.rows}
+          from={from}
+          to={to}
+          accountName={selected.name}
+        />
       )}
     </PageShell>
   );

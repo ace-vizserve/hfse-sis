@@ -147,3 +147,69 @@ describe('parseBankLedger', () => {
     expect(parseBankLedger(null).rows).toEqual([]);
   });
 });
+
+describe('parseBankLedger with the Clr column', () => {
+  // Shape returned by the sandbox, 2026-10-19 (UOB, columns incl. is_cleared):
+  // the Beginning Balance figure comes back under Amount.
+  const cols = [
+    'tx_date',
+    'txn_type',
+    'doc_num',
+    'name',
+    'memo',
+    'split_acc',
+    'is_cleared',
+    'subt_nat_amount',
+    'rbal_nat_amount',
+  ];
+  const json = {
+    Columns: {
+      Column: cols.map((k) => ({ MetaData: [{ Name: 'ColKey', Value: k }] })),
+    },
+    Rows: {
+      Row: [
+        {
+          Header: { ColData: [{ value: 'UOB', id: '1150040010' }] },
+          Rows: {
+            Row: [
+              {
+                type: 'Data',
+                ColData: [
+                  { value: 'Beginning Balance' },
+                  ...Array.from({ length: 6 }, () => ({ value: '' })),
+                  { value: '45400.00' },
+                  { value: '' },
+                ],
+              },
+              {
+                type: 'Data',
+                ColData: [
+                  { value: '2026-10-16' },
+                  { value: 'Payment', id: '344' },
+                  { value: 'CREDIT-TEST' },
+                  { value: 'MARQUEZ, Zara Grace A.', id: '92' },
+                  { value: 'Credit test' },
+                  { value: 'Accounts Receivable (A/R)', id: '84' },
+                  { value: 'C' },
+                  { value: '50.00' },
+                  { value: '45450.00' },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    },
+  };
+
+  it('reads the opening from Amount and the ✓ mark', () => {
+    const l = parseBankLedger(json);
+    expect(l.opening).toBe(45400);
+    expect(l.rows[0]).toMatchObject({
+      number: 'CREDIT-TEST',
+      cleared: 'C',
+      amount: 50,
+      balance: 45450,
+    });
+  });
+});

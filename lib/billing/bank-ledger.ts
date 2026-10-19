@@ -15,6 +15,8 @@ export type BankLedgerRow = {
   memo: string | null;
   /** The other account of the transaction (QuickBooks' "Split"). */
   split: string | null;
+  /** QuickBooks' ✓ column: "C" cleared, "R" reconciled, null neither. */
+  cleared: 'C' | 'R' | null;
   amount: number;
   balance: number | null;
 };
@@ -37,6 +39,7 @@ export const BANK_LEDGER_COLUMNS = [
   'name',
   'memo',
   'split_acc',
+  'is_cleared',
   'subt_nat_amount',
   'rbal_nat_amount',
 ] as const;
@@ -57,6 +60,11 @@ const money = (v: string | undefined): number | null => {
 };
 const text = (v: string | undefined) => (v ?? '').trim() || null;
 
+const clearedMark = (v: string | undefined): 'C' | 'R' | null => {
+  const s = (v ?? '').trim().toUpperCase();
+  return s === 'C' || s === 'R' ? s : null;
+};
+
 export function parseBankLedger(json: unknown): BankLedger {
   const j = (json ?? {}) as {
     Columns?: {
@@ -74,6 +82,7 @@ export function parseBankLedger(json: unknown): BankLedger {
   const iName = at('name');
   const iMemo = at('memo');
   const iSplit = at('split_acc');
+  const iClr = at('is_cleared');
   const iAmount = at('subt_nat_amount');
   const iBal = at('rbal_nat_amount');
 
@@ -92,8 +101,12 @@ export function parseBankLedger(json: unknown): BankLedger {
       if (c?.length && r.type === 'Data') {
         const first = (c[iDate]?.value ?? '').trim();
         if (first === 'Beginning Balance') {
-          if (out.opening === null && iBal >= 0)
-            out.opening = money(c[iBal]?.value);
+          // QuickBooks prints it under Balance, or under Amount when the
+          // Clr column is asked for (seen in the sandbox, 2026-10-19).
+          if (out.opening === null)
+            out.opening =
+              (iBal >= 0 ? money(c[iBal]?.value) : null) ??
+              money(c[iAmount]?.value);
         } else if (/^\d{4}-\d{2}-\d{2}$/.test(first)) {
           const amount = money(c[iAmount]?.value) ?? 0;
           out.rows.push({
@@ -105,6 +118,7 @@ export function parseBankLedger(json: unknown): BankLedger {
             name: iName >= 0 ? text(c[iName]?.value) : null,
             memo: iMemo >= 0 ? text(c[iMemo]?.value) : null,
             split: iSplit >= 0 ? text(c[iSplit]?.value) : null,
+            cleared: clearedMark(iClr >= 0 ? c[iClr]?.value : undefined),
             amount,
             balance: iBal >= 0 ? money(c[iBal]?.value) : null,
           });

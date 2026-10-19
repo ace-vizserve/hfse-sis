@@ -2,27 +2,21 @@ import { PageShell } from '@/components/ui/page-shell';
 import { Skeleton } from '@/components/ui/skeleton';
 import { SkeletonTable, SkeletonText } from '@/components/ui/skeleton-layouts';
 
-/** Mirrors `banks/page.tsx` — header, account tiles, the four figures, the table. */
+/** Mirrors `banks/page.tsx` — breadcrumb + title, account dropdown and
+ *  Ending balance, the paging line, the register. */
 export default function Loading() {
   return (
     <PageShell>
-      <header className="space-y-4">
-        <SkeletonText variant="eyebrow" className="w-40" />
+      <header className="space-y-3">
+        <SkeletonText variant="body" className="w-64" />
         <SkeletonText variant="headline" className="w-72 max-w-full" />
-        <SkeletonText variant="body" className="w-120 max-w-full" />
+        <div className="flex items-end justify-between gap-4">
+          <Skeleton className="h-9 w-64" />
+          <Skeleton className="h-10 w-40" />
+        </div>
       </header>
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-[74px] rounded-xl" />
-        ))}
-      </div>
-      <Skeleton className="h-8 w-56" />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {Array.from({ length: 4 }, (_, i) => (
-          <Skeleton key={i} className="h-28 rounded-xl" />
-        ))}
-      </div>
-      <SkeletonTable columns={6} rows={8} />
+      <Skeleton className="ml-auto h-8 w-96 max-w-full" />
+      <SkeletonTable columns={8} rows={10} />
     </PageShell>
   );
 }
