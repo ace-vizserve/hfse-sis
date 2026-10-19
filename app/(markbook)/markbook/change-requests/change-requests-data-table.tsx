@@ -53,6 +53,39 @@ import {
   markChangeHistorySubtitle,
 } from '@/lib/activity/events';
 import { ChangeRequestDecisionButtons } from './decision-buttons';
+import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
+import { Field, FieldLabel } from '@/components/ui/field';
+import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { useBulkAction } from '@/lib/hooks/use-bulk-action';
+import { isEmptyRichText } from '@/lib/rich-text';
+import { APPROVAL_NOTE_MAX } from '@/lib/schemas/approval-flows';
+
+type BulkKind = 'approve' | 'reject' | 'undo';
+
+// Who may act on a row — the same conditions the row's own buttons use.
+function rowCanDecide(r: AdminRequestRow, canDecide: boolean): boolean {
+  if (r.status !== 'pending') return false;
+  if (r.staged?.viewerApprovedWaiting === true) return false;
+  return r.staged
+    ? r.staged.canDecide && r.staged.requestStatus === 'pending'
+    : canDecide;
+}
+
+// Undo: only the rejecting approver, only within 2 hours, never on a
+// step-by-step row.
+function rowCanUndo(r: AdminRequestRow, actorEmail: string | null): boolean {
+  return (
+    !r.staged &&
+    r.status === 'rejected' &&
+    actorEmail != null &&
+    r.primary_reviewed_by_email === actorEmail &&
+    r.primary_reviewed_at != null &&
+    Date.now() - Date.parse(r.primary_reviewed_at) < 2 * 60 * 60 * 1000
+  );
+}
+
+const rowLabel = (r: AdminRequestRow) =>
+  `${r.studentLabel} ${markChangeFieldLabel(r.field_changed, r.slot_index ?? null)}`;
 
 // Inline menu-item version of UndoRejectionButton — triggers the same dialog
 // but from a DropdownMenuItem so it fits inside RowActionsMenu.
@@ -565,6 +598,81 @@ export function ChangeRequestsDataTable({
         }
       : undefined;
 
+  // Bulk decisions: the same calls the row buttons make, once per ticked row,
+  // with one note asked for all of them.
+  const bulk = useBulkAction();
+  const [bulkKind, setBulkKind] = React.useState<BulkKind | null>(null);
+  const [bulkRows, setBulkRows] = React.useState<AugmentedRow[]>([]);
+  const [bulkNote, setBulkNote] = React.useState('');
+  const [resetSignal, setResetSignal] = React.useState(0);
+
+  function openBulk(kind: BulkKind, picked: AugmentedRow[]) {
+    const eligible = picked.filter((r) =>
+      kind === 'undo' ? rowCanUndo(r, actorEmail) : rowCanDecide(r, canDecide)
+    );
+    if (eligible.length === 0) {
+      toast.error(
+        kind === 'undo'
+          ? 'None of the selected declines can be undone.'
+          : 'None of the selected requests are waiting on you.'
+      );
+      return;
+    }
+    setBulkRows(eligible);
+    setBulkNote('');
+    setBulkKind(kind);
+  }
+
+  const bulkStaged = bulkRows.some((r) => r.staged);
+  const bulkNoteMax = bulkStaged ? APPROVAL_NOTE_MAX : 1000;
+  const bulkNeedsNote = bulkKind === 'reject' && isEmptyRichText(bulkNote);
+
+  async function confirmBulk() {
+    const kind = bulkKind;
+    if (!kind) return;
+    const picked = bulkRows;
+    const note = bulkNote.trim();
+    setBulkKind(null);
+    const n = picked.length;
+    const noun = n === 1 ? 'request' : 'requests';
+    if (kind === 'undo') {
+      await bulk(picked, {
+        pending: `Undoing ${n} ${noun === 'request' ? 'decline' : 'declines'}…`,
+        done: (c) => `${c} ${c === 1 ? 'decline' : 'declines'} undone`,
+        failed: 'Could not undo',
+        label: rowLabel,
+        one: (r) =>
+          apiFetch(
+            `/api/change-requests/${encodeURIComponent(r.id)}`,
+            jsonInit('PATCH', { action: 'undo_rejection' })
+          ),
+      });
+    } else {
+      const action = kind;
+      await bulk(picked, {
+        pending: `${action === 'approve' ? 'Approving' : 'Declining'} ${n} ${noun}…`,
+        done: (c) => `${c} ${action === 'approve' ? 'approved' : 'declined'}`,
+        failed:
+          action === 'approve' ? 'Could not approve' : 'Could not decline',
+        label: rowLabel,
+        one: (r) =>
+          r.staged
+            ? apiFetch(
+                `/api/approvals/${r.staged.approvalRequestId}/decide`,
+                jsonInit('POST', { action, note: note || undefined })
+              )
+            : apiFetch(
+                `/api/change-requests/${encodeURIComponent(r.id)}`,
+                jsonInit('PATCH', {
+                  action,
+                  decision_note: note || undefined,
+                })
+              ),
+      });
+    }
+    setResetSignal((s) => s + 1);
+  }
+
   const columns = React.useMemo<ColumnDef<AugmentedRow>[]>(
     () => [
       {
@@ -940,29 +1048,112 @@ export function ChangeRequestsDataTable({
     </>
   );
 
+  const bulkCount = bulkRows.length;
+  const bulkNoun = bulkCount === 1 ? 'request' : 'requests';
+
   return (
-    <DataTable<AugmentedRow>
-      data={augmentedRows}
-      columns={columns}
-      getRowId={(row) => row.id}
-      searchKeys={['requested_by_email', (r) => r.justificationText]}
-      searchPlaceholder="Search teacher, justification…"
-      facets={FACETS}
-      statusTabs={STATUS_TABS}
-      meScope={notAppliedScope}
-      toolbarLeading={toolbarLeading}
-      initialSort={[{ id: 'requested_at', desc: true }]}
-      pageSize={20}
-      csv={{ filename: `change-requests-${ayCode ?? 'export'}.csv` }}
-      url={{ enabled: true, namespace: 'requests' }}
-      emptyState={{
-        title: 'No change requests yet.',
-        body: 'When teachers request changes to locked sheets, they appear here.',
-      }}
-      emptyFilteredState={{
-        title: 'No requests match the current filters.',
-        body: 'Try clearing some filters or the date range.',
-      }}
-    />
+    <>
+      <DataTable<AugmentedRow>
+        data={augmentedRows}
+        columns={columns}
+        getRowId={(row) => row.id}
+        searchKeys={['requested_by_email', (r) => r.justificationText]}
+        searchPlaceholder="Search teacher, justification…"
+        facets={FACETS}
+        statusTabs={STATUS_TABS}
+        meScope={notAppliedScope}
+        toolbarLeading={toolbarLeading}
+        initialSort={[{ id: 'requested_at', desc: true }]}
+        pageSize={20}
+        csv={{ filename: `change-requests-${ayCode ?? 'export'}.csv` }}
+        url={{ enabled: true, namespace: 'requests' }}
+        selection={{
+          enabled: true,
+          enableRowSelection: (r) =>
+            rowCanDecide(r, canDecide) || rowCanUndo(r, actorEmail),
+          bulkActions: [
+            {
+              key: 'approve',
+              label: 'Approve',
+              icon: Check,
+              onTrigger: (rows) => openBulk('approve', rows),
+            },
+            {
+              key: 'reject',
+              label: 'Decline',
+              icon: X,
+              destructive: true,
+              onTrigger: (rows) => openBulk('reject', rows),
+            },
+            {
+              key: 'undo',
+              label: 'Undo decline',
+              icon: RotateCcw,
+              onTrigger: (rows) => openBulk('undo', rows),
+            },
+          ],
+        }}
+        selectionResetSignal={resetSignal}
+        emptyState={{
+          title: 'No change requests yet.',
+          body: 'When teachers request changes to locked sheets, they appear here.',
+        }}
+        emptyFilteredState={{
+          title: 'No requests match the current filters.',
+          body: 'Try clearing some filters or the date range.',
+        }}
+      />
+      <BulkActionDialog
+        open={bulkKind !== null}
+        onOpenChange={(o) => !o && setBulkKind(null)}
+        title={
+          bulkKind === 'approve'
+            ? `Approve ${bulkCount} ${bulkNoun}?`
+            : bulkKind === 'reject'
+              ? `Decline ${bulkCount} ${bulkNoun}?`
+              : `Undo ${bulkCount} ${bulkCount === 1 ? 'decline' : 'declines'}?`
+        }
+        description={
+          bulkKind === 'approve'
+            ? 'Each approval is recorded as your decision on that request, exactly as if you had approved them one by one. Your note goes on all of them.'
+            : bulkKind === 'reject'
+              ? 'Each request stops here and its grade stays as it is. The teachers are told, with your note as the reason. Declines on step-by-step requests cannot be undone.'
+              : 'The requests go back to Awaiting Review and the teachers are told. This works only inside the 2-hour window from when you declined.'
+        }
+        confirmLabel={
+          bulkKind === 'approve'
+            ? 'Approve'
+            : bulkKind === 'reject'
+              ? 'Decline'
+              : 'Undo decline'
+        }
+        destructive={bulkKind === 'reject'}
+        confirmDisabled={bulkNeedsNote}
+        onConfirm={confirmBulk}
+      >
+        {bulkKind !== 'undo' && (
+          <Field>
+            <FieldLabel htmlFor="bulk-decision-note">
+              Decision note{' '}
+              <span className="text-muted-foreground">
+                ({bulkKind === 'reject' ? 'required' : 'optional'})
+              </span>
+            </FieldLabel>
+            <RichTextEditor
+              id="bulk-decision-note"
+              value={bulkNote}
+              onChange={setBulkNote}
+              placeholder={
+                bulkKind === 'reject'
+                  ? 'Explain why these requests are being declined.'
+                  : 'Optional note for everyone involved.'
+              }
+              rows={4}
+              maxLength={bulkNoteMax}
+            />
+          </Field>
+        )}
+      </BulkActionDialog>
+    </>
   );
 }
