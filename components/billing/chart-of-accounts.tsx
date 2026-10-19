@@ -1,68 +1,43 @@
 'use client';
 
+import type { ColumnDef } from '@tanstack/react-table';
 import {
+  BookOpen,
   ChevronDown,
   CornerDownRight,
-  Download,
   ExternalLink,
+  Landmark,
   Pencil,
-  Search,
-  Settings,
+  Receipt,
 } from 'lucide-react';
 import Link from 'next/link';
 import * as React from 'react';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
-import { PrintIcon, ToolbarIcon } from '@/components/billing/toolbar-icons';
+import { PrintIcon } from '@/components/billing/toolbar-icons';
+import { MetricCard } from '@/components/dashboard/metric-card';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { exportCsv } from '@/components/ui/data-table/csv';
+import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
-  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  ACCOUNT_TYPES,
-  filterAccounts,
-  type AccountRow,
-} from '@/lib/billing/accounts';
+import { ACCOUNT_TYPES, type AccountRow } from '@/lib/billing/accounts';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
 
-// QuickBooks' Chart of accounts: Run report and New account ▾ at the top;
-// "Filter by name or number" and the account type; Edit mode, export, print
-// and settings icons; Name · Account type (BAL / P&L) · Detail type ·
-// QuickBooks balance · Action (View register or Run report, ▾ Edit, Run
-// report, Reconcile, Create subaccount, Make inactive), in QuickBooks' order
-// with sub-accounts under their parent. Accounts are QuickBooks' to set up,
-// so Edit, New account and the rest open QuickBooks.
+// Billing → Chart of accounts. WHAT is here is QuickBooks' page: Run report
+// and New account ▾; filter by name or number and by account type; Edit mode,
+// export, print and the column settings; Name · Account type (BAL / P&L) ·
+// Detail type · QuickBooks balance · Action (View register or Run report, ▾
+// Edit, Run report, Reconcile, Create subaccount, Make inactive), in
+// QuickBooks' order with sub-accounts under their parent. HOW it looks is the
+// SIS's: hero, stat tiles, the shared DataTable. Accounts are QuickBooks' to
+// set up, so Edit, New account and the rest open QuickBooks.
 
-type Col = 'type' | 'detail' | 'balance';
-const COLS: Array<{ id: Col; label: string }> = [
-  { id: 'type', label: 'Account type' },
-  { id: 'detail', label: 'Detail type' },
-  { id: 'balance', label: 'QuickBooks balance' },
-];
+const NS = 'billing-accounts';
 
 // Accounts QuickBooks reconciles against a statement.
 const RECONCILABLE = new Set([
@@ -96,6 +71,14 @@ function QbMenuLink({
 const reportHref = (id: string) =>
   `/billing/reports/general-ledger?period=this-year&account=${encodeURIComponent(id)}`;
 
+/** Total of the top-level accounts of one type (a parent's balance already
+ *  includes its sub-accounts). */
+function totalOf(rows: AccountRow[], type: string): number {
+  return rows
+    .filter((r) => r.type === type && r.depth === 0)
+    .reduce((s, r) => s + (r.balance ?? 0), 0);
+}
+
 export function ChartOfAccounts({
   rows,
   qbBase,
@@ -104,40 +87,123 @@ export function ChartOfAccounts({
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
 }) {
-  const [q, setQ] = React.useState('');
-  const [type, setType] = React.useState('all');
-  const [hidden, setHidden] = React.useState<Set<Col>>(() => new Set());
-  const types = ACCOUNT_TYPES.filter((t) =>
-    rows.some((r) => r.type === t.type)
-  );
-  const shown = filterAccounts(rows, q, type);
-  const filtering = q.trim() !== '' || type !== 'all';
-  const show = (c: Col) => !hidden.has(c);
   const qbCoa = `${qbBase}/app/chartofaccounts`;
+  const typeOptions = ACCOUNT_TYPES.filter((t) =>
+    rows.some((r) => r.type === t.type)
+  ).map((t) => t.label);
+  const bankLabel = ACCOUNT_TYPES[0].label;
+  const arLabel = ACCOUNT_TYPES[1].label;
+  const banks = rows.filter((r) => r.type === 'Bank');
+  const hasAr = rows.some((r) => r.type === 'Accounts Receivable');
 
-  const download = () =>
-    exportCsv(
-      shown,
+  const columns = React.useMemo<ColumnDef<AccountRow, unknown>[]>(
+    () =>
       [
-        { header: 'Name', accessor: (r: AccountRow) => r.fullName },
-        { header: 'Number', accessor: (r: AccountRow) => r.number },
-        { header: 'Account type', accessor: (r: AccountRow) => r.typeLabel },
-        { header: 'Detail type', accessor: (r: AccountRow) => r.detailType },
         {
-          header: 'QuickBooks balance',
-          accessor: (r: AccountRow) => r.balance,
+          id: 'name',
+          accessorFn: (r) => r.fullName,
+          header: 'Name',
+          meta: { label: 'Name' },
+          enableHiding: false,
+          cell: ({ row }) => {
+            const r = row.original;
+            return (
+              <span
+                className="inline-flex min-w-48 items-center gap-1.5"
+                style={{ paddingLeft: `${r.depth * 20}px` }}
+                title={r.fullName}
+              >
+                {r.depth > 0 && (
+                  <CornerDownRight className="size-3.5 shrink-0 text-muted-foreground" />
+                )}
+                {r.number && (
+                  <span className="font-mono text-xs text-muted-foreground">
+                    {r.number}
+                  </span>
+                )}
+                <span className="font-medium text-foreground">{r.name}</span>
+              </span>
+            );
+          },
         },
-      ],
-      'chart-of-accounts.csv'
-    );
+        {
+          id: 'type',
+          accessorFn: (r) => r.typeLabel,
+          header: 'Account type',
+          meta: { label: 'Account type' },
+          cell: ({ row }) => {
+            const r = row.original;
+            return (
+              <span className="flex items-center justify-between gap-3 text-muted-foreground">
+                {r.typeLabel}
+                <span
+                  className={cn(
+                    'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold',
+                    r.statement === 'BAL'
+                      ? 'bg-brand-mint/30 text-ink'
+                      : 'bg-accent text-accent-foreground'
+                  )}
+                  title={
+                    r.statement === 'BAL'
+                      ? 'Balance sheet account'
+                      : 'Profit and loss account'
+                  }
+                >
+                  {r.statement}
+                </span>
+              </span>
+            );
+          },
+        },
+        {
+          id: 'detail',
+          accessorFn: (r) => r.detailType,
+          header: 'Detail type',
+          meta: { label: 'Detail type' },
+          cell: ({ row }) => (
+            <span className="text-muted-foreground">
+              {row.original.detailType}
+            </span>
+          ),
+        },
+        {
+          id: 'balance',
+          accessorFn: (r) => r.balance,
+          header: () => <div className="text-right">QuickBooks balance</div>,
+          meta: { label: 'QuickBooks balance' },
+          cell: ({ row }) => (
+            <div className="whitespace-nowrap text-right tabular-nums">
+              {row.original.balance === null
+                ? ''
+                : formatSgd(row.original.balance)}
+            </div>
+          ),
+        },
+        {
+          id: 'actions',
+          header: () => <div className="text-right">Action</div>,
+          meta: { label: 'Action', excludeFromExport: true },
+          enableHiding: false,
+          cell: ({ row }) => (
+            <div className="flex justify-end">
+              <AccountAction row={row.original} qbBase={qbBase} />
+            </div>
+          ),
+        },
+      ].map((c) => ({ ...c, enableSorting: false })),
+    // No sorting: the rows keep QuickBooks' order, sub-accounts under parents.
+    [qbBase]
+  );
 
   return (
     <>
       <BillingPageHeader
         crumbs={[{ label: 'Accounting' }, { label: 'Chart of accounts' }]}
         title="Chart of accounts"
+        description="QuickBooks' accounts and their balances, read live. Accounts are set up in QuickBooks; a bank account's register opens here."
         actions={
           <>
+            <PrintIcon />
             <Button asChild variant="outline">
               <Link href="/billing/reports/general-ledger?period=this-year">
                 Run report
@@ -168,175 +234,77 @@ export function ChartOfAccounts({
         }
       />
 
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filter by name or number"
-              aria-label="Filter by name or number"
-              className="pl-9"
+      <div className="@container/main">
+        <div className="grid grid-cols-1 gap-4 @xl/main:grid-cols-3">
+          <MetricCard
+            label="Bank accounts"
+            value={formatSgd(totalOf(rows, 'Bank'))}
+            icon={Landmark}
+            subtext={`${banks.length} ${banks.length === 1 ? 'account' : 'accounts'}, QuickBooks balance`}
+            href={`?${NS}.type=${encodeURIComponent(bankLabel)}`}
+          />
+          {hasAr && (
+            <MetricCard
+              label="Accounts receivable"
+              value={formatSgd(totalOf(rows, 'Accounts Receivable'))}
+              icon={Receipt}
+              subtext="What customers still owe"
+              href={`?${NS}.type=${encodeURIComponent(arLabel)}`}
             />
-          </div>
-          <Select value={type} onValueChange={setType}>
-            <SelectTrigger
-              className="h-10 w-full sm:w-64"
-              aria-label="Account type"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              {types.map((t) => (
-                <SelectItem key={t.type} value={t.type}>
-                  {t.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="flex items-center gap-1 sm:ml-auto">
-            <Button asChild variant="ghost" size="sm" className="h-8">
-              <a href={qbCoa} target="_blank" rel="noreferrer">
-                <Pencil className="size-3.5" />
-                Edit mode
-              </a>
-            </Button>
-            <ToolbarIcon icon={Download} label="Export" onClick={download} />
-            <PrintIcon />
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  aria-label="Settings"
-                >
-                  <Settings className="size-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuLabel>Columns</DropdownMenuLabel>
-                {COLS.map((c) => (
-                  <DropdownMenuCheckboxItem
-                    key={c.id}
-                    checked={show(c.id)}
-                    onCheckedChange={(v) =>
-                      setHidden((h) => {
-                        const n = new Set(h);
-                        if (v) n.delete(c.id);
-                        else n.add(c.id);
-                        return n;
-                      })
-                    }
-                  >
-                    {c.label}
-                  </DropdownMenuCheckboxItem>
-                ))}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+          )}
+          <MetricCard
+            label="Accounts"
+            value={rows.length}
+            icon={BookOpen}
+            subtext={`${typeOptions.length} account types in use`}
+          />
         </div>
-
-        <Card className="gap-0 overflow-hidden py-0">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/40 hover:bg-muted/40">
-                <TableHead>Name</TableHead>
-                {show('type') && <TableHead>Account type</TableHead>}
-                {show('detail') && <TableHead>Detail type</TableHead>}
-                {show('balance') && (
-                  <TableHead className="text-right">
-                    QuickBooks balance
-                  </TableHead>
-                )}
-                <TableHead className="text-right">Action</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shown.length === 0 ? (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell
-                    colSpan={5}
-                    className="py-12 text-center text-sm text-muted-foreground"
-                  >
-                    No account matches. Clear the filter or choose All.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                shown.map((r) => {
-                  // While filtering, rows stand alone; otherwise sub-accounts
-                  // sit indented under their parent, as QuickBooks lists them.
-                  const depth = filtering ? 0 : r.depth;
-                  return (
-                    <TableRow key={r.id}>
-                      <TableCell
-                        className="py-2.5"
-                        style={{ paddingLeft: `${16 + depth * 20}px` }}
-                      >
-                        <span className="inline-flex items-center gap-1.5">
-                          {depth > 0 && (
-                            <CornerDownRight className="size-3.5 text-muted-foreground" />
-                          )}
-                          {r.number && (
-                            <span className="font-mono text-xs text-muted-foreground">
-                              {r.number}
-                            </span>
-                          )}
-                          <span className="text-foreground">
-                            {filtering && r.depth > 0 ? r.fullName : r.name}
-                          </span>
-                        </span>
-                      </TableCell>
-                      {show('type') && (
-                        <TableCell className="py-2.5 text-muted-foreground">
-                          <span className="flex items-center justify-between gap-3">
-                            {r.typeLabel}
-                            <span
-                              className={cn(
-                                'rounded px-1.5 py-0.5 font-mono text-[10px] font-semibold',
-                                r.statement === 'BAL'
-                                  ? 'bg-brand-mint/30 text-ink'
-                                  : 'bg-accent text-accent-foreground'
-                              )}
-                              title={
-                                r.statement === 'BAL'
-                                  ? 'Balance sheet account'
-                                  : 'Profit and loss account'
-                              }
-                            >
-                              {r.statement}
-                            </span>
-                          </span>
-                        </TableCell>
-                      )}
-                      {show('detail') && (
-                        <TableCell className="py-2.5 text-muted-foreground">
-                          {r.detailType}
-                        </TableCell>
-                      )}
-                      {show('balance') && (
-                        <TableCell className="py-2.5 text-right tabular-nums whitespace-nowrap">
-                          {r.balance === null ? '' : formatSgd(r.balance)}
-                        </TableCell>
-                      )}
-                      <TableCell className="py-1.5 text-right whitespace-nowrap">
-                        <AccountAction row={r} qbBase={qbBase} />
-                      </TableCell>
-                    </TableRow>
-                  );
-                })
-              )}
-            </TableBody>
-          </Table>
-        </Card>
-        <p className="text-sm text-muted-foreground tabular-nums">
-          {shown.length === rows.length
-            ? `${rows.length} accounts`
-            : `${shown.length} of ${rows.length} accounts`}
-        </p>
       </div>
+
+      <DataTable<AccountRow>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.id}
+        searchKeys={[(r) => r.fullName, (r) => r.number ?? '']}
+        searchPlaceholder="Filter by name or number"
+        facets={[
+          {
+            columnId: 'type',
+            label: 'Account type',
+            valueOptions: typeOptions,
+          },
+        ]}
+        toolbarTrailing={
+          <Button asChild variant="outline" size="sm">
+            <a href={qbCoa} target="_blank" rel="noreferrer">
+              <Pencil className="size-3.5" />
+              Edit mode
+            </a>
+          </Button>
+        }
+        url={{ enabled: true, namespace: NS }}
+        pageSize={100}
+        csv={{
+          filename: 'chart-of-accounts.csv',
+          extraColumns: [
+            {
+              id: 'number',
+              header: 'Number',
+              accessor: (r) => r.number,
+              defaultChecked: true,
+            },
+          ],
+        }}
+        emptyState={{
+          icon: BookOpen,
+          title: 'No accounts yet.',
+          body: 'Accounts are set up in QuickBooks. Add one with New account.',
+        }}
+        emptyFilteredState={{
+          title: 'No account matches.',
+          body: 'Clear the filter or the account type.',
+        }}
+      />
     </>
   );
 }
@@ -376,12 +344,12 @@ function AccountAction({
       </a>
     );
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-2 whitespace-nowrap">
       {main}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             className="size-7"
             aria-label={`More for ${r.fullName}`}

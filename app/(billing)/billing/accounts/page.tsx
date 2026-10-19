@@ -47,6 +47,7 @@ export default async function BillingAccountsPage() {
       <BillingPageHeader
         crumbs={[{ label: 'Accounting' }, { label: 'Chart of accounts' }]}
         title="Chart of accounts"
+        description="QuickBooks' accounts and their balances, read live."
       />
       {!realmId ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
