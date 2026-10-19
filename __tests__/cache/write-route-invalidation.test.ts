@@ -82,6 +82,12 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Stores the voided invoice in qbo_invoices (read uncached by the Billing loaders); the stage reset goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/customer/route.ts':
     'Adds the customer in QuickBooks, then links it (qbo_customers, billing_link_review — read uncached); stage moves from the history load go through writeStageFromQbo, which busts the tags.',
+  'app/api/billing/products/route.ts':
+    'Creates a Service item in QuickBooks; the only SIS write is the qbo.item.create audit_log row, which no cached surface reads (Products & services reads QuickBooks live).',
+  'app/api/billing/products/[itemId]/route.ts':
+    'Edits the item in QuickBooks; the only SIS write is the qbo.item.update audit_log row, which no cached surface reads.',
+  'app/api/billing/products/[itemId]/inactive/route.ts':
+    'Makes the item inactive in QuickBooks; the only SIS write is the qbo.item.update audit_log row, which no cached surface reads.',
   'app/api/billing/students/[studentNumber]/invoices/route.ts':
     'Stores the new invoice in qbo_invoices (read uncached by the Billing loaders); the stage move goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/payments/route.ts':
