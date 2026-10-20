@@ -210,6 +210,8 @@ export default async function TermSheetSummaryPage({
         <TermSheetSummaryView
           rows={rows}
           months={months}
+          sectionId={sectionId}
+          termId={selectedTermId}
           sectionName={section.name}
           termLabel={selectedTerm?.label ?? 'term'}
         />
