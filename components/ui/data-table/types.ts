@@ -229,6 +229,17 @@ export type DataTableProps<TRow> = {
   /** Seed value for the search input when no URL `?q=` param is present.
    *  Used for server-driven deep-links (e.g. open pre-filtered to a section). */
   initialSearch?: string;
+  /**
+   * The page-level URL param `initialSearch` came from (e.g. `'student'` for
+   * `/billing/review?student=…`). With it, the seed follows the URL both ways:
+   * when the reader changes or clears the search, the param is removed from
+   * the address (other params kept), so a refresh or Back does not put the
+   * old search back; and a later visit with a different value re-seeds the
+   * search. Without it, `initialSearch` only seeds the first render.
+   * For tables without `url` sync — a synced table's own `q` already
+   * round-trips.
+   */
+  initialSearchParam?: string;
 
   facets?: FacetConfig[];
   /** Optional — one or more facet groups, each collapsed behind a single
