@@ -245,7 +245,7 @@ export function AuditLogDataTable({
   // the rest of the match. Each control writes a URL param and resets to page
   // 1; the page RSC re-queries.
   const setServerParam = React.useCallback(
-    (key: 'action' | 'actor' | 'from' | 'to', value: string) => {
+    (key: 'action' | 'actor' | 'from' | 'to' | 'sheet_id', value: string) => {
       const params = new URLSearchParams(window.location.search);
       if (value && value !== 'all') params.set(key, value);
       else params.delete(key);
@@ -269,11 +269,16 @@ export function AuditLogDataTable({
   );
 
   const hasAnyFilter = Boolean(
-    currentAction || currentActor || currentFrom || currentTo
+    currentAction ||
+    currentActor ||
+    currentFrom ||
+    currentTo ||
+    initialSheetIdFilter
   );
   const clearAllFilters = React.useCallback(() => {
     const params = new URLSearchParams(window.location.search);
-    for (const k of ['action', 'actor', 'from', 'to', 'page']) params.delete(k);
+    for (const k of ['action', 'actor', 'from', 'to', 'sheet_id', 'page'])
+      params.delete(k);
     router.push(params.toString() ? `?${params.toString()}` : '?');
   }, [router]);
 
@@ -418,9 +423,16 @@ export function AuditLogDataTable({
           className="h-8 gap-1.5 border-border bg-accent px-2.5 font-mono text-[11px] text-accent-foreground"
         >
           Sheet {sheetIdFilter.slice(0, 8)}…
+          {/* `?sheet_id=` is a SERVER filter on the markbook log (the page
+              queries only that sheet), so clearing it must leave the URL and
+              re-query — clearing the local copy alone changed nothing, and a
+              refresh brought the chip back. */}
           <button
             type="button"
-            onClick={() => setSheetIdFilter(null)}
+            onClick={() => {
+              setSheetIdFilter(null);
+              setServerParam('sheet_id', '');
+            }}
             aria-label="Clear sheet filter"
             className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted"
           >
@@ -436,7 +448,7 @@ export function AuditLogDataTable({
       {hasAnyFilter && (
         <Button
           type="button"
-          variant="ghost"
+          variant="outline"
           size="sm"
           className="h-8"
           onClick={clearAllFilters}
