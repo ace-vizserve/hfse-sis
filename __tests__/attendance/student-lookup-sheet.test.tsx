@@ -76,7 +76,6 @@ describe('StudentLookupSheet search list', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
@@ -96,7 +95,6 @@ describe('StudentLookupSheet search list', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
@@ -123,7 +121,6 @@ describe('StudentLookupSheet search list', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
@@ -132,7 +129,7 @@ describe('StudentLookupSheet search list', () => {
     expect(screen.getByText('All students')).toBeInTheDocument();
   });
 
-  it('links to the whole term summary page, scoped to the current term, opening in a new tab', async () => {
+  it('no longer carries the term summary link (it sits on the page now)', async () => {
     const user = userEvent.setup();
     renderWithClient(
       <StudentLookupSheet
@@ -140,18 +137,12 @@ describe('StudentLookupSheet search list', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
-    const link = screen.getByRole('link', {
-      name: /view whole term summary/i,
-    });
-    expect(link).toHaveAttribute(
-      'href',
-      '/attendance/sec-1/summary?term_id=t3'
-    );
-    expect(link).toHaveAttribute('target', '_blank');
+    expect(
+      screen.queryByRole('link', { name: /term summary/i })
+    ).not.toBeInTheDocument();
   });
 });
 
@@ -208,7 +199,6 @@ describe('StudentLookupSheet detail view', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
@@ -235,7 +225,6 @@ describe('StudentLookupSheet detail view', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await user.click(screen.getByRole('button', { name: /look up student/i }));
@@ -261,7 +250,6 @@ describe('the list reports without being opened', () => {
         attendancePctByEnrolment={pcts}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
   }
@@ -286,7 +274,6 @@ describe('the list reports without being opened', () => {
         attendancePctByEnrolment={{}}
         termLabel="Term 3"
         termId="t3"
-        sectionId="sec-1"
       />
     );
     await open();

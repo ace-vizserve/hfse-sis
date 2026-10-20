@@ -6,7 +6,6 @@ import {
   CircleCheck,
   CircleX,
   Clock,
-  ExternalLink,
   FileText,
   Search,
   UserSearch,
@@ -63,7 +62,6 @@ type Props = {
   attendancePctByEnrolment: Record<string, number | null>;
   termLabel: string;
   termId: string;
-  sectionId: string;
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -155,7 +153,6 @@ export function StudentLookupSheet({
   attendancePctByEnrolment,
   termLabel,
   termId,
-  sectionId,
 }: Props) {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -279,20 +276,6 @@ export function StudentLookupSheet({
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                asChild
-                variant="ghost"
-                size="sm"
-                className="w-full justify-center gap-1.5 text-muted-foreground"
-              >
-                <Link
-                  href={`/attendance/${sectionId}/summary?term_id=${termId}`}
-                  target="_blank"
-                >
-                  <ExternalLink className="size-3.5" />
-                  View whole term summary
-                </Link>
-              </Button>
             </div>
 
             <div className="flex-1 overflow-y-auto">

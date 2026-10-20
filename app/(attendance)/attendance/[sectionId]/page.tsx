@@ -3,6 +3,7 @@ import {
   CalendarCheck,
   CalendarDays,
   Percent,
+  Sheet,
   Users,
 } from 'lucide-react';
 import Link from 'next/link';
@@ -383,6 +384,16 @@ export default async function SectionAttendancePage({
   const holidayCount = calendar.filter((c) => c.isHoliday).length;
   const schoolDayCount = calendar.filter((c) => !c.isHoliday).length;
 
+  const showTermRow = view === 'sheet' && terms.length > 1;
+  const configureCalendar = (
+    <Button asChild variant="outline" size="sm" className="gap-1.5">
+      <Link href={`/sis/calendar?term_id=${selectedTermId}`}>
+        <CalendarDays className="size-3.5" />
+        Configure calendar
+      </Link>
+    </Button>
+  );
+
   return (
     <PageShell>
       <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
@@ -433,21 +444,23 @@ export default async function SectionAttendancePage({
             attendancePctByEnrolment={attendancePctByEnrolment}
             termLabel={selectedTerm?.label ?? ''}
             termId={selectedTermId}
-            sectionId={sectionId}
           />
-          {canWriteNc && (
-            <Button asChild variant="outline" size="sm" className="gap-1.5">
-              <Link href={`/sis/calendar?term_id=${selectedTermId}`}>
-                <CalendarDays className="size-3.5" />
-                Configure calendar
-              </Link>
-            </Button>
-          )}
+          <Button asChild variant="outline" size="sm" className="gap-1.5">
+            <Link
+              href={`/attendance/${sectionId}/summary?term_id=${selectedTermId}`}
+            >
+              <Sheet className="size-3.5" />
+              Term summary
+            </Link>
+          </Button>
+          {/* Beside Export sheet when the term row shows; up here otherwise
+              (daily view), so it never disappears. */}
+          {canWriteNc && !showTermRow && configureCalendar}
         </div>
       </header>
 
       {/* Term switcher — sheet view only; daily is locked to the current term. */}
-      {view === 'sheet' && terms.length > 1 && (
+      {showTermRow && (
         <div className="flex items-center justify-between w-full">
           <Tabs value={selectedTermId} aria-label="Term">
             <TabsList>
@@ -466,7 +479,10 @@ export default async function SectionAttendancePage({
             </TabsList>
           </Tabs>
 
-          <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
+          <div className="flex items-center gap-2">
+            {canWriteNc && configureCalendar}
+            <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
+          </div>
         </div>
       )}
 
