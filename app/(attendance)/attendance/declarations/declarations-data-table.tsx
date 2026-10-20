@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { usePageParams } from '@/components/ui/data-table/use-page-params';
 import type { ApprovalRailStage } from '@/lib/approvals/rail';
 import type { StaffDeclarationView } from '@/lib/declarations/staff';
 import type { DeclarationType } from '@/lib/schemas/declarations';
@@ -105,7 +106,7 @@ export function DeclarationsQueueTable({
    *
    * ⚠ Held as state seeded once, not read on every render. Reading the URL
    * each time would re-open the sheet the moment the reader closed it, since
-   * the query string is still there.
+   * the query string is still there. Closing the sheet also drops `?req=`.
    */
   openRequestId?: string;
 }) {
@@ -115,9 +116,13 @@ export function DeclarationsQueueTable({
   // The page stays mounted across navigations (cacheComponents), so a second
   // bell link with a different `?req=` must open its own filing.
   const [seenOpenRequestId, setSeenOpenRequestId] = useState(openRequestId);
+  // The param going AWAY (dropped on close) changes nothing — it must not
+  // close a row the reader has opened since.
+  const setPageParams = usePageParams();
   if (openRequestId !== seenOpenRequestId) {
     setSeenOpenRequestId(openRequestId);
-    setOpenRow(rows.find((r) => r.requestId === openRequestId) ?? null);
+    if (openRequestId)
+      setOpenRow(rows.find((r) => r.requestId === openRequestId) ?? null);
   }
 
   // Bulk Approve / Turn down: the sheet's own call (POST /api/approvals/[id]/
@@ -510,7 +515,12 @@ export function DeclarationsQueueTable({
       <DeclarationDecisionSheet
         row={openRow}
         onOpenChange={(open) => {
-          if (!open) setOpenRow(null);
+          if (open) return;
+          setOpenRow(null);
+          // Closing the filing a bell link opened takes `?req=` out of the
+          // URL, so a refresh doesn't open it again — and the next link to
+          // the same filing still does.
+          setPageParams({ req: null });
         }}
       />
     </>
