@@ -138,18 +138,25 @@ describe('DataTable expandable rows', () => {
     it('pages forward through groups and stops on the last page', () => {
       renderTable({ pageSize: 5 }, makeGroups(12, 5));
       const nextBtn = screen.getByRole('button', { name: 'Next page' });
-      const lastBtn = screen.getByRole('button', { name: 'Last page' });
       fireEvent.click(nextBtn);
       expect(screen.getByText('Page 2 of 3')).toBeInTheDocument();
       expect(screen.getByText('Group G06 (5)')).toBeInTheDocument();
       expect(screen.queryByText('Group G05 (5)')).not.toBeInTheDocument();
-      fireEvent.click(lastBtn);
+      // The numbered pages stop at the last GROUP page — there is no
+      // "Page 4", though 60 rows / 5 would have made 12 row-pages.
+      expect(
+        screen.queryByRole('button', { name: 'Page 4' })
+      ).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
       expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
       expect(screen.getByText('Group G12 (5)')).toBeInTheDocument();
-      // "Next" and "last" are spent on the final page — the row-model's own
-      // canNextPage would still say yes here (60 rows / 5 = 12 row-pages).
+      expect(screen.getByRole('button', { name: 'Page 3' })).toHaveAttribute(
+        'aria-current',
+        'page'
+      );
+      // "Next" is spent on the final page — the row-model's own canNextPage
+      // would still say yes here (60 rows / 5 = 12 row-pages).
       expect(nextBtn).toBeDisabled();
-      expect(lastBtn).toBeDisabled();
     });
 
     it('labels the page-size control with the group unit', () => {
@@ -184,7 +191,7 @@ describe('DataTable expandable rows', () => {
     it('pulls the viewer back when the group count shrinks under them', () => {
       // Land on the last page, then filter down to fewer groups than pages.
       renderTable({ pageSize: 5, searchKeys: ['label'] }, makeGroups(12, 5));
-      fireEvent.click(screen.getByRole('button', { name: 'Last page' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Page 3' }));
       expect(screen.getByText('Page 3 of 3')).toBeInTheDocument();
       // Searching narrows to one group; without the clamp the viewer would
       // sit on page 3 of 1 looking at an empty table.

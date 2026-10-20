@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
 import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DataTablePageNav } from '@/components/ui/data-table/pagination';
 import {
   Select,
   SelectContent,
@@ -585,7 +586,7 @@ export function AuditLogDataTable({
   ) : null;
 
   return (
-    <_AuditLogTable
+    <AuditLogTableInner
       filteredRows={filteredRows}
       toolbarLeading={toolbarLeading}
       toolbarTrailing={toolbarTrailing}
@@ -596,7 +597,7 @@ export function AuditLogDataTable({
 
 // Inner component that receives stable props so DataTable URL-state works
 // correctly even when the outer wrapper's state changes.
-function _AuditLogTable({
+function AuditLogTableInner({
   filteredRows,
   toolbarLeading,
   toolbarTrailing,
@@ -630,6 +631,9 @@ function _AuditLogTable({
         toolbarTrailing={toolbarTrailing}
         initialSort={[{ id: 'at', desc: true }]}
         pageSize={pagination ? Math.max(filteredRows.length, 1) : 25}
+        // A server-paged log pages with the footer below; the table's own
+        // pager would only ever say "Page 1 of 1".
+        hidePagination={!!pagination}
         // Namespaced so the page's own ?sheet_id / ?action params aren't
         // treated as phantom facet filters (KD #84 footgun).
         url={{ enabled: true, namespace: 'al' }}
@@ -643,7 +647,7 @@ function _AuditLogTable({
         }}
       />
       {pagination && (
-        <div className="flex items-center justify-between rounded-b-xl border border-t-0 border-border bg-muted/30 px-4 py-3 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
           <p className="text-muted-foreground tabular-nums">
             {pagination.total === 0
               ? 'No entries'
@@ -654,29 +658,16 @@ function _AuditLogTable({
                   'en-SG'
                 )} of ${pagination.total.toLocaleString('en-SG')}`}
           </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              disabled={pagination.page <= 1}
-              onClick={() => handlePageChange(pagination.page - 1)}
-            >
-              ← Prev
-            </Button>
+          <div className="flex items-center gap-3">
             <span className="font-mono text-[11px] tabular-nums text-muted-foreground">
-              {pagination.page.toLocaleString('en-SG')} /{' '}
-              {pagination.totalPages.toLocaleString('en-SG')}
+              Page {pagination.page.toLocaleString('en-SG')} of{' '}
+              {Math.max(1, pagination.totalPages).toLocaleString('en-SG')}
             </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 px-2.5 text-xs"
-              disabled={pagination.page >= pagination.totalPages}
-              onClick={() => handlePageChange(pagination.page + 1)}
-            >
-              Next →
-            </Button>
+            <DataTablePageNav
+              page={pagination.page}
+              pageCount={pagination.totalPages}
+              onPageChange={handlePageChange}
+            />
           </div>
         </div>
       )}
