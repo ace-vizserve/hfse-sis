@@ -30,7 +30,8 @@ export function HomeHeaderActions({ actions }: { actions: QuickAction[] }) {
       {actions.length > 0 ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline">
+            {/* The page's one primary: it holds the role's own work. */}
+            <Button>
               More
               <ChevronDown />
             </Button>
