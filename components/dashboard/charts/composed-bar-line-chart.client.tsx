@@ -65,9 +65,6 @@ export type ComposedBarLineChartProps = {
    * the comparison period's point — the caller maps each to its year.
    */
   onSegmentClick?: SegmentClickHandler;
-  /** Default true. Off where the line only traces the bars and a key adds
-   *  nothing (Attendance → Term Sheet Summary). */
-  showLegend?: boolean;
 };
 
 function ComposedBarLineChartImpl({
@@ -77,7 +74,6 @@ function ComposedBarLineChartImpl({
   height = 300,
   yFormat,
   onSegmentClick,
-  showLegend = true,
 }: ComposedBarLineChartProps) {
   const yFormatter = formatterFor(yFormat);
 
@@ -108,14 +104,12 @@ function ComposedBarLineChartImpl({
           // of them — adding the two would be adding two years together.
           content={chartTooltipContent({ format: yFormatter })}
         />
-        {showLegend && (
-          <Legend
-            content={chartLegendContent({
-              [barLabel]: 'series-1',
-              [lineLabel]: 'neutral',
-            })}
-          />
-        )}
+        <Legend
+          content={chartLegendContent({
+            [barLabel]: 'series-1',
+            [lineLabel]: 'neutral',
+          })}
+        />
         <Bar
           dataKey="bar"
           name={barLabel}

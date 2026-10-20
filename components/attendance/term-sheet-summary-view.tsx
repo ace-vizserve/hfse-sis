@@ -10,17 +10,8 @@ import {
   Users,
 } from 'lucide-react';
 
-import {
-  ComposedBarLineChart,
-  type ComposedBarLinePoint,
-} from '@/components/dashboard/charts/composed-bar-line-chart';
-import {
-  DonutChart,
-  type DonutSlice,
-} from '@/components/dashboard/charts/donut-chart';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import {
@@ -214,35 +205,6 @@ const COLUMNS: ColumnDef<PeriodRow>[] = [
   },
 ];
 
-// The charts support the table, so they stay small and quiet: one short
-// title, a compact plot, no caption or icon tile.
-function ChartPanel({
-  title,
-  children,
-}: {
-  title: string;
-  children: ReactNode;
-}) {
-  return (
-    <Card className="gap-3 py-4">
-      <CardHeader className="px-4">
-        <CardTitle className="text-sm font-semibold text-foreground">
-          {title}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="px-4">{children}</CardContent>
-    </Card>
-  );
-}
-
-function NoMarks() {
-  return (
-    <p className="py-10 text-center text-sm text-muted-foreground">
-      No attendance marked this term yet.
-    </p>
-  );
-}
-
 function slug(s: string): string {
   return s
     .toLowerCase()
@@ -296,29 +258,6 @@ export function TermSheetSummaryView({
   const { term } = overview;
   const classRate = term.attendancePct;
 
-  // Bars = the class rate each month; the line traces the same figures so
-  // the trend across the term reads at a glance.
-  const monthBars: ComposedBarLinePoint[] = overview.byMonth
-    .filter((m) => m.stat.attendancePct != null)
-    .map((m) => ({
-      category: m.label,
-      bar: m.stat.attendancePct!,
-      line: m.stat.attendancePct!,
-    }));
-
-  const mix: DonutSlice[] = [
-    { name: 'Present', value: term.present },
-    { name: 'Late', value: term.late },
-    { name: 'Excused', value: term.excused },
-    { name: 'Absent', value: term.absent },
-  ];
-  const mixColors = [
-    'var(--color-brand-mint)',
-    'var(--color-brand-amber)',
-    'var(--color-brand-indigo)',
-    'var(--color-destructive)',
-  ];
-
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
@@ -347,37 +286,6 @@ export function TermSheetSummaryView({
           icon={CalendarX}
           subtext={`${term.late} late ${term.late === 1 ? 'mark' : 'marks'}`}
         />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <ChartPanel title="Rate by month">
-          {monthBars.length === 0 ? (
-            <NoMarks />
-          ) : (
-            <ComposedBarLineChart
-              data={monthBars}
-              height={200}
-              yFormat="percent"
-              barLabel="Rate"
-              lineLabel="Trend"
-              showLegend={false}
-            />
-          )}
-        </ChartPanel>
-        <ChartPanel title="Mark mix">
-          {term.totalDays === 0 ? (
-            <NoMarks />
-          ) : (
-            <DonutChart
-              data={mix}
-              height={160}
-              colors={mixColors}
-              centerValue={term.totalDays.toLocaleString('en-SG')}
-              centerLabel="Days"
-              centerHint="Every present, late, excused and absent mark this term, across the class."
-            />
-          )}
-        </ChartPanel>
       </div>
 
       <DataTable<PeriodRow>
