@@ -360,6 +360,7 @@ export function TermSheetSummaryView({
               yFormat="percent"
               barLabel="Rate"
               lineLabel="Trend"
+              showLegend={false}
             />
           )}
         </ChartPanel>
