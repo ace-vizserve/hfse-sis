@@ -1,7 +1,7 @@
 'use client';
 
 import type { ColumnDef } from '@tanstack/react-table';
-import { CalendarClock, History, RefreshCw } from 'lucide-react';
+import { CalendarClock, ChevronDown, History, RefreshCw } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import { AySwitcher } from '@/components/admissions/ay-switcher';
@@ -9,19 +9,14 @@ import { BookCoverDialog } from '@/components/relief/book-cover-dialog';
 import { EndCoverButton } from '@/components/relief/end-cover-button';
 import type { ReliefOption } from '@/components/sis/assignment-relief-control';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
 import type { StatusTabConfig } from '@/components/ui/data-table/types';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
 import type { CoverBoard, CoverClass } from '@/lib/relief/cover-board';
 import type { CoverHistoryRow } from '@/lib/relief/cover-history';
 import type { CoverOutcome } from '@/lib/relief/cover-history-core';
 import { formatCoverDate, formatCoverWindow } from '@/lib/relief/display';
+import { cn } from '@/lib/utils';
 
 // The Cover page: one table, three tabs — Active now, Scheduled, History.
 //
@@ -51,9 +46,13 @@ type CoverRow = {
   outcome: CoverOutcome | null;
 };
 
-const AMBER = 'h-6 border-brand-amber/40 bg-brand-amber/10 text-ink';
-const ACCENT = 'h-6 border-brand-indigo-soft bg-accent text-brand-indigo-deep';
-const MINT = 'h-6 border-brand-mint bg-brand-mint/30 text-ink';
+// whitespace-nowrap: a status reads as one label, never a two-line squeeze.
+const AMBER =
+  'h-6 whitespace-nowrap border-brand-amber/40 bg-brand-amber/10 text-ink';
+const ACCENT =
+  'h-6 whitespace-nowrap border-brand-indigo-soft bg-accent text-brand-indigo-deep';
+const MINT =
+  'h-6 whitespace-nowrap border-brand-mint bg-brand-mint/30 text-ink';
 
 function utcMs(iso: string): number {
   const [y, m, d] = iso.split('-').map(Number);
@@ -138,27 +137,60 @@ function WhenCell({ row }: { row: CoverRow }) {
   return <span className="text-sm text-muted-foreground">{text}</span>;
 }
 
-function ClassesCell({ classes }: { classes: CoverClass[] }) {
+// One class reads in the cell. Two or more collapse to a count that opens the
+// row, so a teacher covering eight classes is still one row-height until you
+// ask — the full list lands in a panel under the row (rowDetail).
+function ClassesCell({
+  classes,
+  isOpen,
+  onToggle,
+}: {
+  classes: CoverClass[];
+  isOpen: boolean;
+  onToggle: () => void;
+}) {
+  if (classes.length === 1) {
+    return (
+      <span className="whitespace-nowrap text-sm text-foreground">
+        {classes[0].label}
+      </span>
+    );
+  }
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-7 px-2.5 text-xs">
-          {plural(classes.length, 'class', 'classes')}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-72 p-0">
-        <ul className="max-h-72 divide-y divide-border overflow-y-auto">
-          {classes.map((c) => (
-            <li
-              key={c.assignmentId}
-              className="px-3 py-2 text-sm text-foreground"
-            >
-              {c.label}
-            </li>
-          ))}
-        </ul>
-      </PopoverContent>
-    </Popover>
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={isOpen}
+      className="-ml-2 inline-flex items-center gap-1.5 whitespace-nowrap rounded-md border border-transparent px-2 py-1 text-sm font-medium text-brand-indigo-deep transition-colors hover:border-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+    >
+      {plural(classes.length, 'class', 'classes')}
+      <ChevronDown
+        className={cn(
+          'size-3.5 shrink-0 text-muted-foreground transition-transform motion-reduce:transition-none',
+          isOpen && 'rotate-180'
+        )}
+      />
+    </button>
+  );
+}
+
+function ClassesPanel({ classes }: { classes: CoverClass[] }) {
+  return (
+    <div className="space-y-2 px-4 py-3">
+      <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {plural(classes.length, 'class', 'classes')} covered
+      </p>
+      <ul className="flex flex-wrap gap-1.5">
+        {classes.map((c) => (
+          <li
+            key={c.assignmentId}
+            className="rounded-md border border-hairline bg-background px-2.5 py-1 text-sm text-foreground"
+          >
+            {c.label}
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -226,6 +258,16 @@ export function CoverTable({
       ? 'scheduled'
       : 'active';
   const [tab, setTab] = useState<Tab>(defaultTab);
+
+  // Rows whose class list is open (rowDetail panel under the row).
+  const [openRows, setOpenRows] = useState<ReadonlySet<string>>(new Set());
+  const toggleRow = (key: string) =>
+    setOpenRows((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
 
   const teacherNames = useMemo(
     () =>
@@ -361,7 +403,13 @@ export function CoverTable({
         accessorFn: (r) => r.classes.map((c) => c.label).join(', '),
         header: 'Classes',
         enableSorting: false,
-        cell: ({ row }) => <ClassesCell classes={row.original.classes} />,
+        cell: ({ row }) => (
+          <ClassesCell
+            classes={row.original.classes}
+            isOpen={openRows.has(row.original.key)}
+            onToggle={() => toggleRow(row.original.key)}
+          />
+        ),
       },
       {
         // Filter only: a teacher matches whether they were away or covering.
@@ -418,7 +466,7 @@ export function CoverTable({
       });
     }
     return cols;
-  }, [tab, whenLabel, teacherOptions]);
+  }, [tab, whenLabel, teacherOptions, openRows]);
 
   return (
     <DataTable<CoverRow>
@@ -438,6 +486,12 @@ export function CoverTable({
         { columnId: 'teacher', label: 'Teacher', valueOptions: teacherNames },
       ]}
       initialColumnVisibility={{ teacher: false }}
+      rowDetail={{
+        render: (r) =>
+          r.classes.length > 1 && openRows.has(r.key) ? (
+            <ClassesPanel classes={r.classes} />
+          ) : null,
+      }}
       toolbarFilters={
         tab === 'history' ? (
           <AySwitcher
