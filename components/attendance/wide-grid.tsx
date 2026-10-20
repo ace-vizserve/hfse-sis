@@ -885,8 +885,8 @@ export function AttendanceWideGrid({
           // design could only ever *approximate* alignment via matched
           // <tr> heights). `border-separate` (never `border-collapse`) is
           // what makes `position: sticky` cells safe in a table — the
-          // same convention already proven by the single sticky column in
-          // components/attendance/term-sheet-summary-table.tsx. A much
+          // same convention once proven by the single sticky column of the
+          // old term-sheet-summary-table.tsx (since removed). A much
           // older attempt at this used `border-collapse` and hit the
           // known browser bug where scrolling content paints over sticky
           // cells (see git history) — avoided here by construction.
@@ -1091,7 +1091,7 @@ export function AttendanceWideGrid({
                   // ~90%+ transparent — nowhere near opaque enough, and
                   // the actual cause of the roster column visually
                   // "mixing" with the marks while scrolling). Matches the
-                  // proven sticky-cell convention in
+                  // proven sticky-cell convention of the old (removed)
                   // term-sheet-summary-table.tsx: a flat bg-card, no
                   // per-row alpha variation. Zebra striping / withdrawn
                   // dimming stay on the non-sticky mark cells via the

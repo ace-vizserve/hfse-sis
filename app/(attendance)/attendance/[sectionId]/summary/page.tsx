@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
-import { TermSheetSummaryTable } from '@/components/attendance/term-sheet-summary-table';
+import { TermSheetSummaryView } from '@/components/attendance/term-sheet-summary-view';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardDescription } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
@@ -13,6 +13,7 @@ import { getDailyForSection } from '@/lib/attendance/queries';
 import {
   buildTermSummaryRows,
   monthsInRange,
+  summarizeClassTerm,
   type TermSummaryEnrolment,
 } from '@/lib/attendance/sheet-summary';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
@@ -146,6 +147,7 @@ export default async function TermSheetSummaryPage({
 
   const months = monthsInRange(calendar);
   const rows = buildTermSummaryRows(enrolments, calendar, daily);
+  const overview = summarizeClassTerm(rows, months);
 
   return (
     <PageShell>
@@ -176,8 +178,8 @@ export default async function TermSheetSummaryPage({
             Term Sheet Summary
           </h1>
           <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-            Every student&apos;s monthly attendance breakdown for this term, in
-            the same layout as the printed attendance sheet.
+            How the class attended this term, and every student&apos;s days for
+            the whole term or one month at a time.
           </p>
         </div>
         <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
@@ -209,7 +211,13 @@ export default async function TermSheetSummaryPage({
           </CardDescription>
         </Card>
       ) : (
-        <TermSheetSummaryTable rows={rows} months={months} />
+        <TermSheetSummaryView
+          rows={rows}
+          months={months}
+          overview={overview}
+          sectionName={section.name}
+          termLabel={selectedTerm?.label ?? 'term'}
+        />
       )}
     </PageShell>
   );
