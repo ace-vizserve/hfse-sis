@@ -6,6 +6,7 @@ import { type DashboardSearchParams } from '@/lib/dashboard/range';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
+import { auditRowLink } from '@/lib/audit/row-links';
 import {
   AuditLogDataTable,
   type MergedRow,
@@ -204,6 +205,7 @@ export default async function SisAuditLogPage({
         context: r.context ?? {},
         sheet_id: null,
         source: 'audit_log',
+        link: auditRowLink(r, sessionUser.role),
       })
     );
 

@@ -25,7 +25,7 @@ import {
   AuditLogDataTable,
   type MergedRow,
 } from '@/components/audit/audit-log-data-table';
-import { attendanceAuditLink } from '@/lib/audit/attendance-links';
+import { auditRowLink } from '@/lib/audit/row-links';
 
 // ---------------------------------------------------------------------------
 // Explicit allowlist — every action emitted by the attendance module.
@@ -159,11 +159,7 @@ export default async function AttendanceAuditLogPage({
       context,
       sheet_id: null,
       source: 'audit_log' as const,
-      link: attendanceAuditLink({
-        action: r.action,
-        entity_id: r.entity_id,
-        context,
-      }),
+      link: auditRowLink({ ...r, context }, sessionUser.role),
     };
   });
 

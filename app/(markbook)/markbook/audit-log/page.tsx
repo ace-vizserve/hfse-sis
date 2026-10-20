@@ -10,6 +10,7 @@ import {
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
+import { auditRowLink } from '@/lib/audit/row-links';
 import {
   Card,
   CardAction,
@@ -171,6 +172,7 @@ export default async function AuditLogPage({
           | undefined) ??
         (r.entity_type === 'grading_sheet' ? r.entity_id : null),
       source: 'audit_log',
+      link: auditRowLink(r, sessionUser.role),
     })
   );
 

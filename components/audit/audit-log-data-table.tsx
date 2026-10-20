@@ -1,6 +1,6 @@
 'use client';
 
-import { CalendarIcon, Download, ExternalLink, History, X } from 'lucide-react';
+import { ArrowUpRight, CalendarIcon, Download, History, X } from 'lucide-react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
@@ -10,7 +10,7 @@ import { type ColumnDef } from '@tanstack/react-table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Calendar } from '@/components/ui/calendar';
-import { DataTable, RowActionsMenu } from '@/components/ui/data-table';
+import { DataTable } from '@/components/ui/data-table';
 import { DataTablePageNav } from '@/components/ui/data-table/pagination';
 import {
   Select,
@@ -27,7 +27,6 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import {
   Popover,
   PopoverContent,
@@ -195,34 +194,32 @@ const COLUMNS: ColumnDef<MergedRow>[] = [
     enableSorting: false,
   },
   {
+    // The record the entry was about, one click away. Was a "⋯" menu with a
+    // single item behind it, on two of nine logs; it is a visible column now,
+    // filled from `lib/audit/row-links.ts` on every log. A row whose record
+    // cannot be built from what it stores, or that the viewer may not open,
+    // shows nothing — never a link that bounces.
     id: 'open',
-    header: () => <span className="sr-only">Open</span>,
+    header: 'Record',
+    meta: { label: 'Record' },
     cell: ({ row }) => {
-      // `link` is the general form. `sheet_id` is markbook's older shorthand,
-      // still honoured so that page needs no change — it also drives the sheet
-      // chip filter, so it cannot simply be replaced by `link`.
-      const link =
-        row.original.link ??
-        (row.original.sheet_id
-          ? {
-              href: `/markbook/grading/${row.original.sheet_id}`,
-              label: 'Open sheet',
-            }
-          : null);
+      const link = row.original.link;
       if (!link) return null;
       return (
-        <RowActionsMenu>
-          <DropdownMenuItem asChild>
-            <Link href={link.href}>
-              <ExternalLink className="size-3.5" />
-              {link.label}
-            </Link>
-          </DropdownMenuItem>
-        </RowActionsMenu>
+        <Button
+          asChild
+          variant="outline"
+          size="sm"
+          className="h-7 gap-1.5 whitespace-nowrap px-2.5 text-xs"
+        >
+          <Link href={link.href}>
+            <ArrowUpRight className="size-3.5" />
+            {link.label}
+          </Link>
+        </Button>
       );
     },
     enableSorting: false,
-    enableHiding: false,
   },
 ];
 
