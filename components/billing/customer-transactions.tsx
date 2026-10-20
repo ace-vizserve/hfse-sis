@@ -3,7 +3,6 @@
 import * as React from 'react';
 import Link from 'next/link';
 import type { ColumnDef } from '@tanstack/react-table';
-import { useSearchParams } from 'next/navigation';
 import {
   AlertCircle,
   CheckCircle2,
@@ -37,7 +36,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardFooter } from '@/components/ui/card';
+import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
@@ -397,7 +396,6 @@ export function CustomerTransactions({
   initialType?: TypeFilter;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const params = useSearchParams();
   const [date, setDate] = React.useState<DateFilter>('all');
   const [custom, setCustom] = React.useState({ from: '', to: '' });
   const [reset, setReset] = React.useState(0);
@@ -437,38 +435,6 @@ export function CustomerTransactions({
         isDefault: o.value === initialType,
       })),
     [initialType]
-  );
-
-  // QuickBooks' Total line: invoices less payments, of what's listed — the
-  // tab, the Status filter and the Date filter (the search box aside).
-  const tab = (params?.get('billing-txns.status') ?? initialType) as TypeFilter;
-  const states = params?.get('billing-txns.state')?.split(',').filter(Boolean);
-  const listed = React.useMemo(
-    () =>
-      shown.filter(
-        (r) =>
-          matchesType(r, tab) &&
-          (!states?.length || states.includes(STATE_LABEL[r.statusKey]))
-      ),
-    // `states` is a fresh array each render; its joined form is the key.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [shown, tab, states?.join(',')]
-  );
-  const total = React.useMemo(
-    () =>
-      Math.round(
-        listed.reduce(
-          (s, r) =>
-            s +
-            (r.kind === 'payment'
-              ? -r.amount
-              : r.statusKey === 'voided'
-                ? 0
-                : r.amount),
-          0
-        ) * 100
-      ) / 100,
-    [listed]
   );
 
   const openById = React.useMemo(
@@ -896,23 +862,6 @@ export function CustomerTransactions({
           body: 'Pick the All tab, clear Status or Date, or clear the search.',
         }}
       />
-      <Card className="gap-0 py-0">
-        <CardFooter className="justify-between gap-4 px-5 py-4">
-          <div className="space-y-0.5">
-            <p className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-              Total
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Invoices less payments, of the{' '}
-              {listed.length.toLocaleString('en-SG')}{' '}
-              {listed.length === 1 ? 'transaction' : 'transactions'} listed
-            </p>
-          </div>
-          <span className="font-serif text-2xl font-semibold tabular-nums text-foreground">
-            {total < 0 ? `-${formatSgd(-total)}` : formatSgd(total)}
-          </span>
-        </CardFooter>
-      </Card>
       <AlertDialog
         open={!!confirm}
         onOpenChange={(o) => !o && setConfirm(null)}
