@@ -3,6 +3,7 @@
 import * as React from 'react';
 import type { ColumnDef } from '@tanstack/react-table';
 import { UserMinus } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 
 import { AddHouseMembersSheet } from '@/components/house-points/add-house-members-sheet';
 import { AwardTallyBadges } from '@/components/house-points/award-tally-badges';
@@ -28,6 +29,7 @@ import { DataTable } from '@/components/ui/data-table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IdentifierLink } from '@/components/ui/identifier-link';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { usePageParams } from '@/components/ui/data-table/use-page-params';
 import {
   awardSummary,
   type HouseEventLine,
@@ -548,6 +550,23 @@ export function HouseStudentsTable({
 
 type BreakdownTab = 'events' | 'students' | 'members';
 
+/** `?tab=events|students`, else the tab whose table has params in the URL,
+ *  else Members. An unknown `?tab=` falls back the same way. */
+export function breakdownTabFromUrl(
+  params: Pick<URLSearchParams, 'get' | 'forEach'> | null
+): BreakdownTab {
+  if (!params) return 'members';
+  const t = params.get('tab');
+  if (t === 'events' || t === 'students' || t === 'members') return t;
+  let found: BreakdownTab | null = null;
+  params.forEach((_v, k) => {
+    if (found) return;
+    if (k.startsWith('house-events.')) found = 'events';
+    else if (k.startsWith('house-students.')) found = 'students';
+  });
+  return found ?? 'members';
+}
+
 function TabCount({ value }: { value: number }) {
   // Same count chip as DataTable's own status tabs.
   return (
@@ -585,7 +604,20 @@ export function HouseBreakdownTabs({
 }) {
   // Members first and open by default — it carries "Add students", the one
   // action on this page.
-  const [tab, setTab] = React.useState<BreakdownTab>('members');
+  //
+  // The open tab lives in `?tab=` so a refresh, Back or a shared link opens
+  // the same table. A link carrying only a table's own filters
+  // (`?house-events.q=…`) opens that table's tab, or its filter would sit
+  // unseen behind Members.
+  const params = useSearchParams();
+  const setPageParams = usePageParams();
+  const urlTab = breakdownTabFromUrl(params);
+  const [tab, setTab] = React.useState<BreakdownTab>(urlTab);
+  const [seenUrlTab, setSeenUrlTab] = React.useState(urlTab);
+  if (urlTab !== seenUrlTab) {
+    setSeenUrlTab(urlTab);
+    setTab(urlTab);
+  }
   const memberStudentIds = React.useMemo(
     () => members.map((m) => m.studentId),
     [members]
@@ -617,7 +649,12 @@ export function HouseBreakdownTabs({
       <CardContent>
         <Tabs
           value={tab}
-          onValueChange={(v) => setTab(v as BreakdownTab)}
+          onValueChange={(v) => {
+            setTab(v as BreakdownTab);
+            // Written even for Members: another table's params may still be
+            // in the URL, and without `tab` they would pick that tab again.
+            setPageParams({ tab: v });
+          }}
           className="gap-4"
         >
           <TabsList className="max-w-full overflow-x-auto">
