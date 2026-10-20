@@ -18,6 +18,7 @@ import { MetricCard } from '@/components/dashboard/metric-card';
 import { PageShell } from '@/components/ui/page-shell';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import { applyAuditFilters, parseAuditFilters } from '@/lib/audit/filters';
+import { billingAuditRowLink } from '@/lib/billing/audit-links';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -125,6 +126,7 @@ export default async function BillingAuditLogPage({
     context: r.context ?? {},
     sheet_id: null,
     source: 'audit_log' as const,
+    link: billingAuditRowLink(r, sessionUser.role),
   }));
 
   const n = (v: number) => v.toLocaleString('en-SG');
