@@ -240,6 +240,10 @@ export type DataTableProps<TRow> = {
    *  page whose surrounding controls depend on it (e.g. a year picker only
    *  one tab uses, or columns that differ per tab). */
   onStatusTabChange?: (value: string | undefined) => void;
+  /** Told which rows survive the search, facets and status tab — on mount and
+   *  whenever that set changes — for a page whose summary cards must follow
+   *  the table's filters. Every page, not just the current one. */
+  onFilteredRowsChange?: (rows: TRow[]) => void;
   meScope?: MeScopeConfig<TRow>;
 
   toolbarLeading?: ReactNode;

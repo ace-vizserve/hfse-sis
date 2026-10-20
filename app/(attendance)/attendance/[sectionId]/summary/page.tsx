@@ -12,7 +12,6 @@ import { getDailyForSection } from '@/lib/attendance/queries';
 import {
   buildTermSummaryRows,
   monthsInRange,
-  summarizeClassTerm,
   type TermSummaryEnrolment,
 } from '@/lib/attendance/sheet-summary';
 import { loadClassroomAccess } from '@/lib/classroom/queries';
@@ -146,7 +145,6 @@ export default async function TermSheetSummaryPage({
 
   const months = monthsInRange(calendar);
   const rows = buildTermSummaryRows(enrolments, calendar, daily);
-  const overview = summarizeClassTerm(rows, months);
 
   return (
     <PageShell>
@@ -212,7 +210,6 @@ export default async function TermSheetSummaryPage({
         <TermSheetSummaryView
           rows={rows}
           months={months}
-          overview={overview}
           sectionName={section.name}
           termLabel={selectedTerm?.label ?? 'term'}
         />

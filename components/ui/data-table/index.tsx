@@ -134,6 +134,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     facetGroups = [],
     statusTabs,
     onStatusTabChange,
+    onFilteredRowsChange,
     meScope,
     toolbarLeading,
     toolbarFilters,
@@ -456,6 +457,19 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   }, [search]);
 
   const totalRows = table.getFilteredRowModel().rows.length;
+
+  // Tell the page which rows the filters leave. Keyed on the row ids so an
+  // unchanged set does not re-fire; a ref so an inline callback doesn't either.
+  const filteredRows = table.getFilteredRowModel().rows;
+  const filteredKey = filteredRows.map((r) => r.id).join('|');
+  const onFilteredRowsChangeRef = useRef(onFilteredRowsChange);
+  useEffect(() => {
+    onFilteredRowsChangeRef.current = onFilteredRowsChange;
+  });
+  useEffect(() => {
+    onFilteredRowsChangeRef.current?.(filteredRows.map((r) => r.original));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredKey, tabFilteredData]);
   const selectedRows = useMemo(
     () => table.getFilteredSelectedRowModel().rows.map((r) => r.original),
     // `table`'s object identity is stable across renders (TanStack keeps one
