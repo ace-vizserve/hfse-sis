@@ -383,6 +383,17 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   // with the stale state and push it back into the URL.
   const [seenUrlSignature, setSeenUrlSignature] = useState(urlState.signature);
   const skipPageResetRef = useRef(false);
+
+  // `pageSize` seeds the pagination once, so a caller whose page size follows
+  // its data (a server-paginated list showing every loaded row) kept the first
+  // size: the markbook audit log opened on one sheet's 16 rows, and after the
+  // sheet filter was cleared it showed 16 of the 50 rows the server sent.
+  // Follow a changed prop, unless the reader picked a size in the URL.
+  const [seenPageSize, setSeenPageSize] = useState(pageSize);
+  if (pageSize !== seenPageSize) {
+    setSeenPageSize(pageSize);
+    if (!(url.enabled && urlState.read().pageSize)) table.setPageSize(pageSize);
+  }
   if (url.enabled && urlState.signature !== seenUrlSignature) {
     setSeenUrlSignature(urlState.signature);
     if (urlState.isExternal) {
