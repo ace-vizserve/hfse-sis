@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -218,18 +218,31 @@ export function ModuleSidebar({
   );
 
   // Navigating to a page inside a closed group opens that group — you have to
-  // be able to see where you are. Additive, so it never reopens something the
-  // viewer just closed. The functional update returns `prev` unchanged when the
-  // key is already present, so React bails out rather than looping on the
-  // freshly-built `sections` array.
-  useEffect(() => {
+  // be able to see where you are. Additive, and only when the page CHANGES, so
+  // it never reopens something the viewer just closed.
+  //
+  // ⚠ ADJUSTED DURING RENDER WITH A PLAIN VALUE — NOT AN EFFECT WITH A
+  // FUNCTIONAL UPDATE. The old `useEffect` + `setExpanded(prev => prev.has(key)
+  // ? prev : new Set(prev).add(key))` crashed the page with "Maximum update depth
+  // exceeded" (audit log / change requests → "Open sheet"). The navigation is a
+  // transition, so React keeps that update queued and RE-RUNS the updater from
+  // the older base state on every later render; from that base the key is
+  // missing, so each re-run built a NEW Set, `expanded` changed identity, the
+  // sidebar re-rendered its ScrollArea, Radix's ScrollArea root (1.2.x) re-set
+  // its own state from an inline ref callback, and that render re-ran the
+  // updater again — forever. A plain Set value re-applied is the same object,
+  // so React bails out. (The effect also re-ran on every render, because
+  // `sections` is rebuilt each render, which reopened a group the moment the
+  // viewer closed it.)
+  const [openedForHref, setOpenedForHref] = useState(activeHref);
+  if (openedForHref !== activeHref) {
+    setOpenedForHref(activeHref);
     const activeSection = sections.find(
       (s) => isCollapsibleGroup(s) && s.items.some((i) => i.href === activeHref)
     );
-    if (!activeSection?.label) return;
-    const key = groupKey(activeSection.label);
-    setExpanded((prev) => (prev.has(key) ? prev : new Set(prev).add(key)));
-  }, [activeHref, sections]);
+    const key = activeSection?.label ? groupKey(activeSection.label) : null;
+    if (key && !expanded.has(key)) setExpanded(new Set(expanded).add(key));
+  }
 
   // Next set computed outside the updater on purpose: writing the cookie inside
   // one would run twice under StrictMode's double-invoke.
