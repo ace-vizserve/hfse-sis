@@ -24,13 +24,18 @@ const count = (n: number, one: string, many: string) =>
 export default async function BillingSalesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ type?: string; date?: string }>;
+  searchParams: Promise<{
+    type?: string;
+    date?: string;
+    from?: string;
+    to?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
 
-  const [{ type, date }, list] = await Promise.all([
+  const [{ type, date, from, to }, list] = await Promise.all([
     searchParams,
     loadSalesList(createServiceClient()),
   ]);
@@ -92,7 +97,13 @@ export default async function BillingSalesPage({
               />
             </div>
           </div>
-          <SalesTable list={list} qbBase={qbBase} initialDate={date} />
+          <SalesTable
+            list={list}
+            qbBase={qbBase}
+            initialDate={date}
+            initialFrom={from}
+            initialTo={to}
+          />
         </>
       )}
     </PageShell>

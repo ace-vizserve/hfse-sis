@@ -9,11 +9,10 @@ import {
   StatusCell,
   dateRange,
   invoiceRow,
-  type DateFilter,
 } from '@/components/billing/customer-transactions';
 import {
   DateRangeFilter,
-  isDateFilter,
+  useDateFilterParam,
 } from '@/components/billing/date-range-filter';
 import {
   AlertDialog,
@@ -81,18 +80,24 @@ export function InvoicesTable({
   rows,
   qbBase,
   initialDate,
+  initialFrom,
+  initialTo,
 }: {
   rows: InvoiceListRow[];
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
-  /** The Date filter to open on (`?date=`; a stat tile widens it). */
+  /** The Date filter in the URL (`?date=`; a stat tile widens it), and a
+   *  Custom range's `?from=` / `?to=`. Picking a date writes them back. */
   initialDate?: string;
+  initialFrom?: string;
+  initialTo?: string;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const [date, setDate] = React.useState<DateFilter>(
-    isDateFilter(initialDate) ? initialDate : 'last-3-months'
-  );
-  const [custom, setCustom] = React.useState({ from: '', to: '' });
+  const { date, setDate, custom, setCustom } = useDateFilterParam({
+    date: initialDate,
+    from: initialFrom,
+    to: initialTo,
+  });
   const [confirm, setConfirm] = React.useState<InvoiceListRow[] | null>(null);
   const [reset, setReset] = React.useState(0);
   const sendInvoices = useSendInvoices();

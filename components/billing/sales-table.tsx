@@ -10,12 +10,11 @@ import {
   StatusCell,
   dateRange,
   invoiceRow,
-  type DateFilter,
   type TxnRow,
 } from '@/components/billing/customer-transactions';
 import {
   DateRangeFilter,
-  isDateFilter,
+  useDateFilterParam,
 } from '@/components/billing/date-range-filter';
 import {
   InvoiceRowMenu,
@@ -246,18 +245,24 @@ export function SalesTable({
   list,
   qbBase,
   initialDate,
+  initialFrom,
+  initialTo,
 }: {
   list: SalesList;
   /** The QuickBooks web app's address (sandbox or production). */
   qbBase: string;
-  /** The Date filter to open on (`?date=`; a stat tile widens it). */
+  /** The Date filter in the URL (`?date=`; a stat tile widens it), and a
+   *  Custom range's `?from=` / `?to=`. Picking a date writes them back. */
   initialDate?: string;
+  initialFrom?: string;
+  initialTo?: string;
 }) {
   const today = React.useMemo(() => todaySg(), []);
-  const [date, setDate] = React.useState<DateFilter>(
-    isDateFilter(initialDate) ? initialDate : 'last-3-months'
-  );
-  const [custom, setCustom] = React.useState({ from: '', to: '' });
+  const { date, setDate, custom, setCustom } = useDateFilterParam({
+    date: initialDate,
+    from: initialFrom,
+    to: initialTo,
+  });
   const [customer, setCustomer] = React.useState<string | null>(null);
   // The table keeps its Type tab and search in the URL (`billing-sales.*`);
   // the Total under the list reads them from there so it adds up what is

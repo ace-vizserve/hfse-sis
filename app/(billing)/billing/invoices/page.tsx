@@ -22,13 +22,13 @@ import { createServiceClient } from '@/lib/supabase/service';
 export default async function BillingInvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; from?: string; to?: string }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
 
-  const [{ date }, list] = await Promise.all([
+  const [{ date, from, to }, list] = await Promise.all([
     searchParams,
     loadInvoicesList(createServiceClient()),
   ]);
@@ -88,7 +88,13 @@ export default async function BillingInvoicesPage({
               />
             </div>
           </div>
-          <InvoicesTable rows={list.rows} qbBase={qbBase} initialDate={date} />
+          <InvoicesTable
+            rows={list.rows}
+            qbBase={qbBase}
+            initialDate={date}
+            initialFrom={from}
+            initialTo={to}
+          />
         </>
       )}
     </PageShell>
