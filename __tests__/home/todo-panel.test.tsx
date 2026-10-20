@@ -11,19 +11,21 @@ import { TodoPanel } from '@/components/home/todo-panel';
 import type { HomeTodoItem } from '@/lib/home/todos';
 
 describe('TodoPanel', () => {
-  it('renders a review item with its module, text, and a Review link — and no grouping when nothing is urgent', () => {
+  it('leads a counted row with its count, then the text, the module line and a Review link', () => {
     const items: HomeTodoItem[] = [
       {
         id: 'admissions-doc-validation',
         module: 'Admissions',
-        text: '5 documents awaiting validation',
+        text: 'Application documents awaiting validation',
+        count: 5,
         href: '/admissions/document-validation',
         kind: 'review',
       },
     ];
     render(<TodoPanel title="To-do" items={items} />);
+    expect(screen.getByText('5')).toBeInTheDocument();
     expect(
-      screen.getByText('5 documents awaiting validation')
+      screen.getByText('Application documents awaiting validation')
     ).toBeInTheDocument();
     expect(screen.getByText('Admissions')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Review/ })).toHaveAttribute(
@@ -31,7 +33,35 @@ describe('TodoPanel', () => {
       '/admissions/document-validation'
     );
     expect(screen.getByText('1 to review')).toBeInTheDocument();
-    expect(screen.queryByText('Needs a decision')).not.toBeInTheDocument();
+  });
+
+  it('renders rows in the order given', () => {
+    const items: HomeTodoItem[] = [
+      {
+        id: 'a',
+        module: 'P-Files',
+        text: 'Renewal documents awaiting validation',
+        count: 721,
+        href: '/p-files/document-validation',
+        kind: 'review',
+      },
+      {
+        id: 'b',
+        module: 'Records',
+        text: 'Enrolled students without a section',
+        count: 1,
+        href: '/records/unsynced',
+        kind: 'review',
+      },
+    ];
+    render(<TodoPanel title="To-do" items={items} />);
+    const texts = screen
+      .getAllByText(/awaiting validation|without a section/)
+      .map((el) => el.textContent);
+    expect(texts).toEqual([
+      'Renewal documents awaiting validation',
+      'Enrolled students without a section',
+    ]);
   });
 
   it('renders a change-request item with Approve/Reject, the requester folded into the module line, and a day-count numeral', () => {
@@ -77,7 +107,7 @@ describe('TodoPanel', () => {
     expect(screen.getByText('day old')).toBeInTheDocument();
   });
 
-  it('groups into "Needs a decision" vs "In good standing" only when both are present, and flags urgency in the header chip', () => {
+  it('flags urgency in the header chip', () => {
     const items: HomeTodoItem[] = [
       {
         id: 'cr-urgent',
@@ -91,14 +121,13 @@ describe('TodoPanel', () => {
       {
         id: 'admissions-doc-validation',
         module: 'Admissions',
-        text: '3 documents awaiting validation',
+        text: 'Application documents awaiting validation',
+        count: 3,
         href: '/admissions/document-validation',
         kind: 'review',
       },
     ];
     renderWithClient(<TodoPanel title="To-do" items={items} />);
-    expect(screen.getByText('Needs a decision')).toBeInTheDocument();
-    expect(screen.getByText('In good standing')).toBeInTheDocument();
     expect(screen.getByText('1 needs attention')).toBeInTheDocument();
   });
 

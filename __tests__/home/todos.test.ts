@@ -76,7 +76,12 @@ import {
   type Capability,
 } from '@/lib/auth/capabilities';
 import { NO_TEACHING_PROFILE } from '@/lib/sidebar/module-visibility';
-import { getHomeTodos, HOME_TODO_SOURCES } from '@/lib/home/todos';
+import {
+  getHomeTodos,
+  HOME_TODO_SOURCES,
+  sortTodosByCount,
+  type HomeTodoItem,
+} from '@/lib/home/todos';
 
 // The real grants, not a literal — the point of the capability gate is that it
 // agrees with what the destination page will ask, and these are the same
@@ -86,14 +91,16 @@ const CAPS = DEFAULT_ROLE_CAPABILITIES;
 const MARKBOOK_ROW = {
   id: 'markbook-priority',
   module: 'Markbook',
-  text: '6 unscored slots',
+  text: 'Unscored slots',
+  count: 6,
   href: '/markbook/grading',
   kind: 'review',
 };
 const EVALUATION_ROW = {
   id: 'evaluation-priority',
   module: 'Evaluation',
-  text: '4 write-ups still in draft',
+  text: 'Write-ups still in draft',
+  count: 4,
   href: '/evaluation',
   kind: 'review',
 };
@@ -373,5 +380,39 @@ describe('getHomeTodos — step-by-step grade changes', () => {
       CAPS.school_admin
     );
     expect(todos.filter((t) => t.kind === 'change-request')).toHaveLength(1);
+  });
+});
+
+describe('sortTodosByCount', () => {
+  const row = (id: string, count?: number): HomeTodoItem => ({
+    id,
+    module: 'Records',
+    text: id,
+    href: '/',
+    kind: count === undefined ? 'change-request' : 'review',
+    ...(count === undefined ? {} : { count }),
+  });
+
+  it('puts the largest count first and keeps uncounted rows after, in order', () => {
+    const sorted = sortTodosByCount([
+      row('cr-a'),
+      row('small', 2),
+      row('cr-b'),
+      row('big', 721),
+      row('mid', 38),
+    ]);
+    expect(sorted.map((t) => t.id)).toEqual([
+      'big',
+      'mid',
+      'small',
+      'cr-a',
+      'cr-b',
+    ]);
+  });
+
+  it('keeps source order for equal counts', () => {
+    expect(
+      sortTodosByCount([row('a', 3), row('b', 3)]).map((t) => t.id)
+    ).toEqual(['a', 'b']);
   });
 });

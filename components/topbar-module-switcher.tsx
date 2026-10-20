@@ -8,10 +8,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover';
-import { isRouteAllowed, type Role } from '@/lib/auth/roles';
+import type { Role } from '@/lib/auth/roles';
 import {
-  MODULE_ORDER,
   SIDEBAR_REGISTRY,
+  switcherModules,
   type SidebarModule,
 } from '@/lib/sidebar/registry';
 
@@ -31,11 +31,8 @@ export function TopbarModuleSwitcher({
   role,
   hiddenModules = [],
 }: TopbarModuleSwitcherProps) {
-  const allowedModules = MODULE_ORDER.filter(
-    (m) =>
-      isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role) &&
-      !hiddenModules.includes(m)
-  );
+  // Shared with the home page's module link row, so the two always agree.
+  const allowedModules = switcherModules(role, hiddenModules);
   const canSwitch = allowedModules.length > 1;
 
   if (!canSwitch) {

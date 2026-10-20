@@ -19,81 +19,76 @@ function railClass(item: HomeTodoItem): string {
 }
 
 // aging.label is always "N day(s)" (see lib/home/todos.ts::agingFor) — pull
-// the number back out so it can be rendered as its own headline numeral
-// instead of buried in a badge string.
+// the number back out so it can be rendered as its own numeral instead of
+// buried in a badge string.
 function dayCount(label: string): { value: number; unit: string } {
   const value = parseInt(label, 10) || 0;
   return { value, unit: value === 1 ? 'day old' : 'days old' };
 }
 
-function GroupLabel({
-  tone,
-  children,
-}: {
-  tone: 'destructive' | 'mint';
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-1.5 px-4 pt-3.5 pb-1.5">
-      <span
-        className={cn(
-          'size-1.5 rounded-full',
-          tone === 'destructive' ? 'bg-destructive' : 'bg-brand-mint'
-        )}
-        aria-hidden
-      />
-      <span className="font-mono text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
-        {children}
-      </span>
-    </div>
-  );
+/**
+ * The row's leading numeral. A counted row leads with how many are waiting; a
+ * change request is ONE item, so its numeral is its age instead, captioned so
+ * the two are never read as the same kind of number.
+ */
+function LeadNumeral({ item }: { item: HomeTodoItem }) {
+  if (item.count !== undefined) {
+    return (
+      <div className="text-right font-serif text-[28px] leading-none font-bold text-foreground tabular-nums">
+        {item.count}
+      </div>
+    );
+  }
+  if (item.aging) {
+    const { value, unit } = dayCount(item.aging.label);
+    return (
+      <div className="text-right leading-none">
+        <div
+          className={cn(
+            'font-serif text-xl font-bold tabular-nums',
+            item.aging.tone === 'destructive'
+              ? 'text-destructive'
+              : 'text-foreground'
+          )}
+        >
+          {value}
+        </div>
+        <div className="mt-1 font-mono text-[8.5px] font-semibold tracking-wide text-muted-foreground uppercase">
+          {unit}
+        </div>
+      </div>
+    );
+  }
+  return <div aria-hidden />;
 }
 
 function TodoRow({ item }: { item: HomeTodoItem }) {
   return (
-    <div className="relative flex items-stretch gap-3.5 border-b border-border py-3 pr-4 pl-5 last:border-b-0">
+    <div className="relative grid grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-3.5 pr-5 pl-4 last:border-b-0">
       <span
         className={cn('absolute top-0 left-0 h-full w-[3px]', railClass(item))}
         aria-hidden
       />
-      <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5">
-        <span className="truncate font-mono text-[10px] font-semibold tracking-[0.09em] text-muted-foreground uppercase">
+      <LeadNumeral item={item} />
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-sm leading-snug font-semibold text-foreground">
+          {item.text}
+        </span>
+        <span className="truncate text-[12.5px] text-muted-foreground">
           {item.module}
           {item.requestedBy ? ` · ${item.requestedBy}` : ''}
         </span>
-        <span className="font-serif text-[15px] leading-tight font-semibold text-foreground">
-          {item.text}
-        </span>
       </div>
-      <div className="flex shrink-0 flex-col items-end justify-center gap-2">
+      <div className="flex shrink-0 items-center">
         {item.kind === 'change-request' && item.requestId ? (
-          <>
-            {item.aging ? (
-              <div className="text-right leading-none">
-                <div
-                  className={cn(
-                    'font-serif text-xl font-bold tabular-nums',
-                    item.aging.tone === 'destructive'
-                      ? 'text-destructive'
-                      : 'text-foreground'
-                  )}
-                >
-                  {dayCount(item.aging.label).value}
-                </div>
-                <div className="mt-0.5 font-mono text-[8.5px] font-semibold tracking-wide text-muted-foreground uppercase">
-                  {dayCount(item.aging.label).unit}
-                </div>
-              </div>
-            ) : null}
-            <TodoCrActions
-              requestId={item.requestId}
-              approvalRequestId={item.approvalRequestId ?? null}
-            />
-          </>
+          <TodoCrActions
+            requestId={item.requestId}
+            approvalRequestId={item.approvalRequestId ?? null}
+          />
         ) : (
           <Link
             href={item.href}
-            className="inline-flex items-center gap-0.5 text-xs font-semibold text-brand-indigo hover:underline"
+            className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-brand-indigo hover:underline"
           >
             Review
             <ChevronRight className="size-3.5" />
@@ -104,6 +99,10 @@ function TodoRow({ item }: { item: HomeTodoItem }) {
   );
 }
 
+/**
+ * Rows render in the order given — the home page sorts them with
+ * `sortTodosByCount` (largest count first) before passing them in.
+ */
 export function TodoPanel({
   title,
   items,
@@ -112,18 +111,13 @@ export function TodoPanel({
   items: HomeTodoItem[];
 }) {
   const urgent = items.filter(isUrgent);
-  const calm = items.filter((item) => !isUrgent(item));
-  const showGroups = urgent.length > 0 && calm.length > 0;
 
   return (
-    // No flex ratio here — the home page's grid owns the column split now, and
-    // a `flex-[2]` left on a grid item is a second, silent opinion about width.
-    <Card className="overflow-hidden p-0">
+    // No flex ratio here — the home page's grid owns the column split.
+    <Card className="gap-0 overflow-hidden p-0">
       {/* ⚠ THE THREE HOME PANELS SHARE ONE HEADER TREATMENT — size-9 tile,
-          serif 18px, px-5 py-4. They shipped with three different paddings
-          (px-4 py-3, px-4 py-3, px-5 py-3.5) and two tile sizes, which is why
-          the page read as slightly-off rather than obviously wrong: nothing
-          lined up across the row. */}
+          serif 18px, px-5 py-4. Keep them identical, or nothing lines up
+          across the row. */}
       <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
         <div className="flex items-center gap-3">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
@@ -162,17 +156,6 @@ export function TodoPanel({
             </p>
           </div>
         </div>
-      ) : showGroups ? (
-        <>
-          <GroupLabel tone="destructive">Needs a decision</GroupLabel>
-          {urgent.map((item) => (
-            <TodoRow key={item.id} item={item} />
-          ))}
-          <GroupLabel tone="mint">In good standing</GroupLabel>
-          {calm.map((item) => (
-            <TodoRow key={item.id} item={item} />
-          ))}
-        </>
       ) : (
         items.map((item) => <TodoRow key={item.id} item={item} />)
       )}
