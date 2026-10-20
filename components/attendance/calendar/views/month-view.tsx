@@ -23,6 +23,7 @@ import {
 } from '@/components/attendance/calendar/calendar-cell';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { HoverHint } from '@/components/ui/hover-hint';
 import { sgToday } from '@/lib/dates';
 
@@ -231,28 +232,30 @@ export function MonthView({
           {monthLabel}
         </h2>
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={goPrev}
-            disabled={!canPrev}
-            aria-label="Previous month"
-            className="size-8"
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={goNext}
-            disabled={!canNext}
-            aria-label="Next month"
-            className="size-8"
-          >
-            <ChevronRight />
-          </Button>
+          <ButtonGroup aria-label="Change month">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={goPrev}
+              disabled={!canPrev}
+              aria-label="Previous month"
+              className="size-8"
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={goNext}
+              disabled={!canNext}
+              aria-label="Next month"
+              className="size-8"
+            >
+              <ChevronRight />
+            </Button>
+          </ButtonGroup>
           <HoverHint
             hint={
               todayInTerm

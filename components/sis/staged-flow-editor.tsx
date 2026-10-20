@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Card,
   CardAction,
@@ -607,26 +608,28 @@ function StageRow({
       </div>
 
       <div className="flex shrink-0 items-center gap-1">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label={`Move ${stage.label} earlier`}
-          disabled={isFirst || busy}
-          onClick={() => patch({ move: 'up' }, 'Moving…')}
-        >
-          <ArrowUp className="size-3.5" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="size-8"
-          aria-label={`Move ${stage.label} later`}
-          disabled={isLast || busy}
-          onClick={() => patch({ move: 'down' }, 'Moving…')}
-        >
-          <ArrowDown className="size-3.5" />
-        </Button>
+        <ButtonGroup aria-label={`Move ${stage.label}`} className="mr-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label={`Move ${stage.label} earlier`}
+            disabled={isFirst || busy}
+            onClick={() => patch({ move: 'up' }, 'Moving…')}
+          >
+            <ArrowUp className="size-3.5" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="size-8"
+            aria-label={`Move ${stage.label} later`}
+            disabled={isLast || busy}
+            onClick={() => patch({ move: 'down' }, 'Moving…')}
+          >
+            <ArrowDown className="size-3.5" />
+          </Button>
+        </ButtonGroup>
         <Button
           variant="ghost"
           size="icon"
