@@ -2,9 +2,11 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { qboQueryAll } from '@/lib/qbo/client';
+import { pickDefaultDeposit } from '@/lib/billing/deposit-default';
+import { qboQuery, qboQueryAll } from '@/lib/qbo/client';
 
-export type DepositChoice = { id: string; label: string };
+/** isDefault: the one Deposit to starts on (the form falls back to the first). */
+export type DepositChoice = { id: string; label: string; isDefault?: boolean };
 
 /**
  * The accounts Record payment offers: QuickBooks' active Bank accounts, by
@@ -21,9 +23,37 @@ export async function loadDepositChoices(
     'Account',
     "AccountType = 'Bank' AND Active = true"
   );
-  return banks
+  const choices = banks
     .map((b) => ({ id: b.Id, label: b.Name }))
     .sort((a, b) => a.label.localeCompare(b.label));
+  const preset = pickDefaultDeposit(
+    choices,
+    await lastDepositAccountId(service)
+  );
+  return choices.map((c) => ({ ...c, isDefault: c.id === preset?.id }));
+}
+
+/**
+ * The account of the company's most recently entered Payment: what
+ * QuickBooks prefills Deposit to with. Newest by creation time, so editing an
+ * old payment or back-dating one doesn't move it. Never throws: a failed read
+ * just means the form starts on the first bank.
+ */
+async function lastDepositAccountId(
+  service: SupabaseClient
+): Promise<string | null> {
+  try {
+    const [p] = await qboQuery<{ DepositToAccountRef?: { value?: string } }>(
+      service,
+      'Payment',
+      '',
+      'orderby MetaData.CreateTime desc maxresults 1'
+    );
+    return p?.DepositToAccountRef?.value ?? null;
+  } catch (e) {
+    console.error('[billing] last deposit account not read', e);
+    return null;
+  }
 }
 
 export type PaymentMethodChoice = { id: string; label: string };

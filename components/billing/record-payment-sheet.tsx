@@ -83,7 +83,7 @@ export function RecordPaymentSheet({
   studentName: string;
   openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
-  depositAccounts: Array<{ id: string; label: string }>;
+  depositAccounts: Array<{ id: string; label: string; isDefault?: boolean }>;
   /** QuickBooks' payment methods (Cash, Cheque…); the field is optional. */
   paymentMethods?: Array<{ id: string; label: string }>;
   /** 'credit' opens it as Use credit: credit ticked, no new money. */
@@ -108,7 +108,9 @@ export function RecordPaymentSheet({
   // Kept once an attempt was unclear: see shouldRenewAfter.
   const unclearRef = useRef(false);
   const [txnDate, setTxnDate] = useState(() => todaySg());
-  const [account, setAccount] = useState(depositAccounts[0]?.id ?? '');
+  const [account, setAccount] = useState(
+    (depositAccounts.find((a) => a.isDefault) ?? depositAccounts[0])?.id ?? ''
+  );
   const [method, setMethod] = useState('');
   const [reference, setReference] = useState('');
   const [memo, setMemo] = useState('');
