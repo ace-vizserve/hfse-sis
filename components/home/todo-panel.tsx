@@ -35,7 +35,7 @@ function LeadNumeral({ item }: { item: HomeTodoItem }) {
   if (item.count !== undefined) {
     return (
       <div className="text-right font-serif text-[28px] leading-none font-bold text-foreground tabular-nums">
-        {item.count}
+        {item.count.toLocaleString('en-SG')}
       </div>
     );
   }
@@ -64,13 +64,18 @@ function LeadNumeral({ item }: { item: HomeTodoItem }) {
 
 function TodoRow({ item }: { item: HomeTodoItem }) {
   return (
-    <div className="relative grid grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-4 border-b border-border py-3.5 pr-5 pl-4 last:border-b-0">
+    <div className="relative flex items-center gap-4 border-b border-border py-3.5 pr-5 pl-4 last:border-b-0">
       <span
         className={cn('absolute top-0 left-0 h-full w-[3px]', railClass(item))}
         aria-hidden
       />
-      <LeadNumeral item={item} />
-      <div className="flex min-w-0 flex-col gap-0.5">
+      {/* A floor, not a fixed track: short counts still line up on the right,
+          and a four-digit one widens the slot instead of running into the
+          text (a 56px grid column did). */}
+      <div className="min-w-14 shrink-0">
+        <LeadNumeral item={item} />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="text-sm leading-snug font-semibold text-foreground">
           {item.text}
         </span>
