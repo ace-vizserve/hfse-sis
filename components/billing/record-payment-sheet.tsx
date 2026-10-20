@@ -50,6 +50,7 @@ import {
   type PayableInvoice,
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
+import { DEPOSIT_REQUIRED } from '@/lib/billing/payment-body';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -371,7 +372,9 @@ export function RecordPaymentSheet({
             <SheetSection title="Payment details">
               <SheetFields>
                 <Field>
-                  <FieldLabel htmlFor="pay-date">Payment date</FieldLabel>
+                  <FieldLabel htmlFor="pay-date">
+                    Payment date <span className="text-destructive">*</span>
+                  </FieldLabel>
                   <DatePicker
                     id="pay-date"
                     value={txnDate}
@@ -409,7 +412,9 @@ export function RecordPaymentSheet({
                   </Select>
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="pay-account">Deposit to</FieldLabel>
+                  <FieldLabel htmlFor="pay-account">
+                    Deposit to <span className="text-destructive">*</span>
+                  </FieldLabel>
                   <Select
                     value={account}
                     onValueChange={setAccount}
@@ -433,11 +438,13 @@ export function RecordPaymentSheet({
                     </FieldDescription>
                   )}
                   {showErrors && needsAccount && !account && (
-                    <FieldError>Choose the account.</FieldError>
+                    <FieldError>{DEPOSIT_REQUIRED}</FieldError>
                   )}
                 </Field>
                 <Field className="sm:col-span-2">
-                  <FieldLabel htmlFor="pay-amount">Amount received</FieldLabel>
+                  <FieldLabel htmlFor="pay-amount">
+                    Amount received <span className="text-destructive">*</span>
+                  </FieldLabel>
                   <Input
                     id="pay-amount"
                     inputMode="decimal"

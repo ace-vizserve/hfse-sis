@@ -332,7 +332,9 @@ export function CreateInvoiceSheet({
                   />
                 </Field>
                 <Field>
-                  <FieldLabel htmlFor="bill-txn-date">Invoice date</FieldLabel>
+                  <FieldLabel htmlFor="bill-txn-date">
+                    Invoice date <span className="text-destructive">*</span>
+                  </FieldLabel>
                   <DatePicker
                     id="bill-txn-date"
                     value={txnDate}
@@ -383,9 +385,12 @@ export function CreateInvoiceSheet({
                       <TableRow className="bg-muted/40">
                         <TableHead className="w-8">#</TableHead>
                         <TableHead className="w-full">
-                          Product or service
+                          Product or service{' '}
+                          <span className="text-destructive">*</span>
                         </TableHead>
-                        <TableHead className="w-20 text-right">Qty</TableHead>
+                        <TableHead className="w-20 text-right">
+                          Qty <span className="text-destructive">*</span>
+                        </TableHead>
                         <TableHead className="w-28 text-right">Rate</TableHead>
                         <TableHead className="w-28 text-right">
                           Amount
