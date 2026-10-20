@@ -23,6 +23,7 @@ import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { usePageParams } from '@/components/ui/data-table/use-page-params';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { ReviewRow } from '@/lib/billing/review.server';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -90,6 +91,17 @@ export function ReviewBoard({
   const focusGroup = focus
     ? groups.find((g) => g.rows.some((r) => r.studentNumber === focus))?.key
     : undefined;
+  // `?student=` picks the tab, and the table searches for them. The page stays
+  // mounted across visits (cacheComponents), so a later link to another
+  // student must move the tab too; leaving the tab, like clearing the search,
+  // takes `?student=` out of the URL so a refresh does not bring it back.
+  const setPageParams = usePageParams();
+  const [tab, setTab] = React.useState(focusGroup ?? defaultKey);
+  const [seenFocus, setSeenFocus] = React.useState(focus);
+  if (focus !== seenFocus) {
+    setSeenFocus(focus);
+    if (focusGroup) setTab(focusGroup);
+  }
 
   const link = useMutation({
     mutationFn: (v: { studentNumber: string; customerId: string }) =>
@@ -350,7 +362,14 @@ export function ReviewBoard({
 
   return (
     <>
-      <Tabs defaultValue={focusGroup ?? defaultKey} className="gap-4">
+      <Tabs
+        value={tab}
+        onValueChange={(v) => {
+          setTab(v);
+          setPageParams({ student: null });
+        }}
+        className="gap-4"
+      >
         <TabsList>
           {groups.map((g) => (
             <TabsTrigger key={g.key} value={g.key}>
@@ -390,6 +409,7 @@ export function ReviewBoard({
                 initialSearch={
                   focus && g.key === focusGroup ? focus : undefined
                 }
+                initialSearchParam="student"
                 selection={{
                   enabled: true,
                   bulkActions: [
