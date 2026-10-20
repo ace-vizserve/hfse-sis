@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
+import { buildInvoiceBody } from '@/lib/billing/invoice-create-body';
 import type { QbInvoiceFull } from '@/lib/billing/invoice-row';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
 import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
@@ -36,7 +37,10 @@ export type CreateInvoiceInput = {
   }>;
   txnDate: string;
   dueDate: string | null;
+  /** Note to customer (CustomerMemo). */
   memo?: string;
+  /** Memo on statement (PrivateNote); "Created from SIS by …" follows it. */
+  statementMemo?: string;
   docNumber?: string;
   send: boolean;
   /** One id per submit; QuickBooks de-duplicates retries on it. */
@@ -154,18 +158,17 @@ export async function createInvoiceForStudent(
         service,
         'POST',
         '/invoice',
-        {
-          CustomerRef: { value: customer.id },
-          TxnDate: input.txnDate,
-          ...(input.dueDate ? { DueDate: input.dueDate } : {}),
-          Line: lines,
-          ...(input.memo?.trim()
-            ? { CustomerMemo: { value: input.memo.trim() } }
-            : {}),
-          ...(customer.email ? { BillEmail: { Address: customer.email } } : {}),
-          PrivateNote: `Created from SIS by ${staffName}`,
-          ...(docNumber ? { DocNumber: docNumber } : { AutoDocNumber: true }),
-        },
+        buildInvoiceBody({
+          customerId: customer.id,
+          customerEmail: customer.email,
+          txnDate: input.txnDate,
+          dueDate: input.dueDate,
+          lines,
+          memo: input.memo,
+          statementMemo: input.statementMemo,
+          docNumber,
+          staffName,
+        }),
         // QuickBooks returns the original invoice for a repeated requestid,
         // so a retry of the same submit never creates it twice.
         { requestId: input.requestId }
@@ -235,6 +238,8 @@ export async function createInvoiceForStudent(
       doc_number: invoice.DocNumber ?? null,
       total: Number(invoice.TotalAmt),
       customer: customer.name,
+      // Whether a Memo on statement was typed — not its text.
+      statement_memo: !!input.statementMemo?.trim(),
     },
   });
 

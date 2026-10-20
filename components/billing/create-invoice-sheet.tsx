@@ -40,8 +40,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { stageForAccount, type InvoiceLine } from '@/lib/billing/classify';
 import { clearInvoiceCopy, readInvoiceCopy } from '@/lib/billing/invoice-copy';
+import { INVOICE_NOTE_MAX } from '@/lib/billing/invoice-create-body';
 import {
   duplicateTileWarning,
   mapsFromData,
@@ -86,7 +88,8 @@ const emptyLine = (key: number): Line => ({
 // Create invoice: QuickBooks' new-invoice fields (Mr Ace, 2026-10-19: "use
 // QB as reference") in the SIS sheet ("we always use SIS layout") — Customer
 // email, Invoice no., Invoice date, Due date; the product or service lines
-// with Add line / Clear all; Note to customer; the totals; Cancel, Save and
+// with Add line / Clear all; Note to customer; Memo on statement; the
+// totals; Cancel, Save and
 // send, Create invoice. The customer is always the student's linked
 // QuickBooks customer.
 export function CreateInvoiceSheet({
@@ -138,6 +141,7 @@ export function CreateInvoiceSheet({
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [dueDate, setDueDate] = useState('');
   const [memo, setMemo] = useState(copy?.memo ?? '');
+  const [statementMemo, setStatementMemo] = useState('');
   const [docNumber, setDocNumber] = useState('');
   const copiedFrom = copy ? (copy.from ?? 'an invoice') : null;
   // One id per open: a retry of the same submit can't create it twice.
@@ -216,6 +220,9 @@ export function CreateInvoiceSheet({
             txnDate,
             dueDate: dueDate || null,
             ...(memo.trim() ? { memo: memo.trim() } : {}),
+            ...(statementMemo.trim()
+              ? { statementMemo: statementMemo.trim() }
+              : {}),
             ...(docNumber.trim() ? { docNumber: docNumber.trim() } : {}),
             send,
             requestId,
@@ -539,6 +546,27 @@ export function CreateInvoiceSheet({
                 />
                 <FieldDescription>
                   Printed on the invoice the customer receives.
+                </FieldDescription>
+              </Field>
+            </SheetSection>
+
+            {/* QuickBooks' "Memo on statement (hidden)", under Note to
+                customer: the invoice's PrivateNote. */}
+            <SheetSection title="Memo on statement">
+              <Field>
+                <FieldLabel htmlFor="bill-statement-memo" className="sr-only">
+                  Memo on statement
+                </FieldLabel>
+                <Textarea
+                  id="bill-statement-memo"
+                  value={statementMemo}
+                  maxLength={INVOICE_NOTE_MAX}
+                  rows={3}
+                  onChange={(e) => setStatementMemo(e.target.value)}
+                />
+                <FieldDescription>
+                  Not printed on the invoice &mdash; the customer doesn&rsquo;t
+                  see it.
                 </FieldDescription>
               </Field>
             </SheetSection>

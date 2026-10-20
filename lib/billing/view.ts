@@ -100,9 +100,16 @@ export function createdByLabel(r: {
   source: string | null;
   createdByEmail: string | null;
   memo: string | null;
+  /** The Memo on statement — n8n's note may be in either field. */
+  privateNote?: string | null;
 }): string {
   if (r.source === 'created' && r.createdByEmail) return r.createdByEmail;
-  if ((r.memo ?? '').startsWith('Auto-generated via n8n')) return 'n8n';
+  if (
+    [r.memo, r.privateNote].some((m) =>
+      (m ?? '').startsWith('Auto-generated via n8n')
+    )
+  )
+    return 'n8n';
   return 'QuickBooks';
 }
 

@@ -51,7 +51,10 @@ export type InvoiceRowView = {
   tile: string | null;
   ayCode: string | null;
   stageKeys: string[];
+  /** QuickBooks' Memo column: the Memo on statement (PrivateNote). */
   memo: string | null;
+  /** Note to customer (CustomerMemo). */
+  customerMemo: string | null;
   createdBy: string;
 };
 
@@ -107,7 +110,7 @@ const zero: Balances = {
 
 /** The `qbo_invoices` columns the Billing pages read. */
 export const INVOICE_COLS =
-  'qbo_invoice_id, doc_number, txn_date, due_date, total, balance, state, lines, memo, ay_code, stage_keys, source, created_by_email';
+  'qbo_invoice_id, doc_number, txn_date, due_date, total, balance, state, lines, memo, private_note, ay_code, stage_keys, source, created_by_email';
 export type InvRow = {
   qbo_invoice_id: string;
   doc_number: string | null;
@@ -117,7 +120,10 @@ export type InvRow = {
   balance: number;
   state: 'open' | 'paid' | 'voided';
   lines: InvoiceLine[] | null;
+  /** CustomerMemo. */
   memo: string | null;
+  /** PrivateNote. */
+  private_note: string | null;
   ay_code: string | null;
   stage_keys: string[] | null;
   source: string | null;
@@ -147,11 +153,13 @@ export function toInvoiceRow(r: InvRow, today: string): InvoiceRowView {
     tile: tileTag(r.stage_keys ?? [], r.ay_code),
     ayCode: r.ay_code,
     stageKeys: r.stage_keys ?? [],
-    memo: r.memo,
+    memo: r.private_note?.trim() || null,
+    customerMemo: r.memo?.trim() || null,
     createdBy: createdByLabel({
       source: r.source,
       createdByEmail: r.created_by_email,
       memo: r.memo,
+      privateNote: r.private_note,
     }),
   };
 }

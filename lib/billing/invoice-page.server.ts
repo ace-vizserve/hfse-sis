@@ -24,6 +24,7 @@ import {
   type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
+import { sisCreator } from '@/lib/billing/invoice-create-body';
 import {
   addressLines,
   readCustomerProfile,
@@ -71,8 +72,6 @@ export type InvoicePage = {
   older: { id: string; docNumber: string | null } | null;
   newer: { id: string; docNumber: string | null } | null;
 };
-
-const SIS_NOTE = /^Created from SIS by (.+)$/;
 
 export async function loadInvoicePage(
   service: SupabaseClient,
@@ -168,7 +167,7 @@ export async function loadInvoicePage(
     }))
     .filter((p) => p.onThisInvoice > 0);
 
-  const note = detail.d?.privateNote?.match(SIS_NOTE)?.[1] ?? null;
+  const note = sisCreator(detail.d?.privateNote);
   const activity = buildInvoiceActivity({
     createdAt: detail.d?.createdAt ?? row.txnDate,
     createdBy: note ?? row.createdBy,

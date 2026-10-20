@@ -415,13 +415,16 @@ export default async function BillingInvoicePage({
             <div className="grid grid-cols-1 gap-8 border-t border-border px-6 py-5 md:grid-cols-[minmax(0,1fr)_minmax(0,300px)]">
               <dl className="grid content-start gap-4">
                 <Detail label="Note to customer">
-                  {d?.customerMemo ?? page.row.memo ?? <Empty />}
+                  {(d ? d.customerMemo : page.row.customerMemo) ?? <Empty />}
                 </Detail>
                 <Detail label="Internal customer notes (hidden)">
                   {page.profile?.notes ?? <Empty />}
                 </Detail>
                 <Detail label="Memo on statement (hidden)">
-                  {d?.privateNote ?? <Empty />}
+                  {/* As QuickBooks keeps it, line breaks included. */}
+                  <span className="whitespace-pre-line">
+                    {(d ? d.privateNote : page.row.memo) ?? <Empty />}
+                  </span>
                 </Detail>
               </dl>
               <dl className="grid h-fit grid-cols-[1fr_auto] gap-x-8 gap-y-2 text-sm">
