@@ -50,18 +50,50 @@ function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
 }
 
-export async function getCoverHistory(
-  ayCode: string,
-  today: string
-): Promise<CoverHistoryRow[]> {
-  const service = createServiceClient();
-
-  const [auditRes, liveRes, termsRes, names] = await Promise.all([
-    service
+/**
+ * Every relief audit entry. PostgREST silently caps a read at 1000 rows, so
+ * page through it — ordered by (created_at, id) so pages never overlap.
+ */
+const AUDIT_PAGE = 1000;
+async function readAllAudit(
+  service: ReturnType<typeof createServiceClient>
+): Promise<{
+  data: Array<{
+    action: string;
+    created_at: string;
+    context: Record<string, unknown> | null;
+  }> | null;
+  error: { message: string } | null;
+}> {
+  const all: Array<{
+    action: string;
+    created_at: string;
+    context: Record<string, unknown> | null;
+  }> = [];
+  for (let from = 0; ; from += AUDIT_PAGE) {
+    const { data, error } = await service
       .from('audit_log')
       .select('action, created_at, context')
       .in('action', [RELIEF_START, RELIEF_END])
-      .order('created_at', { ascending: true }),
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + AUDIT_PAGE - 1);
+    if (error) return { data: null, error };
+    const page = (data ?? []) as typeof all;
+    all.push(...page);
+    if (page.length < AUDIT_PAGE) break;
+  }
+  return { data: all, error: null };
+}
+
+export async function getCoverHistory(
+  ayCode: string,
+  today: string
+): Promise<{ rows: CoverHistoryRow[]; failed: boolean }> {
+  const service = createServiceClient();
+
+  const [auditRes, liveRes, termsRes, names] = await Promise.all([
+    readAllAudit(service),
     service
       .from('teacher_assignments')
       .select(
@@ -86,7 +118,7 @@ export async function getCoverHistory(
         liveRes.error?.message ??
         termsRes.error?.message
     );
-    return [];
+    return { rows: [], failed: true };
   }
 
   // A year runs from its first term's first day to its last term's last day.
@@ -148,7 +180,7 @@ export async function getCoverHistory(
     today,
     ayRanges: [...byAy.values()],
   }).filter((a) => a.ayCode === ayCode);
-  if (absences.length === 0) return [];
+  if (absences.length === 0) return { rows: [], failed: false };
 
   // Name each class as it is named today, when the class still exists — the
   // bulk log stores subject CODES, so its own labels are only the fallback.
@@ -187,7 +219,7 @@ export async function getCoverHistory(
     classById.set(a.id, { assignmentId: a.id, sectionId: section.id, label });
   }
 
-  return absences.map((a) => ({
+  const rows = absences.map((a) => ({
     key: a.key,
     coveredTeacherId: a.coveredTeacherId,
     coveredTeacherName:
@@ -210,4 +242,5 @@ export async function getCoverHistory(
       )
       .sort((x, y) => x.label.localeCompare(y.label)),
   }));
+  return { rows, failed: false };
 }

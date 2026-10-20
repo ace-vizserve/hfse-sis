@@ -73,7 +73,7 @@ export default async function CoverPage({
   // this list has to match what POST /api/relief/book will accept. Active
   // accounts only (the helper's default): a substitute who cannot sign in
   // cannot take the register.
-  const [board, history, teachers] = await Promise.all([
+  const [board, historyRead, teachers] = await Promise.all([
     getCoverBoard(ayId, today),
     getCoverHistory(historyAy, today),
     getTeacherList(),
@@ -91,7 +91,8 @@ export default async function CoverPage({
 
       <CoverTable
         board={{ active: board.active, scheduled: board.scheduled }}
-        history={history}
+        history={historyRead.rows}
+        historyFailed={historyRead.failed}
         today={today}
         ayCode={historyAy}
         ayOptions={ayCodes}

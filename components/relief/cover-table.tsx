@@ -92,6 +92,12 @@ function outcomeText(o: CoverOutcome | null): string {
   }
 }
 
+/** The day a History row finished: the day it was stopped, else its last day. */
+function outcomeDate(r: CoverRow): string {
+  const o = r.outcome;
+  return (o && 'on' in o ? o.on : r.endedOn) ?? '';
+}
+
 function whenText(r: CoverRow): string {
   if (r.tab === 'active') return daysLeftText(r.endsInDays);
   if (r.tab === 'scheduled') return startsInText(r.startsInDays);
@@ -197,6 +203,7 @@ function ClassesPanel({ classes }: { classes: CoverClass[] }) {
 export function CoverTable({
   board,
   history,
+  historyFailed = false,
   today,
   ayCode,
   ayOptions,
@@ -204,6 +211,8 @@ export function CoverTable({
 }: {
   board: Pick<CoverBoard, 'active' | 'scheduled'>;
   history: CoverHistoryRow[];
+  /** The history read failed — say so rather than "no covers". */
+  historyFailed?: boolean;
   today: string;
   /** The year History lists. */
   ayCode: string;
@@ -307,14 +316,20 @@ export function CoverTable({
         value: 'history',
         label: 'History',
         predicate: (r) => r.tab === 'history',
-        emptyState: {
-          icon: History,
-          title: `No covers in ${ayCode}`,
-          body: 'A cover shows here once its last day has passed, or once somebody ends it.',
-        },
+        emptyState: historyFailed
+          ? {
+              icon: History,
+              title: "Cover history couldn't be loaded",
+              body: 'Refresh to try again.',
+            }
+          : {
+              icon: History,
+              title: `No covers in ${ayCode}`,
+              body: 'A cover shows here once its last day has passed, or once somebody ends it.',
+            },
       },
     ],
-    [defaultTab, ayCode]
+    [defaultTab, ayCode, historyFailed]
   );
 
   const whenLabel =
@@ -382,7 +397,8 @@ export function CoverTable({
             return (r.endsInDays ?? 9999) - (s.endsInDays ?? 9999);
           if (r.tab === 'scheduled')
             return (r.startsInDays ?? 9999) - (s.startsInDays ?? 9999);
-          return whenText(r).localeCompare(whenText(s));
+          // History: by the day it finished, not by the words.
+          return outcomeDate(r).localeCompare(outcomeDate(s));
         },
         cell: ({ row }) => <WhenCell row={row.original} />,
       },
