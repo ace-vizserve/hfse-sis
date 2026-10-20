@@ -147,7 +147,6 @@ export function invoiceRow(i: InvoiceRowView, today: string): TxnRow {
 }
 
 function paymentRow(p: PaymentRowView): TxnRow {
-  const towards = p.appliedTo.map((a) => a.docNumber ?? a.invoiceId);
   const unapplied = p.appliedTo.length === 0;
   return {
     key: `p${p.id}`,
@@ -156,7 +155,7 @@ function paymentRow(p: PaymentRowView): TxnRow {
     date: p.txnDate,
     type: 'Payment',
     no: p.reference,
-    memo: towards.length ? `Paid towards ${towards.join(', ')}` : null,
+    memo: p.memo,
     amount: p.total,
     status: unapplied
       ? 'Unapplied'

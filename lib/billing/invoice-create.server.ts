@@ -8,7 +8,6 @@ import type { QbInvoiceFull } from '@/lib/billing/invoice-row';
 import { sendInvoice } from '@/lib/billing/invoice-send.server';
 import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/maps.server';
-import { staffDisplayName } from '@/lib/billing/staff-name.server';
 import { upsertInvoice } from '@/lib/billing/store.server';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import {
@@ -39,7 +38,7 @@ export type CreateInvoiceInput = {
   dueDate: string | null;
   /** Note to customer (CustomerMemo). */
   memo?: string;
-  /** Memo on statement (PrivateNote); "Created from SIS by …" follows it. */
+  /** Memo on statement (PrivateNote), as typed. */
   statementMemo?: string;
   docNumber?: string;
   send: boolean;
@@ -151,7 +150,6 @@ export async function createInvoiceForStudent(
       input.lines,
       new Map(items.map((i) => [i.Id, i]))
     );
-    const staffName = await staffDisplayName(service, actor);
     writing = true;
     invoice = (
       await qboRequest<{ Invoice: QbInvoiceFull }>(
@@ -167,7 +165,6 @@ export async function createInvoiceForStudent(
           memo: input.memo,
           statementMemo: input.statementMemo,
           docNumber,
-          staffName,
         }),
         // QuickBooks returns the original invoice for a repeated requestid,
         // so a retry of the same submit never creates it twice.

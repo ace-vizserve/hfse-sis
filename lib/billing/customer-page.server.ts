@@ -70,6 +70,8 @@ export type PaymentRowView = {
     docNumber: string | null;
     amount: number;
   }>;
+  /** The payment.s Memo (PrivateNote), as typed; null when blank. */
+  memo: string | null;
   recordedBy: string;
 };
 
@@ -166,7 +168,7 @@ export function toInvoiceRow(r: InvRow, today: string): InvoiceRowView {
 
 /** The `qbo_payments` columns the Billing pages read. */
 export const PAYMENT_COLS =
-  'qbo_payment_id, txn_date, total, unapplied, deposit_account_id, deposit_account_name, reference, applied, created_by_email';
+  'qbo_payment_id, txn_date, total, unapplied, deposit_account_id, deposit_account_name, reference, applied, created_by_email, private_note';
 export type PayRow = {
   qbo_payment_id: string;
   txn_date: string | null;
@@ -177,6 +179,8 @@ export type PayRow = {
   reference: string | null;
   applied: Array<{ invoiceId: string; amount: number }> | null;
   created_by_email: string | null;
+  /** PrivateNote — the payment.s Memo. */
+  private_note: string | null;
 };
 
 export function toPaymentRow(
@@ -200,6 +204,7 @@ export function toPaymentRow(
       amount: Number(a.amount),
     })),
     recordedBy: p.created_by_email ?? 'QuickBooks',
+    memo: p.private_note?.trim() || null,
   };
 }
 

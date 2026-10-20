@@ -104,6 +104,9 @@ export function createdByLabel(r: {
   privateNote?: string | null;
 }): string {
   if (r.source === 'created' && r.createdByEmail) return r.createdByEmail;
+  // Invoices the SIS made before the memo stopped carrying the creator.
+  const old = r.privateNote?.match(/(?:^|\n)Created from SIS by (.+)$/)?.[1];
+  if (old) return old;
   if (
     [r.memo, r.privateNote].some((m) =>
       (m ?? '').startsWith('Auto-generated via n8n')

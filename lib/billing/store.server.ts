@@ -204,6 +204,7 @@ export async function upsertPayment(
     deposit_account_id: args.p.DepositToAccountRef?.value ?? null,
     deposit_account_name: args.p.DepositToAccountRef?.name ?? null,
     reference: args.p.PaymentRefNum ?? null,
+    private_note: args.p.PrivateNote?.trim() || null,
     applied,
     ...(args.createdBy
       ? {

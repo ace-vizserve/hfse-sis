@@ -263,18 +263,15 @@ describe('planAllocatedPayment', () => {
 });
 
 describe('paymentNote', () => {
-  it('is the SIS line alone without a memo', () => {
-    expect(paymentNote('  ', 'Ms A')).toBe('Recorded from SIS by Ms A');
+  it('is nothing without a memo', () => {
+    expect(paymentNote('  ')).toBeUndefined();
+    expect(paymentNote(null)).toBeUndefined();
   });
-  it('puts the memo first and keeps the SIS line', () => {
-    expect(paymentNote('PayNow ref 123', 'Ms A')).toBe(
-      'PayNow ref 123\nRecorded from SIS by Ms A'
-    );
+  it('is exactly what was typed, no SIS line', () => {
+    expect(paymentNote(' PayNow ref 123 ')).toBe('PayNow ref 123');
   });
-  it('cuts the memo, never the SIS line, to fit QuickBooks', () => {
-    const n = paymentNote('x'.repeat(5000), 'Ms A');
-    expect(n.length).toBe(PAYMENT_NOTE_MAX);
-    expect(n.endsWith('\nRecorded from SIS by Ms A')).toBe(true);
+  it('is cut to fit QuickBooks', () => {
+    expect(paymentNote('x'.repeat(5000))?.length).toBe(PAYMENT_NOTE_MAX);
   });
 });
 

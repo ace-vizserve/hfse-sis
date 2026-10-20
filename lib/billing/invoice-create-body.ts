@@ -46,24 +46,21 @@ export const CreateInvoiceBody = z.object({
 });
 
 /**
- * The invoice's Memo on statement: what the person typed, then "Created from
- * SIS by …" on its own line (the invoice page reads who created it from that
- * last line). Within QuickBooks' 4000 characters — the typed part is cut,
- * never the SIS line.
+ * The invoice's Memo on statement: exactly what the person typed (within
+ * QuickBooks' 4000 characters); blank → undefined, so no PrivateNote is sent.
  */
 export function invoiceNote(
-  memo: string | null | undefined,
-  staffName: string
-): string {
-  const sis = `Created from SIS by ${staffName}`;
+  memo: string | null | undefined
+): string | undefined {
   const typed = memo?.trim() ?? '';
-  if (!typed) return sis.slice(0, INVOICE_NOTE_MAX);
-  const room = INVOICE_NOTE_MAX - sis.length - 1;
-  if (room <= 0) return sis.slice(0, INVOICE_NOTE_MAX);
-  return `${typed.slice(0, room).trimEnd()}\n${sis}`;
+  return typed ? typed.slice(0, INVOICE_NOTE_MAX) : undefined;
 }
 
-/** Who created an SIS invoice, from its Memo on statement's last line. */
+/**
+ * Who created an invoice the SIS made BEFORE the memo stopped carrying it,
+ * from its Memo on statement's last line. Newer invoices keep the creator on
+ * the stored row (created_by_email).
+ */
 export function sisCreator(
   privateNote: string | null | undefined
 ): string | null {
@@ -80,8 +77,8 @@ export function buildInvoiceBody(args: {
   memo?: string;
   statementMemo?: string;
   docNumber: string | null;
-  staffName: string;
 }): Record<string, unknown> {
+  const privateNote = invoiceNote(args.statementMemo);
   return {
     CustomerRef: { value: args.customerId },
     TxnDate: args.txnDate,
@@ -91,7 +88,7 @@ export function buildInvoiceBody(args: {
     ...(args.customerEmail
       ? { BillEmail: { Address: args.customerEmail } }
       : {}),
-    PrivateNote: invoiceNote(args.statementMemo, args.staffName),
+    ...(privateNote ? { PrivateNote: privateNote } : {}),
     ...(args.docNumber
       ? { DocNumber: args.docNumber }
       : { AutoDocNumber: true }),

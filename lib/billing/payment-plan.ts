@@ -171,20 +171,14 @@ function fill(
 export const PAYMENT_NOTE_MAX = 4000;
 
 /**
- * The Payment's Memo: what the person typed, then "Recorded from SIS by …"
- * on its own line. Within QuickBooks' 4000 characters — the typed part is
- * cut, never the SIS line.
+ * The Payment's Memo: exactly what the person typed (within QuickBooks' 4000
+ * characters); blank → undefined, so no PrivateNote is sent.
  */
 export function paymentNote(
-  memo: string | null | undefined,
-  staffName: string
-): string {
-  const sis = `Recorded from SIS by ${staffName}`;
+  memo: string | null | undefined
+): string | undefined {
   const typed = memo?.trim() ?? '';
-  if (!typed) return sis.slice(0, PAYMENT_NOTE_MAX);
-  const room = PAYMENT_NOTE_MAX - sis.length - 1;
-  if (room <= 0) return sis.slice(0, PAYMENT_NOTE_MAX);
-  return `${typed.slice(0, room).trimEnd()}\n${sis}`;
+  return typed ? typed.slice(0, PAYMENT_NOTE_MAX) : undefined;
 }
 
 /**

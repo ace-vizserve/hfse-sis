@@ -26,7 +26,6 @@ import {
   type Allocation,
   type PaymentPlan,
 } from '@/lib/billing/payment-plan';
-import { staffDisplayName } from '@/lib/billing/staff-name.server';
 import { upsertPayment } from '@/lib/billing/store.server';
 import { round2 } from '@/lib/billing/view';
 import {
@@ -50,7 +49,7 @@ export type RecordPaymentInput = {
   allocations?: Allocation[];
   /** QuickBooks PaymentMethodRef; optional. */
   paymentMethodId?: string | null;
-  /** The Memo the person typed; "Recorded from SIS by …" follows it. */
+  /** The Memo the person typed. */
   memo?: string;
   useCredit: boolean;
   /** One id per submit; QuickBooks de-duplicates retries on it. */
@@ -334,7 +333,6 @@ export async function recordPayment(
   // 3) The new money.
   let paymentId: string | null = null;
   if (input.amount > 0) {
-    const staffName = await staffDisplayName(service, actor);
     let created: QbPayment;
     try {
       const { Payment } = await qboRequest<{ Payment: QbPayment }>(
@@ -350,8 +348,10 @@ export async function recordPayment(
             ? { PaymentRefNum: input.reference.trim() }
             : {}),
           ...(method ? { PaymentMethodRef: { value: method.id } } : {}),
-          // The typed Memo first, then who recorded it from the SIS.
-          PrivateNote: paymentNote(input.memo, staffName),
+          // Exactly what was typed; no Memo, no PrivateNote.
+          ...(paymentNote(input.memo)
+            ? { PrivateNote: paymentNote(input.memo) }
+            : {}),
           Line: plan.cashApply.map((a) => ({
             Amount: a.amount,
             LinkedTxn: [{ TxnId: a.invoiceId, TxnType: 'Invoice' }],

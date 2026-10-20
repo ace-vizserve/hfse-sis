@@ -142,9 +142,7 @@ function paymentRow(p: PaymentListRow): SalesRow {
     date: p.txnDate,
     type: 'Payment',
     no: p.reference,
-    memo: p.appliedTo.length
-      ? `Paid towards ${p.appliedTo.map((a) => a.docNumber ?? a.invoiceId).join(', ')}`
-      : null,
+    memo: p.memo,
     amount: p.total,
     status: unapplied ? 'Unapplied' : p.unapplied > 0 ? 'Paid' : 'Closed',
     statusKey: unapplied || p.unapplied > 0 ? 'unapplied' : 'closed',

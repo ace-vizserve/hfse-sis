@@ -12,6 +12,8 @@ export type InvoiceCopy = {
     unitPrice: number;
   }>;
   memo: string | null;
+  /** Memo on statement (PrivateNote); Make a copy carries it too. */
+  statementMemo?: string | null;
 };
 
 const key = (studentNumber: string) => `billing:invoice-copy:${studentNumber}`;

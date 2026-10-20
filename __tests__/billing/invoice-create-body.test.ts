@@ -58,15 +58,19 @@ describe('buildInvoiceBody', () => {
     dueDate: null,
     lines: [{ Amount: 100 }],
     docNumber: null,
-    staffName: 'Ms A',
   };
-  it('puts the memo first in PrivateNote, then the SIS line', () => {
-    const b = buildInvoiceBody({ ...args, statementMemo: 'Paid by company' });
-    expect(b.PrivateNote).toBe('Paid by company\nCreated from SIS by Ms A');
+  it('sends exactly the typed memo as PrivateNote, no SIS line', () => {
+    const b = buildInvoiceBody({
+      ...args,
+      statementMemo: '  Paid by company ',
+    });
+    expect(b.PrivateNote).toBe('Paid by company');
   });
-  it('is the SIS line alone without a memo', () => {
-    const b = buildInvoiceBody(args);
-    expect(b.PrivateNote).toBe('Created from SIS by Ms A');
+  it('sends no PrivateNote without a memo', () => {
+    expect('PrivateNote' in buildInvoiceBody(args)).toBe(false);
+    expect(
+      'PrivateNote' in buildInvoiceBody({ ...args, statementMemo: '  ' })
+    ).toBe(false);
   });
   it('keeps Note to customer in CustomerMemo, apart from the memo', () => {
     const b = buildInvoiceBody({
@@ -81,12 +85,12 @@ describe('buildInvoiceBody', () => {
 });
 
 describe('invoiceNote / sisCreator', () => {
-  it('cuts the memo, never the SIS line, to fit QuickBooks', () => {
-    const n = invoiceNote('x'.repeat(5000), 'Ms A');
-    expect(n.length).toBe(INVOICE_NOTE_MAX);
-    expect(n.endsWith('\nCreated from SIS by Ms A')).toBe(true);
+  it('is the typed memo, cut to fit QuickBooks, never a SIS line', () => {
+    expect(invoiceNote('x'.repeat(5000))?.length).toBe(INVOICE_NOTE_MAX);
+    expect(invoiceNote('  ')).toBeUndefined();
+    expect(invoiceNote(null)).toBeUndefined();
   });
-  it('reads who created it with or without a memo', () => {
+  it('still reads who created an old invoice created it with or without a memo', () => {
     expect(sisCreator('Created from SIS by Ms A')).toBe('Ms A');
     expect(sisCreator('Paid by company\nCreated from SIS by Ms A')).toBe(
       'Ms A'

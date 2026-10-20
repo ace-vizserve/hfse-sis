@@ -112,6 +112,24 @@ describe('dates and labels', () => {
       })
     ).toBe('QuickBooks');
   });
+  it('createdByLabel falls back to the old memo line', () => {
+    expect(
+      createdByLabel({
+        source: 'created',
+        createdByEmail: null,
+        memo: null,
+        privateNote: 'Paid by company\nCreated from SIS by Ms A',
+      })
+    ).toBe('Ms A');
+    expect(
+      createdByLabel({
+        source: 'created',
+        createdByEmail: 'luz@hfse.edu.sg',
+        memo: null,
+        privateNote: 'Created from SIS by Ms A',
+      })
+    ).toBe('luz@hfse.edu.sg');
+  });
   it('tileTag', () => {
     expect(tileTag(['fees'], 'AY2027')).toBe('Fees · AY2027');
     expect(tileTag(['registration', 'fees'], 'AY2027')).toBe(

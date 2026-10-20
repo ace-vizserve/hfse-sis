@@ -129,6 +129,7 @@ export default async function BillingInvoicePage({
       ? {
           from: docNo,
           memo: d.customerMemo,
+          statementMemo: d.privateNote,
           lines: d.lines.map((l) => {
             const qty = l.qty && l.qty > 0 ? l.qty : 1;
             return {

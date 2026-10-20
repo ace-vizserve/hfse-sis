@@ -24,7 +24,6 @@ import {
   type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
 import { loadCustomerHistory } from '@/lib/billing/history.server';
-import { sisCreator } from '@/lib/billing/invoice-create-body';
 import {
   addressLines,
   readCustomerProfile,
@@ -167,10 +166,9 @@ export async function loadInvoicePage(
     }))
     .filter((p) => p.onThisInvoice > 0);
 
-  const note = sisCreator(detail.d?.privateNote);
   const activity = buildInvoiceActivity({
     createdAt: detail.d?.createdAt ?? row.txnDate,
-    createdBy: note ?? row.createdBy,
+    createdBy: row.createdBy,
     sends: (
       (sends.data ?? []) as Array<{
         created_at: string;

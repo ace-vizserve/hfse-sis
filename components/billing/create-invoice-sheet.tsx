@@ -141,7 +141,7 @@ export function CreateInvoiceSheet({
   const [txnDate, setTxnDate] = useState(() => todaySg());
   const [dueDate, setDueDate] = useState('');
   const [memo, setMemo] = useState(copy?.memo ?? '');
-  const [statementMemo, setStatementMemo] = useState('');
+  const [statementMemo, setStatementMemo] = useState(copy?.statementMemo ?? '');
   const [docNumber, setDocNumber] = useState('');
   const copiedFrom = copy ? (copy.from ?? 'an invoice') : null;
   // One id per open: a retry of the same submit can't create it twice.
