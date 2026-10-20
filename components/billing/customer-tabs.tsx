@@ -315,6 +315,10 @@ export function CustomerTabs({
 }) {
   return (
     <Tabs
+      // Keyed on `?tab=`: the page stays mounted across visits
+      // (cacheComponents), so a later link with another tab ("View payment",
+      // Customer Details) must open it — defaultValue alone kept the first.
+      key={initialTab}
       defaultValue={initialTab === 'details' ? 'details' : 'transactions'}
       className="gap-4"
     >
