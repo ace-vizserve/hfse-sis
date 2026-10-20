@@ -206,8 +206,21 @@ export default async function AdmissionsApplicationsPage({
                 Pre-enrolment scope only. Applicants below have at least one
                 document slot in the{' '}
                 <strong>{CHASE_STATUS_LABEL[chaseStatus]}</strong> state. Open
-                the application to chase from the Documents tab, or clear the
-                filter to see every application in flight.
+                the application to chase from the Documents tab, or{' '}
+                {/* The only way out of the `?status=` view on this page —
+                    the sentence used to promise a clear with nothing to
+                    click. Keeps the year. */}
+                <Link
+                  href={
+                    ayParam
+                      ? `/admissions/applications?ay=${encodeURIComponent(ayParam)}`
+                      : '/admissions/applications'
+                  }
+                  className="font-medium text-primary underline-offset-4 hover:underline"
+                >
+                  clear the filter
+                </Link>{' '}
+                to see every application in flight.
               </>
             ) : (
               <>
