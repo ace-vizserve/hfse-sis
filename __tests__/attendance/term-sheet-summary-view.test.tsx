@@ -90,7 +90,7 @@ describe('TermSheetSummaryView', () => {
     expect(screen.getByText('Class attendance rate')).toBeInTheDocument();
     expect(screen.getByText('Below the at-risk line')).toBeInTheDocument();
     expect(screen.getByText('Perfect attendance')).toBeInTheDocument();
-    expect(screen.getByText('Absences this term')).toBeInTheDocument();
+    expect(screen.getByText('Absences')).toBeInTheDocument();
 
     const bodyRows = screen
       .getAllByRole('row')
