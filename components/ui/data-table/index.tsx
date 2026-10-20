@@ -64,6 +64,7 @@ import { filterRows } from './filter-rows';
 import { FilterChip } from './filter-chip';
 import { DataTablePagination } from './pagination';
 import type { DataTableProps, FacetConfig } from './types';
+import { usePageParams } from './use-page-params';
 import { useUrlState } from './use-url-state';
 
 export { RowActionsMenu } from './row-actions-menu';
@@ -133,6 +134,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     searchKeys,
     searchPlaceholder = 'Search…',
     initialSearch,
+    initialSearchParam,
     facets = [],
     facetGroups = [],
     statusTabs,
@@ -172,8 +174,15 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
 
   const defaultStatus =
     statusTabs?.find((t) => t.isDefault)?.value ?? statusTabs?.[0]?.value;
-  const [statusTab, setStatusTab] = useState<string | undefined>(
-    initial.status ?? defaultStatus
+  // A `?status=` that names no tab (a typo, a renamed tab, an old link) opens
+  // the default tab: otherwise no tab is selected and every row shows under
+  // none of them. The write effect then drops the unknown value from the URL.
+  const knownStatus = (s: string | undefined) =>
+    s !== undefined && statusTabs && !statusTabs.some((t) => t.value === s)
+      ? defaultStatus
+      : (s ?? defaultStatus);
+  const [statusTab, setStatusTab] = useState<string | undefined>(() =>
+    knownStatus(initial.status)
   );
   // Tell the page which tab is open. A ref, so an inline callback does not
   // re-fire this on every render.
@@ -190,6 +199,22 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const [search, setSearch] = useState<string>(
     initial.search ?? initialSearch ?? ''
   );
+  // A search seeded from a page param (`initialSearchParam`) follows that
+  // param: a later visit with a new value re-seeds it (the page stays mounted
+  // under `cacheComponents`, so useState alone would keep the first value),
+  // and changing or clearing the search takes the param out of the URL so a
+  // refresh or Back can't put it back.
+  const setPageParams = usePageParams();
+  const [seenInitialSearch, setSeenInitialSearch] = useState(initialSearch);
+  if (initialSearchParam && initialSearch !== seenInitialSearch) {
+    setSeenInitialSearch(initialSearch);
+    if (initialSearch) setSearch(initialSearch);
+  }
+  useEffect(() => {
+    if (!initialSearchParam || !initialSearch) return;
+    if (search === initialSearch) return;
+    setPageParams({ [initialSearchParam]: null });
+  }, [search, initialSearch, initialSearchParam, setPageParams]);
   const [sorting, setSorting] = useState<SortingState>(initialSort);
   const [columnVisibility, setColumnVisibility] = useState<VisibilityState>(
     initialColumnVisibility
@@ -362,7 +387,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     setSeenUrlSignature(urlState.signature);
     if (urlState.isExternal) {
       const next = urlState.read();
-      setStatusTab(next.status ?? defaultStatus);
+      setStatusTab(knownStatus(next.status));
       setMineActive(Boolean(next.mine && meScopeEnabled));
       setSearch(next.search ?? '');
       setColumnFilters(
