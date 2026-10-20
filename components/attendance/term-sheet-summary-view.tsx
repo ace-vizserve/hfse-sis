@@ -464,10 +464,21 @@ export function TermSheetSummaryView({
           bulkActions: [
             {
               key: 'export-excel',
-              label: 'Export selected',
+              label: 'Export selected to Excel',
               icon: FileSpreadsheet,
               onTrigger: (selected) =>
                 download(excelUrl(selected.map((r) => r.id))),
+            },
+            {
+              key: 'export-csv',
+              label: 'Export selected to CSV',
+              icon: FileText,
+              onTrigger: (selected) =>
+                exportCsv(
+                  [...selected].sort(byIndex),
+                  CSV_COLUMNS,
+                  csvName(studentsWord(selected.length))
+                ),
             },
           ],
         }}
