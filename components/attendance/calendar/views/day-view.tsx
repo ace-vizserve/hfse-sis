@@ -19,6 +19,7 @@ import { useMemo } from 'react';
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import type { CalendarIndex } from '@/components/attendance/calendar/hooks/use-calendar-index';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { HoverHint } from '@/components/ui/hover-hint';
 import { Separator } from '@/components/ui/separator';
@@ -166,28 +167,30 @@ export function DayView({
           {heading}
         </h2>
         <div className="flex items-center gap-1.5">
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={goPrev}
-            disabled={!canPrev}
-            aria-label="Previous day"
-            className="size-8"
-          >
-            <ChevronLeft />
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            size="icon"
-            onClick={goNext}
-            disabled={!canNext}
-            aria-label="Next day"
-            className="size-8"
-          >
-            <ChevronRight />
-          </Button>
+          <ButtonGroup aria-label="Change day">
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={goPrev}
+              disabled={!canPrev}
+              aria-label="Previous day"
+              className="size-8"
+            >
+              <ChevronLeft />
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              onClick={goNext}
+              disabled={!canNext}
+              aria-label="Next day"
+              className="size-8"
+            >
+              <ChevronRight />
+            </Button>
+          </ButtonGroup>
           <HoverHint
             hint="Jump to today (clamped to the academic year)"
             focusable={false}
