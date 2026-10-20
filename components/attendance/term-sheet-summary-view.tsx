@@ -5,6 +5,10 @@ import type { Column, ColumnDef } from '@tanstack/react-table';
 import {
   CalendarCheck,
   CalendarX,
+  ChevronDown,
+  Download,
+  FileSpreadsheet,
+  FileText,
   Percent,
   TriangleAlert,
   Users,
@@ -12,8 +16,16 @@ import {
 
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { exportCsv } from '@/components/ui/data-table/csv';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Select,
   SelectContent,
@@ -215,14 +227,46 @@ function slug(s: string): string {
     .replace(/^-|-$/g, '');
 }
 
+// The CSV carries the table's own columns, in the table's order.
+const CSV_COLUMNS: Array<{
+  header: string;
+  accessor: (r: PeriodRow) => string | number | null;
+}> = [
+  { header: '#', accessor: (r) => r.indexNumber },
+  { header: 'Student', accessor: (r) => r.studentName },
+  { header: 'Status', accessor: (r) => r.status },
+  { header: 'Days', accessor: (r) => r.days },
+  { header: 'Present', accessor: (r) => r.present },
+  { header: 'Late', accessor: (r) => r.late },
+  { header: 'Excused', accessor: (r) => r.excused },
+  { header: 'Absent', accessor: (r) => r.absent },
+  { header: 'Rate', accessor: (r) => r.rate ?? null },
+];
+
+const byIndex = (a: PeriodRow, b: PeriodRow) => a.indexNumber - b.indexNumber;
+
+/** Start a file download from a GET URL (the route sets the file name). */
+function download(href: string) {
+  const a = document.createElement('a');
+  a.href = href;
+  a.download = '';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 export function TermSheetSummaryView({
   rows,
   months,
+  sectionId,
+  termId,
   sectionName,
   termLabel,
 }: {
   rows: TermSummaryRow[];
   months: { month: string; label: string }[];
+  sectionId: string;
+  termId: string;
   sectionName: string;
   termLabel: string;
 }) {
@@ -286,6 +330,69 @@ export function TermSheetSummaryView({
   const whoActive = `of ${cards.active} active ${
     cards.active === 1 ? 'student' : 'students'
   }${cards.filtered ? ' shown' : ''}`;
+
+  // ── Export ── one menu for what's shown / the whole year, plus "Export
+  // selected" in the footer bar for ticked students. Excel comes from the
+  // register export route, narrowed to the period and students; CSV is the
+  // table's own rows, built here.
+  const shown = shownRows ?? tableRows;
+  const excelUrl = (studentIds: string[] | null) => {
+    const q = new URLSearchParams({ term_id: termId });
+    if (period !== WHOLE_TERM) q.set('month', period);
+    if (studentIds) q.set('students', studentIds.join(','));
+    return `/api/attendance/${sectionId}/export?${q.toString()}`;
+  };
+  const csvName = (suffix?: string) =>
+    `term-sheet-summary-${slug(sectionName)}-${slug(termLabel)}-${slug(periodLabel)}${
+      suffix ? `-${suffix}` : ''
+    }.csv`;
+  // The whole class needs no student list; only a narrowed table sends one.
+  const shownIds =
+    shown.length === tableRows.length ? null : shown.map((r) => r.id);
+  const studentsWord = (n: number) =>
+    `${n}-${n === 1 ? 'student' : 'students'}`;
+
+  const exportMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="h-9 gap-1.5">
+          <Download className="size-3.5" />
+          Export
+          <ChevronDown className="size-3.5" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          disabled={shown.length === 0}
+          onSelect={() => download(excelUrl(shownIds))}
+        >
+          <FileSpreadsheet className="size-4" />
+          Excel — what&apos;s shown
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() =>
+            download(`/api/attendance/${sectionId}/export?scope=year`)
+          }
+        >
+          <FileSpreadsheet className="size-4" />
+          Excel — whole year
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          disabled={shown.length === 0}
+          onSelect={() =>
+            exportCsv(
+              [...shown].sort(byIndex),
+              CSV_COLUMNS,
+              csvName(shownIds ? studentsWord(shown.length) : undefined)
+            )
+          }
+        >
+          <FileText className="size-4" />
+          CSV — what&apos;s shown
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <div className="space-y-6">
@@ -351,20 +458,33 @@ export function TermSheetSummaryView({
             </SelectContent>
           </Select>
         }
-        initialSort={[{ id: 'index', desc: false }]}
-        initialColumnVisibility={{ status: false, band: false }}
-        pageSize={50}
-        csv={{
-          filename: `term-sheet-summary-${slug(sectionName)}-${slug(termLabel)}-${slug(periodLabel)}.csv`,
-          extraColumns: [
+        toolbarTrailing={exportMenu}
+        selection={{
+          enabled: true,
+          bulkActions: [
             {
-              id: 'statusExport',
-              header: 'Status',
-              accessor: (r) => r.status,
-              defaultChecked: true,
+              key: 'export-excel',
+              label: 'Export selected to Excel',
+              icon: FileSpreadsheet,
+              onTrigger: (selected) =>
+                download(excelUrl(selected.map((r) => r.id))),
+            },
+            {
+              key: 'export-csv',
+              label: 'Export selected to CSV',
+              icon: FileText,
+              onTrigger: (selected) =>
+                exportCsv(
+                  [...selected].sort(byIndex),
+                  CSV_COLUMNS,
+                  csvName(studentsWord(selected.length))
+                ),
             },
           ],
         }}
+        initialSort={[{ id: 'index', desc: false }]}
+        initialColumnVisibility={{ status: false, band: false }}
+        pageSize={50}
         emptyState={{
           icon: Users,
           title: 'No students enrolled in this section yet.',

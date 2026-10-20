@@ -16,6 +16,10 @@ import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import {
   buildAttendanceSheetWorkbook,
+  buildAttendanceYearWorkbook,
+  narrowSheetExport,
+  SheetExportScopeError,
+  sheetExportFilename,
   type AttendanceSheetExportInput,
 } from '@/lib/attendance/sheet-export';
 import type { AttendanceStatus, DayType } from '@/lib/schemas/attendance';
@@ -33,16 +37,69 @@ import type { AttendanceStatus, DayType } from '@/lib/schemas/attendance';
 //   teacher in the section is not enough: this streams the whole register.
 // - every other teacher → 403
 
+//
+// Optional narrowing (none given = the whole-term register, as before):
+// - month=YYYY-MM     only that month's columns and summary; must be a month
+//                     of the term
+// - students=<id,…>   only those section_students rows; each must be in this
+//                     section
+// - scope=year        every term of the section's AY, one worksheet per term;
+//                     term_id not needed, month not allowed
+
+const MAX_STUDENT_IDS = 200;
+const ID_RE = /^[0-9a-f-]{36}$/i;
+
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ sectionId: string }> }
 ) {
   const { sectionId } = await params;
-  const termId = new URL(req.url).searchParams.get('term_id');
-  if (!termId)
+  const sp = new URL(req.url).searchParams;
+  const termId = sp.get('term_id');
+  const scope = sp.get('scope');
+  const month = sp.get('month');
+  const studentsParam = sp.get('students');
+
+  if (scope !== null && scope !== 'year') {
+    return new Response('?scope= can only be "year".', { status: 400 });
+  }
+  const yearScope = scope === 'year';
+  if (!yearScope && !termId)
     return new Response('Missing required ?term_id= parameter.', {
       status: 400,
     });
+  if (month !== null) {
+    if (yearScope) {
+      return new Response('?month= cannot be used with ?scope=year.', {
+        status: 400,
+      });
+    }
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+      return new Response('?month= must be YYYY-MM.', { status: 400 });
+    }
+  }
+  let studentIds: string[] | null = null;
+  if (studentsParam !== null) {
+    studentIds = [
+      ...new Set(
+        studentsParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean)
+      ),
+    ];
+    if (studentIds.length === 0) {
+      return new Response('?students= is empty.', { status: 400 });
+    }
+    if (studentIds.length > MAX_STUDENT_IDS) {
+      return new Response('Too many students in ?students=.', { status: 400 });
+    }
+    if (!studentIds.every((id) => ID_RE.test(id))) {
+      return new Response('?students= holds an id that is not valid.', {
+        status: 400,
+      });
+    }
+  }
 
   // Gate: registrar+ OR the section's form adviser.
   // requireRole returns { user: { id, email }, role } on success,
@@ -85,7 +142,9 @@ export async function GET(
   // Section + level + AY.
   const { data: sectionRaw } = await service
     .from('sections')
-    .select('id, name, academic_year_id, schedule, level:levels(code, label)')
+    .select(
+      'id, name, academic_year_id, schedule, level:levels(code, label), academic_year:academic_years(ay_code)'
+    )
     .eq('id', sectionId)
     .maybeSingle();
   if (!sectionRaw) return new Response('Section not found.', { status: 404 });
@@ -98,27 +157,48 @@ export async function GET(
       | { code: string; label: string }
       | { code: string; label: string }[]
       | null;
+    academic_year: { ay_code: string } | { ay_code: string }[] | null;
   };
   const level = Array.isArray(section.level) ? section.level[0] : section.level;
+  const ay = Array.isArray(section.academic_year)
+    ? section.academic_year[0]
+    : section.academic_year;
 
-  // Term.
-  const { data: termRaw } = await service
-    .from('terms')
-    .select('id, label, term_number, start_date, end_date')
-    .eq('id', termId)
-    .maybeSingle();
-  if (!termRaw) return new Response('Term not found.', { status: 404 });
-  const term = termRaw as {
+  // Term(s). One term normally; every term of the section's AY for the year.
+  type TermRow = {
     id: string;
     label: string;
     term_number: number;
     start_date: string | null;
     end_date: string | null;
   };
-  if (!term.start_date || !term.end_date) {
-    return new Response('Term has no start/end dates configured.', {
-      status: 400,
-    });
+  type DatedTerm = TermRow & { start_date: string; end_date: string };
+  let terms: DatedTerm[];
+  if (yearScope) {
+    const { data: termsRaw } = await service
+      .from('terms')
+      .select('id, label, term_number, start_date, end_date')
+      .eq('academic_year_id', section.academic_year_id)
+      .order('term_number', { ascending: true });
+    // A term with no dates has no register to print; it is left out rather
+    // than failing the whole year.
+    terms = ((termsRaw ?? []) as TermRow[]).filter((t): t is DatedTerm =>
+      Boolean(t.start_date && t.end_date)
+    );
+  } else {
+    const { data: termRaw } = await service
+      .from('terms')
+      .select('id, label, term_number, start_date, end_date')
+      .eq('id', termId!)
+      .maybeSingle();
+    if (!termRaw) return new Response('Term not found.', { status: 404 });
+    const term = termRaw as TermRow;
+    if (!term.start_date || !term.end_date) {
+      return new Response('Term has no start/end dates configured.', {
+        status: 400,
+      });
+    }
+    terms = [term as DatedTerm];
   }
 
   // Form adviser name.
@@ -149,45 +229,6 @@ export async function GET(
     .eq('section_id', sectionId)
     .order('index_number');
 
-  // Calendar + events + daily in parallel.
-  const levelType = levelTypeForAudienceLookup(level?.code ?? null);
-  const [calendar, events, daily] = await Promise.all([
-    getDedupedSchoolCalendarForTerm(termId, levelType),
-    getCalendarEventsForSection(
-      termId,
-      (level?.code as LevelCode | null) ?? null,
-      sectionId
-    ),
-    getDailyForSection(sectionId, termId),
-  ]);
-
-  const calendarByDate = new Map<
-    string,
-    { dayType: DayType; label: string | null }
-  >();
-  for (const c of calendar)
-    calendarByDate.set(c.date, { dayType: c.dayType, label: c.label });
-
-  // Group daily marks by section_student_id.
-  //
-  // FILTERED HERE rather than widening this map to `AttendanceStatus | null`:
-  // a cleared day (status null, migration 134) is NOT MARKED, and leaving its
-  // date out of the map is precisely how the sheet already renders a day
-  // nobody ever marked. `AttendanceSheetExportInput.marksByDate` is read as
-  // `marksByDate.get(iso) ?? null`, a null prints an empty cell, and
-  // `summarizeMarks` skips null when totalling — so an absent key and a null
-  // value take the identical path. Excluding the row keeps ONE representation
-  // of "no mark" instead of two that have to agree.
-  const marksByEnrolment = new Map<string, Map<string, AttendanceStatus>>();
-  for (const d of daily) {
-    if (!isMarked(d)) continue;
-    const m =
-      marksByEnrolment.get(d.sectionStudentId) ??
-      new Map<string, AttendanceStatus>();
-    m.set(d.date, d.status);
-    marksByEnrolment.set(d.sectionStudentId, m);
-  }
-
   type EnrRow = {
     id: string;
     index_number: number;
@@ -211,48 +252,114 @@ export async function GET(
       | null;
   };
 
-  const students: AttendanceSheetExportInput['students'] = (
-    (enrolmentsRaw ?? []) as EnrRow[]
-  ).map((e) => {
-    const s = Array.isArray(e.student) ? e.student[0] : e.student;
-    const fullName = s
-      ? `${s.last_name}, ${s.first_name}${s.middle_name ? ' ' + s.middle_name : ''}`
-      : '';
+  const enrolments = (enrolmentsRaw ?? []) as EnrRow[];
+  const levelType = levelTypeForAudienceLookup(level?.code ?? null);
+
+  // One term's sheet input: calendar + events + daily in parallel.
+  async function termInput(
+    term: DatedTerm
+  ): Promise<AttendanceSheetExportInput> {
+    const [calendar, events, daily] = await Promise.all([
+      getDedupedSchoolCalendarForTerm(term.id, levelType),
+      getCalendarEventsForSection(
+        term.id,
+        (level?.code as LevelCode | null) ?? null,
+        sectionId
+      ),
+      getDailyForSection(sectionId, term.id),
+    ]);
+
+    const calendarByDate = new Map<
+      string,
+      { dayType: DayType; label: string | null }
+    >();
+    for (const c of calendar)
+      calendarByDate.set(c.date, { dayType: c.dayType, label: c.label });
+
+    // Group daily marks by section_student_id.
+    //
+    // FILTERED HERE rather than widening this map to `AttendanceStatus | null`:
+    // a cleared day (status null, migration 134) is NOT MARKED, and leaving its
+    // date out of the map is precisely how the sheet already renders a day
+    // nobody ever marked. `AttendanceSheetExportInput.marksByDate` is read as
+    // `marksByDate.get(iso) ?? null`, a null prints an empty cell, and
+    // `summarizeMarks` skips null when totalling — so an absent key and a null
+    // value take the identical path. Excluding the row keeps ONE representation
+    // of "no mark" instead of two that have to agree.
+    const marksByEnrolment = new Map<string, Map<string, AttendanceStatus>>();
+    for (const d of daily) {
+      if (!isMarked(d)) continue;
+      const m =
+        marksByEnrolment.get(d.sectionStudentId) ??
+        new Map<string, AttendanceStatus>();
+      m.set(d.date, d.status);
+      marksByEnrolment.set(d.sectionStudentId, m);
+    }
+
+    const students: AttendanceSheetExportInput['students'] = enrolments.map(
+      (e) => {
+        const s = Array.isArray(e.student) ? e.student[0] : e.student;
+        const fullName = s
+          ? `${s.last_name}, ${s.first_name}${s.middle_name ? ' ' + s.middle_name : ''}`
+          : '';
+        return {
+          enrolmentId: e.id,
+          indexNumber: e.index_number,
+          fullName,
+          busCare:
+            [e.bus_no, e.classroom_officer_role].filter(Boolean).join(' / ') ||
+            null,
+          withdrawn: e.enrollment_status === 'withdrawn',
+          enrollmentDate: e.enrollment_date ?? null,
+          marksByDate: marksByEnrolment.get(e.id) ?? new Map(),
+        };
+      }
+    );
+
     return {
-      indexNumber: e.index_number,
-      fullName,
-      busCare:
-        [e.bus_no, e.classroom_officer_role].filter(Boolean).join(' / ') ||
-        null,
-      withdrawn: e.enrollment_status === 'withdrawn',
-      enrollmentDate: e.enrollment_date ?? null,
-      marksByDate: marksByEnrolment.get(e.id) ?? new Map(),
+      schoolName: 'HFSE INTERNATIONAL SCHOOL',
+      // A year workbook holds one tab per term, so the tab is the term there.
+      sheetName: yearScope ? term.label : section.name,
+      term: {
+        label: term.label,
+        termNumber: term.term_number,
+        startDate: term.start_date,
+        endDate: term.end_date,
+      },
+      courseLabel: level?.label ?? '',
+      sectionName: section.name,
+      formAdviser,
+      scheduleLabel: section.schedule
+        ? SCHEDULE_LABELS[section.schedule as Schedule]
+        : null,
+      calendarByDate,
+      events,
+      students,
     };
-  });
+  }
 
-  const input: AttendanceSheetExportInput = {
-    schoolName: 'HFSE INTERNATIONAL SCHOOL',
-    sheetName: section.name,
-    term: {
-      label: term.label,
-      termNumber: term.term_number,
-      startDate: term.start_date,
-      endDate: term.end_date,
-    },
-    courseLabel: level?.label ?? '',
+  let inputs: AttendanceSheetExportInput[];
+  try {
+    inputs = (await Promise.all(terms.map(termInput))).map((input) =>
+      narrowSheetExport(input, { month, studentIds })
+    );
+  } catch (err) {
+    if (err instanceof SheetExportScopeError) {
+      return new Response(err.message, { status: 400 });
+    }
+    throw err;
+  }
+
+  const buffer = yearScope
+    ? buildAttendanceYearWorkbook(inputs)
+    : buildAttendanceSheetWorkbook(inputs[0]);
+  const filename = sheetExportFilename({
+    levelCode: level?.code ?? null,
     sectionName: section.name,
-    formAdviser,
-    scheduleLabel: section.schedule
-      ? SCHEDULE_LABELS[section.schedule as Schedule]
-      : null,
-    calendarByDate,
-    events,
-    students,
-  };
-
-  const buffer = buildAttendanceSheetWorkbook(input);
-  const sanitize = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '_');
-  const filename = `Attendance_${sanitize(section.name)}_${sanitize(term.label)}.xlsx`;
+    periodLabel: yearScope ? (ay?.ay_code ?? 'Year') : terms[0].label,
+    month,
+    studentCount: studentIds ? studentIds.length : null,
+  });
   return new Response(new Uint8Array(buffer), {
     status: 200,
     headers: {

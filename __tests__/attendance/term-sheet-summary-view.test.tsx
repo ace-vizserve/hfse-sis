@@ -83,6 +83,8 @@ describe('TermSheetSummaryView', () => {
       <TermSheetSummaryView
         rows={rows}
         months={months}
+        sectionId="s1"
+        termId="t1"
         sectionName="P1 Ruby"
         termLabel="Term 1"
       />
@@ -100,5 +102,24 @@ describe('TermSheetSummaryView', () => {
     expect(within(bodyRows[1]).getByText('Withdrawn')).toBeInTheDocument();
     // Whole term by default: Luke's rate is 100%.
     expect(within(bodyRows[0]).getByText('100%')).toBeInTheDocument();
+  });
+
+  it('has one Export control and no built-in Export CSV button', () => {
+    render(
+      <TermSheetSummaryView
+        rows={rows}
+        months={months}
+        sectionId="s1"
+        termId="t1"
+        sectionName="P1 Ruby"
+        termLabel="Term 1"
+      />
+    );
+    expect(screen.getAllByRole('button', { name: /export/i })).toHaveLength(1);
+    expect(
+      screen.getByRole('button', { name: /^export$/i })
+    ).toBeInTheDocument();
+    // The tick column is on, for "Export selected".
+    expect(screen.getAllByRole('checkbox').length).toBeGreaterThan(0);
   });
 });
