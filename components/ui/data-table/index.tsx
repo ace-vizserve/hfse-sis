@@ -416,19 +416,28 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   // re-renders (a url-state navigation) no longer reset the page, but a genuine
   // filter change does. Skips the initial mount so a deep-linked ?page= survives,
   // and a URL re-seed (above) for the same reason.
-  const didMountRef = useRef(false);
+  //
+  // Keyed on the filter VALUES, not a "has mounted" flag: React re-runs mount
+  // effects (Strict Mode, an <Activity> page shown again), and the flag read
+  // that second run as a filter change — so ?page=2 on arrival or a refresh
+  // always snapped back to page 1 and the URL lost it.
+  const filterKey = JSON.stringify([
+    search,
+    statusTab ?? null,
+    mineActive,
+    columnFilters,
+  ]);
+  const lastFilterKeyRef = useRef(filterKey);
   useEffect(() => {
-    if (!didMountRef.current) {
-      didMountRef.current = true;
-      return;
-    }
+    if (lastFilterKeyRef.current === filterKey) return;
+    lastFilterKeyRef.current = filterKey;
     if (skipPageResetRef.current) {
       skipPageResetRef.current = false;
       return;
     }
     table.setPageIndex(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, statusTab, mineActive, columnFilters]);
+  }, [filterKey]);
   // A re-seed that changed none of those deps never reaches the effect above;
   // clear the flag after every commit so it can't swallow a later reset.
   useEffect(() => {
@@ -502,6 +511,16 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   }, [search]);
 
   const totalRows = table.getFilteredRowModel().rows.length;
+
+  // A ?page= past the end (an old link, rows since removed) opens the last
+  // page rather than an empty "Page 999 of 9". Only once there are rows, so a
+  // table still loading its data keeps the deep-linked page.
+  const pageCount = table.getPageCount();
+  const pageIndexNow = table.getState().pagination.pageIndex;
+  useEffect(() => {
+    if (hidePagination || totalRows === 0 || pageCount < 1) return;
+    if (pageIndexNow >= pageCount) table.setPageIndex(pageCount - 1);
+  }, [hidePagination, totalRows, pageCount, pageIndexNow, table]);
 
   // Tell the page which rows the filters leave. Keyed on the row ids so an
   // unchanged set does not re-fire; a ref so an inline callback doesn't either.
