@@ -78,6 +78,9 @@ const CLASSIFIED: Record<string, Category[]> = {
   // ── monitoring ──────────────────────────────────────────────────────────
   'lib/relief/upcoming.ts': ['monitoring'],
   'lib/relief/cover-board.ts': ['monitoring'],
+  // Names the classes in Cover history — a record of who covered, never who
+  // may act or whose name prints.
+  'lib/relief/cover-history.ts': ['monitoring'],
 
   // ── plumbing ────────────────────────────────────────────────────────────
   'lib/auth/teacher-assignments.ts': ['plumbing'],
