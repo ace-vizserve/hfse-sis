@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
@@ -307,12 +308,15 @@ export function ProductsView({
           const r = row.original;
           const service = r.type === 'Service';
           return (
-            <div className="flex items-center justify-end">
+            <ButtonGroup
+              className="ml-auto"
+              aria-label={`Actions for ${r.name}`}
+            >
               {service ? (
                 <Button
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto px-1"
+                  className="h-7 px-2.5 text-xs"
                   onClick={() => openSheet(r.id)}
                 >
                   Edit
@@ -320,9 +324,9 @@ export function ProductsView({
               ) : (
                 <Button
                   asChild
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto px-1"
+                  className="h-7 px-2.5 text-xs"
                 >
                   <a href={qbItems} target="_blank" rel="noreferrer">
                     Edit
@@ -352,7 +356,7 @@ export function ProductsView({
                   )}
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
+            </ButtonGroup>
           );
         },
       },

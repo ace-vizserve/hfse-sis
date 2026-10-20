@@ -12,6 +12,7 @@ import Link from 'next/link';
 import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Card,
   CardAction,
@@ -239,41 +240,43 @@ function ReportRow({
           {r.blurb ?? 'Opens in QuickBooks.'}
         </span>
       </div>
-      <Button
-        variant="outline"
-        size="icon"
-        className="size-8"
-        aria-pressed={starred}
-        aria-label={starred ? `Unfavorite ${r.title}` : `Favorite ${r.title}`}
-        onClick={onStar}
-      >
-        <Star
-          className={cn(
-            'size-4',
-            starred ? 'fill-primary text-primary' : 'text-muted-foreground'
-          )}
-        />
-      </Button>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="outline"
-            size="icon"
-            className="size-8"
-            aria-label={`More for ${r.title}`}
-          >
-            <ChevronDown className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem asChild>
-            <a href={qbReportsUrl} target="_blank" rel="noreferrer">
-              Open in QuickBooks
-              <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
-            </a>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      <ButtonGroup aria-label={`Actions for ${r.title}`}>
+        <Button
+          variant="outline"
+          size="icon"
+          className="size-8"
+          aria-pressed={starred}
+          aria-label={starred ? `Unfavorite ${r.title}` : `Favorite ${r.title}`}
+          onClick={onStar}
+        >
+          <Star
+            className={cn(
+              'size-4',
+              starred ? 'fill-primary text-primary' : 'text-muted-foreground'
+            )}
+          />
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              aria-label={`More for ${r.title}`}
+            >
+              <ChevronDown className="size-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuItem asChild>
+              <a href={qbReportsUrl} target="_blank" rel="noreferrer">
+                Open in QuickBooks
+                <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+              </a>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </ButtonGroup>
     </li>
   );
 }

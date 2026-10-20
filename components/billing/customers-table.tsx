@@ -17,6 +17,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
@@ -185,8 +186,13 @@ function buildColumns(
       enableSorting: false,
       enableHiding: false,
       cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-1">
-          <Button asChild variant="link" size="sm" className="h-auto p-0">
+        <ButtonGroup className="ml-auto" aria-label="Customer actions">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="h-7 px-2.5 text-xs"
+          >
             {row.original.openBalance > 0 ? (
               <Link href={customerHref(row.original, 'payment')}>
                 Receive payment
@@ -202,7 +208,7 @@ function buildColumns(
             qbBase={qbBase}
             onRemind={() => onRemind(row.original)}
           />
-        </div>
+        </ButtonGroup>
       ),
     },
     // Off by default.

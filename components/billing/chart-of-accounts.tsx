@@ -17,6 +17,10 @@ import { BillingPageHeader } from '@/components/billing/billing-page-header';
 import { PrintIcon } from '@/components/billing/toolbar-icons';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Button } from '@/components/ui/button';
+import {
+  ButtonGroup,
+  ButtonGroupSeparator,
+} from '@/components/ui/button-group';
 import { DataTable } from '@/components/ui/data-table';
 import {
   DropdownMenu,
@@ -211,19 +215,16 @@ export function ChartOfAccounts({
                 Run report
               </Link>
             </Button>
-            <div className="flex">
-              <Button asChild className="rounded-r-none">
+            <ButtonGroup aria-label="New account">
+              <Button asChild>
                 <a href={qbCoa} target="_blank" rel="noreferrer">
                   New account
                 </a>
               </Button>
+              <ButtonGroupSeparator className="bg-primary-foreground/30" />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button
-                    size="icon"
-                    className="rounded-l-none border-l border-primary-foreground/20"
-                    aria-label="More ways to add accounts"
-                  >
+                  <Button size="icon" aria-label="More ways to add accounts">
                     <ChevronDown className="size-4" />
                   </Button>
                 </DropdownMenuTrigger>
@@ -231,7 +232,7 @@ export function ChartOfAccounts({
                   <QbMenuLink href={qbCoa}>Import</QbMenuLink>
                 </DropdownMenuContent>
               </DropdownMenu>
-            </div>
+            </ButtonGroup>
           </>
         }
       />
@@ -320,18 +321,11 @@ function AccountAction({
   qbBase: string;
 }) {
   const qbCoa = `${qbBase}/app/chartofaccounts`;
-  const linkClass =
-    'text-sm font-medium text-primary underline-offset-4 hover:underline';
   const main =
     r.action === 'report' ? (
-      <Link href={reportHref(r.id)} className={linkClass}>
-        Run report
-      </Link>
+      <Link href={reportHref(r.id)}>Run report</Link>
     ) : r.type === 'Bank' ? (
-      <Link
-        href={`/billing/banks?account=${encodeURIComponent(r.id)}`}
-        className={linkClass}
-      >
+      <Link href={`/billing/banks?account=${encodeURIComponent(r.id)}`}>
         View register
       </Link>
     ) : (
@@ -339,15 +333,24 @@ function AccountAction({
         href={`${qbBase}/app/register?accountId=${encodeURIComponent(r.id)}`}
         target="_blank"
         rel="noreferrer"
-        className={cn(linkClass, 'inline-flex items-center gap-1')}
       >
         View register
         <ExternalLink className="size-3" />
       </a>
     );
   return (
-    <span className="inline-flex items-center gap-2 whitespace-nowrap">
-      {main}
+    <ButtonGroup
+      className="whitespace-nowrap"
+      aria-label={`Actions for ${r.fullName}`}
+    >
+      <Button
+        asChild
+        variant="outline"
+        size="sm"
+        className="h-7 gap-1 px-2.5 text-xs"
+      >
+        {main}
+      </Button>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -377,6 +380,6 @@ function AccountAction({
           <QbMenuLink href={qbCoa}>Make inactive (reduces usage)</QbMenuLink>
         </DropdownMenuContent>
       </DropdownMenu>
-    </span>
+    </ButtonGroup>
   );
 }

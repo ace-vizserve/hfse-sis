@@ -6,6 +6,10 @@ import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import {
+  ButtonGroup,
+  ButtonGroupSeparator,
+} from '@/components/ui/button-group';
+import {
   Command,
   CommandEmpty,
   CommandInput,
@@ -38,12 +42,10 @@ export function CreateInvoicePicker({
   const router = useRouter();
   const [open, setOpen] = useState(false);
   return (
-    <div className="flex">
+    <ButtonGroup aria-label="Create invoice">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button className={importHref ? 'rounded-r-none' : undefined}>
-            Create invoice
-          </Button>
+          <Button>Create invoice</Button>
         </PopoverTrigger>
         <PopoverContent align="end" className="w-80 p-0">
           <Command>
@@ -72,13 +74,12 @@ export function CreateInvoicePicker({
         </PopoverContent>
       </Popover>
       {importHref && (
+        <ButtonGroupSeparator className="bg-primary-foreground/30" />
+      )}
+      {importHref && (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              className="rounded-l-none border-l border-primary-foreground/20"
-              aria-label="More ways to create invoices"
-            >
+            <Button size="icon" aria-label="More ways to create invoices">
               <ChevronDown className="size-4" />
             </Button>
           </DropdownMenuTrigger>
@@ -91,6 +92,6 @@ export function CreateInvoicePicker({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-    </div>
+    </ButtonGroup>
   );
 }

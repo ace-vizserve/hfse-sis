@@ -36,6 +36,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
@@ -576,9 +577,9 @@ export function CustomerTransactions({
                 {qbBase && (
                   <Button
                     asChild
-                    variant="link"
+                    variant="outline"
                     size="sm"
-                    className="h-auto p-0"
+                    className="h-7 px-2.5 text-xs"
                   >
                     <a
                       href={`${qbBase}/app/recvpayment?txnId=${encodeURIComponent(r.id)}`}
@@ -594,16 +595,23 @@ export function CustomerTransactions({
           const open = openById.get(r.id);
           const inv = r.invoice!;
           return (
-            <div className="flex items-center justify-end gap-2 whitespace-nowrap">
-              <Button asChild variant="link" size="sm" className="h-auto p-0">
+            <ButtonGroup
+              className="ml-auto whitespace-nowrap"
+              aria-label="Invoice actions"
+            >
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
                 <Link href={invoiceHref(r.id)}>View</Link>
               </Button>
-              <span className="h-4 w-px bg-border" aria-hidden />
               {open && canRecord ? (
                 <Button
-                  variant="link"
+                  variant="outline"
                   size="sm"
-                  className="h-auto p-0"
+                  className="h-7 px-2.5 text-xs"
                   onClick={() =>
                     setPaying((p) => ({
                       key: (p?.key ?? 0) + 1,
@@ -614,7 +622,12 @@ export function CustomerTransactions({
                   Receive payment
                 </Button>
               ) : (
-                <Button asChild variant="link" size="sm" className="h-auto p-0">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                >
                   <a
                     href={invoicePdfHref(r.id)}
                     target="_blank"
@@ -642,7 +655,7 @@ export function CustomerTransactions({
                 }
                 showCustomer={false}
               />
-            </div>
+            </ButtonGroup>
           );
         },
       },

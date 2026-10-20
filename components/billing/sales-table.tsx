@@ -37,6 +37,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Card,
   CardAction,
@@ -451,7 +452,12 @@ export function SalesTable({
           if (r.kind === 'payment')
             return (
               <div className="flex justify-end">
-                <Button asChild variant="link" size="sm" className="h-auto p-0">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                >
                   <a
                     href={`${qbBase}/app/recvpayment?txnId=${encodeURIComponent(r.id)}`}
                     target="_blank"
@@ -466,12 +472,21 @@ export function SalesTable({
           if (!inv) return null;
           const owing = inv.state !== 'voided' && inv.balance > 0;
           return (
-            <div className="flex items-center justify-end gap-2">
-              <Button asChild variant="link" size="sm" className="h-auto p-0">
+            <ButtonGroup className="ml-auto" aria-label="Invoice actions">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
                 <Link href={invoicePageHref(inv)}>View</Link>
               </Button>
-              <span className="h-4 w-px bg-border" aria-hidden />
-              <Button asChild variant="link" size="sm" className="h-auto p-0">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
                 {owing ? (
                   <Link href={receivePaymentHref(inv)}>Receive payment</Link>
                 ) : (
@@ -489,7 +504,7 @@ export function SalesTable({
                 qbUrl={`${qbBase}/app/invoice?txnId=${encodeURIComponent(inv.id)}`}
                 onSend={() => setConfirm([inv])}
               />
-            </div>
+            </ButtonGroup>
           );
         },
       },

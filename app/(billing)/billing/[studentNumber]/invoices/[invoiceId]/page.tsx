@@ -21,6 +21,7 @@ import { RefreshButton } from '@/components/billing/refresh-button';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   Card,
   CardContent,
@@ -158,10 +159,7 @@ export default async function BillingInvoicePage({
         actions={
           <>
             <RefreshButton label="Refresh" />
-            <nav
-              aria-label="This customer's other invoices"
-              className="flex items-center gap-1"
-            >
+            <ButtonGroup aria-label="This customer's other invoices">
               <Stepper
                 href={page.older ? invHref(page.older.id) : null}
                 label={`Older invoice${page.older?.docNumber ? ` ${page.older.docNumber}` : ''}`}
@@ -174,7 +172,7 @@ export default async function BillingInvoicePage({
               >
                 <ChevronRight className="size-4" />
               </Stepper>
-            </nav>
+            </ButtonGroup>
             <InvoiceScreenActions
               invoiceId={page.row.id}
               docNumber={docNo}

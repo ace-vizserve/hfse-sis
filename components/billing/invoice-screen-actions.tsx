@@ -22,6 +22,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -201,13 +202,12 @@ export function InvoiceScreenActions({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <div className="flex items-center">
+      <ButtonGroup aria-label="Send">
         <SendInvoiceButton
           qboInvoiceId={invoiceId}
           label={sendLabel}
           disabledReason={sendBlocked}
           variant="outline"
-          className="rounded-r-none"
         />
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -215,7 +215,6 @@ export function InvoiceScreenActions({
               variant="outline"
               size="icon"
               aria-label="More ways to send"
-              className="-ml-px rounded-l-none"
             >
               <ChevronDown className="size-4" />
             </Button>
@@ -233,7 +232,7 @@ export function InvoiceScreenActions({
             <QbLink href={qbUrl}>Share invoice link</QbLink>
           </DropdownMenuContent>
         </DropdownMenu>
-      </div>
+      </ButtonGroup>
 
       <AlertDialog open={confirmVoid} onOpenChange={setConfirmVoid}>
         <AlertDialogContent>

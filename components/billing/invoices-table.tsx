@@ -30,6 +30,7 @@ import {
   receivePaymentHref,
 } from '@/components/billing/invoice-row-menu';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import { DataTableEmptyState } from '@/components/ui/data-table/empty-state';
@@ -196,12 +197,21 @@ export function InvoicesTable({
           const r = row.original;
           const owing = r.state !== 'voided' && r.balance > 0;
           return (
-            <div className="flex items-center justify-end gap-2">
-              <Button asChild variant="link" size="sm" className="h-auto p-0">
+            <ButtonGroup className="ml-auto" aria-label="Invoice actions">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
                 <Link href={invoiceHref(r)}>View</Link>
               </Button>
-              <span className="h-4 w-px bg-border" aria-hidden />
-              <Button asChild variant="link" size="sm" className="h-auto p-0">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="h-7 px-2.5 text-xs"
+              >
                 {owing ? (
                   <Link href={receivePaymentHref(r)}>Receive payment</Link>
                 ) : (
@@ -219,7 +229,7 @@ export function InvoicesTable({
                 qbUrl={`${qbBase}/app/invoice?txnId=${encodeURIComponent(r.id)}`}
                 onSend={() => setConfirm([r])}
               />
-            </div>
+            </ButtonGroup>
           );
         },
       },
