@@ -2,7 +2,6 @@ import { ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
-import { ExportSheetButton } from '@/components/attendance/export-sheet-button';
 import { TermSheetSummaryView } from '@/components/attendance/term-sheet-summary-view';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardDescription } from '@/components/ui/card';
@@ -182,7 +181,6 @@ export default async function TermSheetSummaryPage({
             the whole term or one month at a time.
           </p>
         </div>
-        <ExportSheetButton sectionId={sectionId} termId={selectedTermId} />
       </header>
 
       {terms.length > 1 && (
