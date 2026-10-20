@@ -148,10 +148,10 @@ export function BookCoverDialog({
         <HoverHint hint="Change the dates or the stand-in" focusable={false}>
           <DialogTrigger asChild>
             <Button
-              variant="ghost"
+              variant="outline"
               size="icon"
               aria-label={`Change the cover for ${editing.coveredTeacherName}`}
-              className="text-muted-foreground hover:text-foreground"
+              className="size-8"
             >
               <Pencil className="size-3.5" />
             </Button>

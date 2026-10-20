@@ -85,14 +85,14 @@ export function EndCoverButton({
       >
         <AlertDialogTrigger asChild>
           <Button
-            variant="ghost"
+            variant="outline"
             size="icon"
             aria-label={
               scheduled
                 ? `Cancel the cover booked for ${coveredTeacherName}`
                 : `End ${reliefTeacherName} covering for ${coveredTeacherName}`
             }
-            className="text-muted-foreground hover:text-foreground"
+            className="size-8"
           >
             <X className="size-4" />
           </Button>

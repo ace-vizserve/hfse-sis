@@ -23,7 +23,8 @@ import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
 // window along with the name (see the PATCH route), leaving the audit log as the
 // only record. That is the right trade — a stale name on a class nobody covers
 // would be worse — but it means this group is "ran its course", not "all
-// history". The page says so rather than implying a completeness it lacks.
+// history". The Cover page's History tab does not use it for that reason: it
+// reads the audit log instead (`lib/relief/cover-history.ts`).
 
 export type CoverClass = {
   assignmentId: string;

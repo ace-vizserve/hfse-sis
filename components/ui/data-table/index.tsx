@@ -136,6 +136,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     facets = [],
     facetGroups = [],
     statusTabs,
+    onStatusTabChange,
     meScope,
     toolbarLeading,
     toolbarFilters,
@@ -173,6 +174,15 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   const [statusTab, setStatusTab] = useState<string | undefined>(
     initial.status ?? defaultStatus
   );
+  // Tell the page which tab is open. A ref, so an inline callback does not
+  // re-fire this on every render.
+  const onStatusTabChangeRef = useRef(onStatusTabChange);
+  useEffect(() => {
+    onStatusTabChangeRef.current = onStatusTabChange;
+  });
+  useEffect(() => {
+    onStatusTabChangeRef.current?.(statusTab);
+  }, [statusTab]);
   const [mineActive, setMineActive] = useState<boolean>(
     Boolean(initial.mine && meScopeEnabled)
   );
@@ -560,7 +570,14 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     return chips;
   }, [columnFilters, allFacets, search, mineActive, meScope]);
 
-  const showEmpty = data.length === 0;
+  // A tab with its own empty state says so when it has no rows at all,
+  // instead of the "No matches" that suggests a filter hid something.
+  const activeTabEmptyState = statusTabs?.find(
+    (t) => t.value === statusTab
+  )?.emptyState;
+  const showEmpty =
+    data.length === 0 ||
+    (Boolean(activeTabEmptyState) && tabFilteredData.length === 0);
   const showFilteredEmpty = !showEmpty && totalRows === 0;
 
   // Shared per-facet render body — used both for top-level `facets` (inline
@@ -863,7 +880,8 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
                 <TableRow>
                   <TableCell colSpan={tableColumns.length} className="p-0">
                     <DataTableEmptyState
-                      {...(emptyState ?? { title: 'No data.' })}
+                      {...(activeTabEmptyState ??
+                        emptyState ?? { title: 'No data.' })}
                     />
                   </TableCell>
                 </TableRow>

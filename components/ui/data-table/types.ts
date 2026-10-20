@@ -33,6 +33,13 @@ export type StatusTabConfig<TRow> = {
   predicate: (row: TRow) => boolean;
   isDefault?: boolean;
   countOverride?: (rows: TRow[]) => number;
+  /**
+   * What the table says when THIS tab has no rows at all (before search or
+   * facets). Without it an empty tab falls to `emptyFilteredState` ("No
+   * matches"), which reads as if a filter hid something when the tab is
+   * simply empty. Omit for no change.
+   */
+  emptyState?: EmptyStateConfig;
 };
 
 export type MeScopeConfig<TRow> = {
@@ -232,6 +239,10 @@ export type DataTableProps<TRow> = {
    *  behavior (defaults to `[]`, renders nothing extra). */
   facetGroups?: FacetGroupConfig[];
   statusTabs?: Array<StatusTabConfig<TRow>>;
+  /** Told which status tab is open — on mount and on every change — for a
+   *  page whose surrounding controls depend on it (e.g. a year picker only
+   *  one tab uses, or columns that differ per tab). */
+  onStatusTabChange?: (value: string | undefined) => void;
   meScope?: MeScopeConfig<TRow>;
 
   toolbarLeading?: ReactNode;

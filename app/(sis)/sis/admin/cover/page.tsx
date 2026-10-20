@@ -1,13 +1,16 @@
 import { redirect } from 'next/navigation';
 
-import { CoverBoardView } from '@/components/relief/cover-board-view';
+import { BookCoverDialog } from '@/components/relief/book-cover-dialog';
+import { CoverTable } from '@/components/relief/cover-table';
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
+import { listAyCodes } from '@/lib/academic-year';
 import { can } from '@/lib/auth/capabilities';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { getTeacherList } from '@/lib/auth/staff-list';
 import { sgToday } from '@/lib/dates';
-import { getCoverBoard, RECENTLY_ENDED_DAYS } from '@/lib/relief/cover-board';
+import { getCoverBoard } from '@/lib/relief/cover-board';
+import { getCoverHistory } from '@/lib/relief/cover-history';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 // Who is standing in, who is booked to, and what is about to run out.
@@ -28,7 +31,16 @@ import { createClient, getSessionUser } from '@/lib/supabase/server';
 // framing is NOT built here: this is the administrator's view, gated on
 // `staff.manage_relief`. The substitute's own half is the "You're covering"
 // panel on home and the module indexes.
-export default async function CoverPage() {
+//
+// One table, three tabs (2026-10-20): Active now and Scheduled are today's live
+// board; History is every finished absence in the year picked with `?ay=`,
+// rebuilt from the audit log (`lib/relief/cover-history.ts`), because stopping
+// a cover early wipes its window from the row.
+export default async function CoverPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ ay?: string }>;
+}) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
 
@@ -40,36 +52,50 @@ export default async function CoverPage() {
   if (!can(capabilities, 'staff.manage_relief')) redirect('/sis');
 
   const supabase = await createClient();
-  const { data: ayRow } = await supabase
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .single();
-  const ayId = (ayRow as { id: string } | null)?.id;
-  if (!ayId) redirect('/sis');
+  const [{ data: ayRow }, ayCodes, { ay: ayParam }] = await Promise.all([
+    supabase
+      .from('academic_years')
+      .select('id, ay_code')
+      .eq('is_current', true)
+      .single(),
+    listAyCodes(supabase),
+    searchParams,
+  ]);
+  const current = ayRow as { id: string; ay_code: string } | null;
+  if (!current?.id) redirect('/sis');
+  const ayId = current.id;
+  // History's year. Anything not a real year falls back to the current one.
+  const historyAy =
+    ayParam && ayCodes.includes(ayParam) ? ayParam : current.ay_code;
 
   const today = sgToday();
   // Anyone on staff can stand in, not only accounts whose role is `teacher` —
   // this list has to match what POST /api/relief/book will accept. Active
   // accounts only (the helper's default): a substitute who cannot sign in
   // cannot take the register.
-  const [board, teachers] = await Promise.all([
+  const [board, history, teachers] = await Promise.all([
     getCoverBoard(ayId, today),
+    getCoverHistory(historyAy, today),
     getTeacherList(),
   ]);
+  const teacherOptions = teachers.map((t) => ({ id: t.id, name: t.name }));
 
   return (
     <PageShell>
       <SisPageHeader
         group="Staffing"
         title="Cover."
-        description="Who is standing in for an absent teacher, who is booked to, and what is about to run out. Booking one covers every class that teacher holds — they stay the name on report cards and mark sheets throughout."
+        description="Who is standing in for an absent teacher, who is booked to, and how each past cover ended. Booking one covers every class that teacher holds — they stay the name on report cards and mark sheets throughout."
+        actions={<BookCoverDialog teacherOptions={teacherOptions} />}
       />
 
-      <CoverBoardView
-        board={board}
-        teacherOptions={teachers.map((t) => ({ id: t.id, name: t.name }))}
-        recentlyEndedDays={RECENTLY_ENDED_DAYS}
+      <CoverTable
+        board={{ active: board.active, scheduled: board.scheduled }}
+        history={history}
+        today={today}
+        ayCode={historyAy}
+        ayOptions={ayCodes}
+        teacherOptions={teacherOptions}
       />
     </PageShell>
   );
