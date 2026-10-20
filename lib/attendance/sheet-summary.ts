@@ -1,3 +1,4 @@
+import { isAttendanceAtRisk } from '@/lib/attendance/risk';
 import { monthKeyOf, monthLabelOf } from '@/lib/attendance/sheet-columns';
 import type { AttendanceStatus } from '@/lib/schemas/attendance';
 
@@ -189,4 +190,67 @@ export function buildTermSummaryRows(
     const months = allMonths.filter((m) => m.stat.totalDays > 0);
     return { enrolment, months, term };
   });
+}
+
+export type TermSummaryRow = ReturnType<typeof buildTermSummaryRows>[number];
+
+/** Adds several stats together and re-derives the rate with the same sheet
+ *  formula — (P+L+EX)/(P+L+EX+A) — so a class figure is the pooled
+ *  student-days, never an average of averages. */
+export function poolStats(stats: SummaryStat[]): SummaryStat {
+  let present = 0;
+  let late = 0;
+  let excused = 0;
+  let absent = 0;
+  for (const s of stats) {
+    present += s.present;
+    late += s.late;
+    excused += s.excused;
+    absent += s.absent;
+  }
+  const totalDays = present + late + excused + absent;
+  const attendancePct =
+    totalDays === 0
+      ? null
+      : round1(((present + late + excused) / totalDays) * 100);
+  return { totalDays, present, late, excused, absent, attendancePct };
+}
+
+export type TermClassOverview = {
+  /** Every student's marks pooled — withdrawn students' marks included,
+   *  since those days happened. */
+  term: SummaryStat;
+  /** Active students whose term rate is under the at-risk line. */
+  atRisk: number;
+  /** Active students with at least one counted mark and no absences. */
+  perfect: number;
+  /** Active students. */
+  active: number;
+  /** Pooled class rate for each month of the term, chronological. */
+  byMonth: { month: string; label: string; stat: SummaryStat }[];
+};
+
+/** Class-level figures for the Term Sheet Summary's cards and charts. */
+export function summarizeClassTerm(
+  rows: TermSummaryRow[],
+  months: { month: string; label: string }[]
+): TermClassOverview {
+  const active = rows.filter((r) => !r.enrolment.withdrawn);
+  return {
+    term: poolStats(rows.map((r) => r.term)),
+    atRisk: active.filter((r) => isAttendanceAtRisk(r.term.attendancePct))
+      .length,
+    perfect: active.filter((r) => r.term.totalDays > 0 && r.term.absent === 0)
+      .length,
+    active: active.length,
+    byMonth: months.map((m) => ({
+      month: m.month,
+      label: m.label,
+      stat: poolStats(
+        rows.flatMap((r) =>
+          r.months.filter((x) => x.month === m.month).map((x) => x.stat)
+        )
+      ),
+    })),
+  };
 }
