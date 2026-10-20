@@ -299,16 +299,21 @@ export function buildCoverHistory(input: {
       if (closing && closing.coveredId) {
         const firstDay = closing.startedOn ?? closing.bookedOn;
         const stillRunning = !closing.endedOn || closing.endedOn >= on;
+        // Same absent teacher, same substitute, window not over: the same
+        // absence, whatever the dates now say. Only a different substitute or
+        // an end closes it.
         const superseded =
           isStart &&
           newReliefId === closing.reliefId &&
           (coveredId ?? closing.coveredId) === closing.coveredId &&
-          stillRunning &&
-          (str(ctx.relief_started_on) === closing.startedOn ||
-            (firstDay !== null && on < firstDay));
+          stillRunning;
+        // A booking swapped for another before its first day never ran and was
+        // never ended — it is not history. Ending it (no substitute) still is.
+        const replacedBeforeStart =
+          isStart && !!newReliefId && firstDay !== null && on < firstDay;
         if (superseded) {
           carriedBookedOn = closing.bookedOn;
-        } else {
+        } else if (!replacedBeforeStart) {
           finished.push({ ...closing, closedOn: on });
         }
       }

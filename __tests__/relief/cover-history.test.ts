@@ -236,6 +236,37 @@ describe('a cover booked over', () => {
     expect(out[0].reason).toBe('Medical leave, back Thursday');
   });
 
+  it('a re-save with the same people and NEW dates while running is one absence', () => {
+    const out = run([
+      single(RELIEF_START, '2026-09-04'),
+      single(RELIEF_START, '2026-09-09', {
+        relief_started_on: '2026-09-10',
+        relief_ended_on: '2026-09-18',
+        previous_relief_teacher_user_id: 't-sub',
+        previous_relief_started_on: '2026-09-07',
+        previous_relief_ended_on: '2026-09-11',
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].startedOn).toBe('2026-09-10');
+    expect(out[0].outcome).toEqual({ kind: 'ran' });
+  });
+
+  it('a booking swapped for another substitute before it started is dropped', () => {
+    const out = run([
+      single(RELIEF_START, '2026-09-01'),
+      single(RELIEF_START, '2026-09-03', {
+        relief_teacher_user_id: 't-other',
+        relief_teacher_name: 'R. Fernandez',
+        previous_relief_teacher_user_id: 't-sub',
+        previous_relief_started_on: '2026-09-07',
+        previous_relief_ended_on: '2026-09-11',
+      }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].reliefTeacherId).toBe('t-other');
+  });
+
   it('a new booking over an expired one shows the old one ran its course', () => {
     // The row lost the August window when September was booked over it; only
     // the log's previous_covers remembers it.
