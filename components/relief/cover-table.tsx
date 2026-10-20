@@ -348,7 +348,7 @@ export function CoverTable({
         ),
         meta: { label: 'Absent teacher' },
         cell: ({ row }) => (
-          <span className="font-medium text-foreground">
+          <span className="whitespace-nowrap font-medium text-foreground">
             {row.original.coveredTeacherName}
           </span>
         ),
@@ -360,7 +360,7 @@ export function CoverTable({
         ),
         meta: { label: 'Substitute' },
         cell: ({ row }) => (
-          <span className="text-foreground">
+          <span className="whitespace-nowrap text-foreground">
             {row.original.reliefTeacherName}
           </span>
         ),
