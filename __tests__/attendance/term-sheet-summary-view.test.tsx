@@ -83,7 +83,6 @@ describe('TermSheetSummaryView', () => {
       <TermSheetSummaryView
         rows={rows}
         months={months}
-        overview={summarizeClassTerm(rows, months)}
         sectionName="P1 Ruby"
         termLabel="Term 1"
       />

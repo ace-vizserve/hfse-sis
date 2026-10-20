@@ -22,18 +22,21 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { rateTone } from '@/lib/attendance/rate-tone';
-import { AT_RISK_ATTENDANCE_THRESHOLD_PCT } from '@/lib/attendance/risk';
-import type {
-  SummaryStat,
-  TermClassOverview,
-  TermSummaryRow,
+import {
+  AT_RISK_ATTENDANCE_THRESHOLD_PCT,
+  isAttendanceAtRisk,
+} from '@/lib/attendance/risk';
+import {
+  poolStats,
+  type SummaryStat,
+  type TermSummaryRow,
 } from '@/lib/attendance/sheet-summary';
 import { cn } from '@/lib/utils';
 
-// Term Sheet Summary — ① metric cards → ② charts → ③ one DataTable. The
-// server computes every number (buildTermSummaryRows + summarizeClassTerm);
-// this component only picks which period's stat a row shows, then filters
-// and sorts.
+// Term Sheet Summary — ① metric cards → ② one DataTable. The server computes
+// every student's numbers (buildTermSummaryRows); this component picks which
+// period's stat a row shows, filters and sorts, and pools the rows still
+// shown into the cards — so the cards always describe what the table shows.
 
 const WHOLE_TERM = 'term';
 
@@ -215,13 +218,11 @@ function slug(s: string): string {
 export function TermSheetSummaryView({
   rows,
   months,
-  overview,
   sectionName,
   termLabel,
 }: {
   rows: TermSummaryRow[];
   months: { month: string; label: string }[];
-  overview: TermClassOverview;
   sectionName: string;
   termLabel: string;
 }) {
@@ -255,36 +256,64 @@ export function TermSheetSummaryView({
     [rows, period]
   );
 
-  const { term } = overview;
-  const classRate = term.attendancePct;
+  // The cards follow the table: the period picked AND the rows the search and
+  // filters leave. Same pooling and same at-risk / perfect rules as the
+  // server's class overview, applied to just those rows.
+  const [shownRows, setShownRows] = useState<PeriodRow[] | null>(null);
+  const cards = useMemo(() => {
+    const shown = shownRows ?? tableRows;
+    const term = poolStats(
+      shown.map((r) => ({
+        totalDays: r.days,
+        present: r.present,
+        late: r.late,
+        excused: r.excused,
+        absent: r.absent,
+        attendancePct: r.rate ?? null,
+      }))
+    );
+    const active = shown.filter((r) => r.status === STATUS_ACTIVE);
+    return {
+      term,
+      atRisk: active.filter((r) => isAttendanceAtRisk(r.rate ?? null)).length,
+      perfect: active.filter((r) => r.days > 0 && r.absent === 0).length,
+      active: active.length,
+      filtered: shownRows !== null && shownRows.length !== tableRows.length,
+    };
+  }, [shownRows, tableRows]);
+  const { term } = cards;
+  const when = period === WHOLE_TERM ? 'this term' : `in ${periodLabel}`;
+  const whoActive = `of ${cards.active} active ${
+    cards.active === 1 ? 'student' : 'students'
+  }${cards.filtered ? ' shown' : ''}`;
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <MetricCard
           label="Class attendance rate"
-          value={classRate ?? '—'}
+          value={term.attendancePct ?? '—'}
           format="percent"
           icon={Percent}
-          subtext={`${term.totalDays.toLocaleString('en-SG')} student-days marked`}
+          subtext={`${term.totalDays.toLocaleString('en-SG')} student-days marked ${when}`}
         />
         <MetricCard
           label="Below the at-risk line"
-          value={overview.atRisk}
+          value={cards.atRisk}
           icon={TriangleAlert}
-          subtext={`Students under ${AT_RISK_ATTENDANCE_THRESHOLD_PCT}% this term`}
+          subtext={`Students under ${AT_RISK_ATTENDANCE_THRESHOLD_PCT}% ${when}`}
         />
         <MetricCard
           label="Perfect attendance"
-          value={overview.perfect}
+          value={cards.perfect}
           icon={CalendarCheck}
-          subtext={`No absences, of ${overview.active} active students`}
+          subtext={`No absences ${when}, ${whoActive}`}
         />
         <MetricCard
-          label="Absences this term"
+          label="Absences"
           value={term.absent}
           icon={CalendarX}
-          subtext={`${term.late} late ${term.late === 1 ? 'mark' : 'marks'}`}
+          subtext={`${when[0].toUpperCase()}${when.slice(1)} · ${term.late} late ${term.late === 1 ? 'mark' : 'marks'}`}
         />
       </div>
 
@@ -292,6 +321,7 @@ export function TermSheetSummaryView({
         data={tableRows}
         columns={COLUMNS}
         getRowId={(r) => r.id}
+        onFilteredRowsChange={setShownRows}
         searchKeys={['studentName']}
         searchPlaceholder="Search students…"
         facets={[
