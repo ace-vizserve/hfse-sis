@@ -25,6 +25,13 @@ export type UrlStateSnapshot = {
 
 const DEFAULT_DEBOUNCE = 300;
 
+/** A URL value as a whole number ≥ 1, or undefined. */
+export function positiveInt(raw: string | null): number | undefined {
+  if (!raw || !/^\d+$/.test(raw)) return undefined;
+  const n = Number(raw);
+  return n >= 1 ? n : undefined;
+}
+
 function key(name: string, ns?: string) {
   return ns ? `${ns}.${name}` : name;
 }
@@ -109,12 +116,10 @@ export function useUrlState(config: UrlStateConfig) {
       status: params.get(statusKey) ?? undefined,
       mine: params.get(mineKey) === '1' || undefined,
       facets,
-      page: params.get(key('page', namespace))
-        ? Number(params.get(key('page', namespace)))
-        : undefined,
-      pageSize: params.get(key('pageSize', namespace))
-        ? Number(params.get(key('pageSize', namespace)))
-        : undefined,
+      // Whole numbers of 1 or more only: `?pageSize=abc` used to become NaN
+      // and leave the table empty ("Page 1 of NaN"); `-5` showed every row.
+      page: positiveInt(params.get(key('page', namespace))),
+      pageSize: positiveInt(params.get(key('pageSize', namespace))),
     };
   }, [enabled, params, searchKey, statusKey, mineKey, namespace]);
 
