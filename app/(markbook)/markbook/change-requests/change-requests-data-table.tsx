@@ -28,6 +28,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { SortableHeader } from '@/components/ui/data-table/sortable-header';
+import { usePageParams } from '@/components/ui/data-table/use-page-params';
 import {
   CHANGE_REQUEST_STATUS_CONFIG,
   type ChangeRequestStatus,
@@ -448,6 +449,7 @@ export function ChangeRequestsDataTable({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const setPageParams = usePageParams();
 
   const [controlledByRow, setControlledByRow] = React.useState<
     Record<string, { action: 'approve' | 'reject'; nonce: string }>
@@ -1037,7 +1039,12 @@ export function ChangeRequestsDataTable({
           Sheet {sheetIdFilter.slice(0, 8)}…
           <button
             type="button"
-            onClick={() => setSheetIdFilter(null)}
+            onClick={() => {
+              // `?sheet_id=` seeded this filter — take it out of the URL too,
+              // or a refresh / Back brings the sheet filter back.
+              setSheetIdFilter(null);
+              setPageParams({ sheet_id: null });
+            }}
             aria-label="Clear sheet filter"
             className="ml-0.5 inline-flex size-4 items-center justify-center rounded hover:bg-muted"
           >
