@@ -20,6 +20,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { loadAuditActorEmails } from '@/lib/audit/actor-emails';
 import { parseAuditFilters, applyAuditFilters } from '@/lib/audit/filters';
+import { auditRowLink } from '@/lib/audit/row-links';
 import {
   AuditLogDataTable,
   type MergedRow,
@@ -107,6 +108,7 @@ export default async function ClassroomAuditLogPage({
     context: r.context ?? {},
     sheet_id: null,
     source: 'audit_log' as const,
+    link: auditRowLink(r, sessionUser.role),
   }));
 
   const uniqueActors = new Set(rows.map((r) => r.actor)).size;
