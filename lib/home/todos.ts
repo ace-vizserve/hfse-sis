@@ -18,7 +18,17 @@ import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 export type HomeTodoItem = {
   id: string;
   module: string;
+  /**
+   * What the row is about. When `count` is set the number is NOT repeated
+   * here — the panel leads the row with `count` as its own numeral.
+   */
   text: string;
+  /**
+   * How many of the thing are waiting, for rows that are a count. The panel
+   * leads with it and sorts by it, largest first. Absent on a single-item
+   * row (a grade change request).
+   */
+  count?: number;
   href: string;
   kind: 'review' | 'change-request';
   aging?: { label: string; tone: 'success' | 'warning' | 'destructive' };
@@ -70,6 +80,10 @@ async function mapInChunks<T, R>(
   return results;
 }
 
+function sentenceCase(label: string): string {
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
 function fromPriority(
   id: string,
   module: string,
@@ -79,7 +93,8 @@ function fromPriority(
   return {
     id,
     module,
-    text: `${payload.headline.value} ${payload.headline.label}`,
+    text: sentenceCase(payload.headline.label),
+    count: payload.headline.value,
     href: payload.cta?.href ?? '#',
     kind: 'review',
   };
@@ -307,7 +322,8 @@ async function docValidationTodo({
   return {
     id: 'admissions-doc-validation',
     module: 'Admissions',
-    text: `${count} ${count === 1 ? 'document' : 'documents'} awaiting validation`,
+    text: `Application ${count === 1 ? 'document' : 'documents'} awaiting validation`,
+    count,
     href: '/admissions/document-validation',
     kind: 'review',
   };
@@ -323,7 +339,8 @@ async function unsyncedStudentsTodo({
   return {
     id: 'records-unsynced',
     module: 'Records',
-    text: `${count} ${count === 1 ? 'student' : 'students'} unsynced`,
+    text: `Enrolled ${count === 1 ? 'student' : 'students'} without a section`,
+    count,
     href: '/records/unsynced',
     kind: 'review',
   };
@@ -339,7 +356,8 @@ async function pFilesValidationTodo({
   return {
     id: 'p-files-validation',
     module: 'P-Files',
-    text: `${count} ${count === 1 ? 'document' : 'documents'} awaiting validation`,
+    text: `Renewal ${count === 1 ? 'document' : 'documents'} awaiting validation`,
+    count,
     href: '/p-files/document-validation',
     kind: 'review',
   };
@@ -420,7 +438,8 @@ async function loadReportCardGapsTodoUncached(
   return {
     id: 'markbook-comment-gaps',
     module: 'Markbook',
-    text: `T${currentTerm.term_number} report cards — comments incomplete for ${count} ${count === 1 ? 'section' : 'sections'}`,
+    text: `${count === 1 ? 'Section' : 'Sections'} with T${currentTerm.term_number} report card comments incomplete`,
+    count,
     href: `/evaluation/sections/${sectionsWithGaps[0].section.id}`,
     kind: 'review',
   };
@@ -607,6 +626,22 @@ export async function getHomeTodos(
   return results
     .flatMap((result) => (Array.isArray(result) ? result : [result]))
     .filter((todo): todo is HomeTodoItem => todo !== null);
+}
+
+/**
+ * The panel's display order: rows with a count first, largest count first;
+ * rows without one after them, in the order they came. Stable, so equal counts
+ * keep their source order too.
+ */
+export function sortTodosByCount(
+  items: readonly HomeTodoItem[]
+): HomeTodoItem[] {
+  return [...items].sort((a, b) => {
+    if (a.count === undefined && b.count === undefined) return 0;
+    if (a.count === undefined) return 1;
+    if (b.count === undefined) return -1;
+    return b.count - a.count;
+  });
 }
 
 // Exported for Task 8's server component to avoid importing the whole

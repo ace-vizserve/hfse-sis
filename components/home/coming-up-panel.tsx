@@ -1,5 +1,7 @@
-import { CalendarCheck, CalendarDays } from 'lucide-react';
+import Link from 'next/link';
+import { CalendarCheck, CalendarDays, ChevronRight } from 'lucide-react';
 
+import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
 import type { UpcomingCalendarEvent } from '@/lib/sis/dashboard';
 
@@ -11,18 +13,30 @@ function formatDate(iso: string): { day: string; month: string } {
   };
 }
 
-export function ComingUpPanel({ events }: { events: UpcomingCalendarEvent[] }) {
+export function ComingUpPanel({
+  events,
+  calendarHref,
+}: {
+  events: UpcomingCalendarEvent[];
+  /** Set only when the viewer may open the school calendar; no link otherwise. */
+  calendarHref?: string;
+}) {
   return (
     // See the note in `todo-panel.tsx` — the home grid owns the column split.
-    <Card className="overflow-hidden p-0">
+    <Card className="flex flex-col gap-0 overflow-hidden p-0">
       {/* Header treatment matched to `todo-panel.tsx` — see the note there. */}
-      <div className="flex items-center gap-3 border-b border-border px-5 py-4">
-        <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-          <CalendarDays className="size-[17px]" aria-hidden />
+      <div className="flex items-center justify-between gap-2 border-b border-border px-5 py-4">
+        <div className="flex items-center gap-3">
+          <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+            <CalendarDays className="size-[17px]" aria-hidden />
+          </div>
+          <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
+            Coming up
+          </span>
         </div>
-        <span className="font-serif text-lg font-semibold tracking-tight text-foreground">
-          Coming up
-        </span>
+        <Badge variant="secondary" className="h-6">
+          Next 14 days
+        </Badge>
       </div>
       {events.length === 0 ? (
         // §7.6 — "empty states are never blank". This was a one-line
@@ -65,6 +79,17 @@ export function ComingUpPanel({ events }: { events: UpcomingCalendarEvent[] }) {
           );
         })
       )}
+      {calendarHref ? (
+        <div className="mt-auto flex justify-end border-t border-border px-5 py-2.5">
+          <Link
+            href={calendarHref}
+            className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-brand-indigo hover:underline"
+          >
+            Open the calendar
+            <ChevronRight className="size-3.5" />
+          </Link>
+        </div>
+      ) : null}
     </Card>
   );
 }

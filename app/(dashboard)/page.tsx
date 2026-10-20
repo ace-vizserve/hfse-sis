@@ -1,8 +1,6 @@
-import Link from 'next/link';
 import { redirect } from 'next/navigation';
-import { CalendarPlus, Sunrise, Sun, Moon, UserCog } from 'lucide-react';
+import { CalendarPlus, Sunrise, Sun, Moon } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
@@ -16,9 +14,16 @@ import { sgHour } from '@/lib/dates';
 import { getQuickActions, type QuickAction } from '@/lib/home/quick-actions';
 import { greetingForHour, type GreetingBucket } from '@/lib/home/greeting';
 import { getRecentActions } from '@/lib/home/recent-actions';
-import { getHomeTodos, reportCardGapsTodo } from '@/lib/home/todos';
+import {
+  getHomeTodos,
+  reportCardGapsTodo,
+  sortTodosByCount,
+} from '@/lib/home/todos';
 import { getUpcomingCalendarEvents } from '@/lib/sis/dashboard';
-import { QuickActionsRow } from '@/components/home/quick-actions-row';
+import { isRouteAllowed } from '@/lib/auth/roles';
+import { switcherModules } from '@/lib/sidebar/registry';
+import { HomeHeaderActions } from '@/components/home/home-header-actions';
+import { ModuleLinkRow } from '@/components/home/module-link-row';
 import { ComingUpPanel } from '@/components/home/coming-up-panel';
 import { TodoPanel } from '@/components/home/todo-panel';
 import { RecentActionsPanel } from '@/components/home/recent-actions-panel';
@@ -65,6 +70,10 @@ export default async function Home() {
 
   const ay = await getCurrentAcademicYear();
 
+  // Same list the topbar switcher draws (`switcherModules`), so the pills and
+  // the switcher always agree.
+  const modules = switcherModules(role, hiddenModules);
+
   // No current AY configured — render just the header + quick actions
   // rather than throwing a 500 on the very first page most roles land on
   // after login.
@@ -80,11 +89,12 @@ export default async function Home() {
             capabilities
           )}
         />
+        <ModuleLinkRow modules={modules} className="mt-6" />
         {/* §7.6 — this is the first thing a whole school sees on a fresh
             install, and it was a bare sentence. An empty state that looks
             like a rendering failure on the login-landing page is the worst
             possible place for one. */}
-        <Card className="mt-8">
+        <Card className="mt-6">
           <CardContent className="flex flex-col items-center gap-3 px-6 py-10 text-center">
             <div className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground">
               <CalendarPlus className="size-[18px]" aria-hidden />
@@ -148,15 +158,25 @@ export default async function Home() {
       ? await loadUpcomingCoverForUser(await createClient(), userId)
       : [];
 
-  const todos = reportCardGaps ? [...baseTodos, reportCardGaps] : baseTodos;
+  // Largest count first; single-item rows (change requests) after, in order.
+  const todos = sortTodosByCount(
+    reportCardGaps ? [...baseTodos, reportCardGaps] : baseTodos
+  );
+
+  // Footer links appear only when the viewer may open the destination.
+  const calendarHref = isRouteAllowed('/sis/calendar', role)
+    ? '/sis/calendar'
+    : undefined;
+  const auditLogHref = isRouteAllowed('/sis/audit-log', role)
+    ? '/sis/audit-log'
+    : undefined;
 
   return (
     <PageShell>
       <Header name={displayName} quickActions={quickActions} />
-      <UpcomingCoverPanel covers={upcomingCover} className="mt-8" />
-      {/* The panel renders nothing when there is no cover booked, which is the
-          ordinary case — so the gap below the header has to come from here
-          instead, or every teacher without cover gets a tighter page. */}
+      {/* Renders nothing when no cover is booked — the ordinary case. */}
+      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
+      <ModuleLinkRow modules={modules} className="mt-6" />
       {/* ⚠ GRID, NOT FLEX, AND THE RATIO IS EXPLICIT. `flex-[2]` / `flex-1` on
           the children made the split depend on content: "Coming up" with two
           short rows and a to-do list with nine did not hold 2:1, they
@@ -164,13 +184,11 @@ export default async function Home() {
           named grid ratio holds whatever is in the panels.
           Gap is 6 (24px), matching §3.4's rhythm — it was 3 (12px), which read
           as two halves of one object rather than two panels. */}
-      <div
-        className={`${upcomingCover.length > 0 ? 'mt-6' : 'mt-10'} mb-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.7fr_1fr] lg:items-stretch`}
-      >
+      <div className="mt-6 mb-6 grid grid-cols-1 gap-6 lg:grid-cols-[1.7fr_1fr] lg:items-stretch">
         <TodoPanel title={todoTitle} items={todos} />
-        <ComingUpPanel events={events} />
+        <ComingUpPanel events={events} calendarHref={calendarHref} />
       </div>
-      <RecentActionsPanel actions={recentActions} />
+      <RecentActionsPanel actions={recentActions} auditLogHref={auditLogHref} />
     </PageShell>
   );
 }
@@ -211,17 +229,7 @@ function Header({
           </p>
         </div>
       </div>
-      {/* `/` has no sidebar, so this is the only route to Account from the
-          page every role lands on after signing in. */}
-      <div className="flex flex-wrap items-center gap-2">
-        <QuickActionsRow actions={quickActions} />
-        <Button variant="outline" asChild>
-          <Link href="/account">
-            <UserCog />
-            Account
-          </Link>
-        </Button>
-      </div>
+      <HomeHeaderActions actions={quickActions} />
     </header>
   );
 }

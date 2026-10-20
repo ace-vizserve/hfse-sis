@@ -50,7 +50,12 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 
-import type { Module, Role, SidebarBadgeKey } from '@/lib/auth/roles';
+import {
+  isRouteAllowed,
+  type Module,
+  type Role,
+  type SidebarBadgeKey,
+} from '@/lib/auth/roles';
 
 export type SidebarModule = Module;
 
@@ -464,3 +469,22 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     quickActionByRole: {},
   },
 };
+
+/**
+ * The modules the neutral switcher offers this viewer, in lifecycle order.
+ *
+ * One answer for every surface on `/` that lists "where you can go": the
+ * topbar switcher and the home page's module link row. They sit on the same
+ * screen, so a module in one and missing from the other reads as a bug.
+ * `hiddenModules` is the teacher narrowing from `resolveTeacherNavScope`.
+ */
+export function switcherModules(
+  role: Role | null,
+  hiddenModules: readonly SidebarModule[] = []
+): SidebarModule[] {
+  return MODULE_ORDER.filter(
+    (m) =>
+      isRouteAllowed(SIDEBAR_REGISTRY[m].primaryHref, role) &&
+      !hiddenModules.includes(m)
+  );
+}

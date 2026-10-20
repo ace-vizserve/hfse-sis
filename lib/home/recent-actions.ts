@@ -4,6 +4,7 @@ import {
   auditActionTone,
   auditContextSummary,
 } from '@/lib/audit/humanize';
+import { auditModuleForAction } from '@/lib/audit/modules';
 
 export type RecentAction = {
   id: string;
@@ -11,7 +12,40 @@ export type RecentAction = {
   summary: string;
   tone: 'default' | 'secondary' | 'destructive' | 'warning';
   timeAgo: string;
+  /** The module the action happened in, named as the module switcher names
+   *  it. Null for an action no module claims yet. */
+  module: string | null;
 };
+
+// The audit chart's module list (lib/audit/modules.ts) groups for COUNTING, so
+// it files a few families where they are configured rather than where a person
+// did the work. The home tag names the place the viewer would go back to, so
+// it reads that list and renames the groups that have no module of their own.
+const TAG_BY_AUDIT_MODULE: Record<string, string> = {
+  markbook: 'Markbook',
+  attendance: 'Attendance',
+  evaluation: 'Evaluation',
+  pfiles: 'P-Files',
+  admissions: 'Admissions',
+  records: 'Records',
+  classes: 'SIS Admin',
+  'year-setup': 'SIS Admin',
+  access: 'SIS Admin',
+};
+
+export function recentActionModule(action: string): string | null {
+  // Filed under Admissions in the chart list; the work lives in Billing.
+  if (action.startsWith('qbo.') || action.startsWith('billing.')) {
+    return 'Billing';
+  }
+  // Filed under Records in the chart list; it is the Classroom module.
+  if (action.startsWith('classroom.')) return 'Classroom';
+  // Filed under "People & access" in the chart list; absence declarations
+  // are decided in Attendance.
+  if (action.startsWith('declaration.')) return 'Attendance';
+  const auditModule = auditModuleForAction(action);
+  return auditModule ? (TAG_BY_AUDIT_MODULE[auditModule.key] ?? null) : null;
+}
 
 // Same tone→Badge-variant mapping as
 // app/(markbook)/markbook/audit-log/audit-log-data-table.tsx's
@@ -60,7 +94,7 @@ type RawAuditRow = {
  */
 export async function getRecentActions(
   actorEmail: string,
-  limit = 8
+  limit = 5
 ): Promise<RecentAction[]> {
   const service = createServiceClient();
   const { data, error } = await service
@@ -78,5 +112,6 @@ export async function getRecentActions(
     summary: auditContextSummary(row.action, row.context),
     tone: toBadgeVariant(row.action),
     timeAgo: timeAgo(row.created_at),
+    module: recentActionModule(row.action),
   }));
 }

@@ -10,7 +10,10 @@ vi.mock('@/lib/supabase/service', () => ({
   createServiceClient: vi.fn(() => ({ from })),
 }));
 
-import { getRecentActions } from '@/lib/home/recent-actions';
+import {
+  getRecentActions,
+  recentActionModule,
+} from '@/lib/home/recent-actions';
 
 describe('getRecentActions', () => {
   it('scopes strictly to actor_email, orders newest-first, and humanizes each row', async () => {
@@ -38,7 +41,7 @@ describe('getRecentActions', () => {
     expect(select).toHaveBeenCalledWith('id, action, context, created_at');
     expect(eq).toHaveBeenCalledWith('actor_email', 'teacher@hfse.edu.sg');
     expect(order).toHaveBeenCalledWith('created_at', { ascending: false });
-    expect(limit).toHaveBeenCalledWith(8);
+    expect(limit).toHaveBeenCalledWith(5);
 
     expect(actions).toHaveLength(2);
     // sheet.lock's auditActionTone falls through every bucket to 'default',
@@ -63,5 +66,32 @@ describe('getRecentActions', () => {
     limit.mockResolvedValueOnce({ data: [], error: null });
     await getRecentActions('user@hfse.edu.sg', 3);
     expect(limit).toHaveBeenCalledWith(3);
+  });
+});
+
+describe('recentActionModule', () => {
+  it('names the module the way the switcher does', () => {
+    expect(recentActionModule('sheet.lock')).toBe('Markbook');
+    expect(recentActionModule('attendance.daily.update')).toBe('Attendance');
+    expect(recentActionModule('pfile.upload')).toBe('P-Files');
+    expect(recentActionModule('sis.stage.update')).toBe('Admissions');
+    expect(recentActionModule('sis.profile.update')).toBe('Records');
+  });
+
+  it('files QuickBooks and Billing actions under Billing, not Admissions', () => {
+    expect(recentActionModule('qbo.invoice.create')).toBe('Billing');
+    expect(recentActionModule('billing.payment.record')).toBe('Billing');
+  });
+
+  it('files classroom actions under Classroom and setup families under SIS Admin', () => {
+    expect(recentActionModule('classroom.note.create')).toBe('Classroom');
+    expect(recentActionModule('declaration.approve')).toBe('Attendance');
+    expect(recentActionModule('assignment.relief.create')).toBe('SIS Admin');
+    expect(recentActionModule('ay.create')).toBe('SIS Admin');
+    expect(recentActionModule('user.invite')).toBe('SIS Admin');
+  });
+
+  it('returns null for an action no module claims', () => {
+    expect(recentActionModule('mystery.thing')).toBeNull();
   });
 });
