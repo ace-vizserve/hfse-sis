@@ -29,8 +29,9 @@ export function ModuleLinkRow({
       <span className="shrink-0 font-mono text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
         Open
       </span>
-      {/* One shadcn ButtonGroup of primary buttons (owner's call), a hairline
-          between each, every one with the module's switcher icon. On a narrow window the group scrolls inside its own strip
+      {/* One shadcn ButtonGroup of the app's outline buttons — same family as
+          Account and More in the header — each with the module's switcher
+          icon. On a narrow window the group scrolls inside its own strip
           rather than widening the page. */}
       <div className="min-w-0 overflow-x-auto pb-1">
         <ButtonGroup>
@@ -38,12 +39,7 @@ export function ModuleLinkRow({
             const cfg = SIDEBAR_REGISTRY[m];
             const Icon = cfg.icon;
             return (
-              <Button
-                key={m}
-                size="sm"
-                className="border-l border-primary-foreground/25 first:border-l-0"
-                asChild
-              >
+              <Button key={m} variant="outline" size="sm" asChild>
                 <Link href={cfg.primaryHref}>
                   <Icon aria-hidden />
                   {cfg.label}
