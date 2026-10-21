@@ -1,23 +1,49 @@
 'use client';
 
-import { ChevronDown, FilePlus2, HandCoins } from 'lucide-react';
+import {
+  ChevronDown,
+  FileMinus2,
+  FilePlus2,
+  HandCoins,
+  Landmark,
+  ReceiptText,
+} from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 import { CreateInvoiceSheet } from '@/components/billing/create-invoice-sheet';
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
-import { SalesDocSheet } from '@/components/billing/sales-doc-sheet';
+import { RefundExpenseSheet } from '@/components/billing/refund-expense-sheet';
+import {
+  SalesDocSheet,
+  type SalesDocStart,
+} from '@/components/billing/sales-doc-sheet';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import {
+  clearCreditNoteStart,
+  readCreditNoteStart,
+} from '@/lib/billing/invoice-copy';
+import type {
+  CreditSource,
+  OpenCreditNote,
+  OpenInvoice,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 import type { StageTarget } from '@/lib/billing/tie';
 
-// The customer page's New transaction menu, as QuickBooks has it: Invoice or
-// Payment. Each sheet mounts fresh on every open.
+// The customer page's New transaction menu, as QuickBooks has it: Invoice,
+// Payment, Credit note (QuickBooks' customer menu has no Refund receipt — it
+// is on Sales transactions' menu, which opens it here). Paying a credit back
+// is QuickBooks' + New → Expense / Cheque, payee the customer; the SIS has
+// no + New, so those two sit here under their own heading. Each sheet mounts
+// fresh on every open.
 export function CustomerActions(props: {
   studentNumber: string;
   studentName: string;
@@ -30,29 +56,44 @@ export function CustomerActions(props: {
   }>;
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
+  /** Expenses / cheques still open (Receive payment's Outstanding rows). */
+  charges?: PayableInvoice[];
+  /** Credit notes with unused credit (Receive payment's Credits). */
+  creditNotes?: OpenCreditNote[];
+  /** Unused credit on the customer, the Expense / Cheque amount to start at. */
+  credit?: number;
   depositAccounts: Array<{ id: string; label: string; isDefault?: boolean }>;
   paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
-  /** Opened from a list's New transaction ▾ (`?new=payment`, `?new=invoice`,
-   *  `?new=refund-receipt`), as QuickBooks opens the form. */
+  /** Opened from a list's New transaction ▾ or an invoice's "Create a credit
+   *  note" (`?new=payment|invoice|refund-receipt|credit-note`). */
   initialSheet?: CustomerSheet | null;
   /** With `?new=payment&invoice=<id>`: the form lists only that invoice. */
   initialInvoiceId?: string | null;
   /** With `?new=invoice&stage=…&ay=…` (a Registration / Fees card's Create
    *  invoice in Billing): the first Create invoice fills that stage. */
   initialStage?: StageTarget | null;
+  /** `?new=credit-note&from=invoice`: start from the invoice's lines. */
+  fromInvoice?: boolean;
 }) {
   const [sheet, setSheet] = useState<CustomerSheet | null>(
     props.initialSheet ?? null
   );
+  // An invoice's "Create a credit note": its lines, once.
+  const [start] = useState<SalesDocStart | null>(() =>
+    props.initialSheet === 'credit-note' && props.fromInvoice
+      ? readCreditNoteStart(props.studentNumber)
+      : null
+  );
+  useEffect(() => {
+    if (props.fromInvoice) clearCreditNoteStart(props.studentNumber);
+  }, [props.fromInvoice, props.studentNumber]);
   // Drop `?new=` once used, so a reload doesn't open the form again.
   useEffect(() => {
     if (!props.initialSheet) return;
     const u = new URL(window.location.href);
-    u.searchParams.delete('new');
-    u.searchParams.delete('invoice');
-    u.searchParams.delete('stage');
-    u.searchParams.delete('ay');
+    for (const k of ['new', 'invoice', 'stage', 'ay', 'from'])
+      u.searchParams.delete(k);
     window.history.replaceState(window.history.state, '', u);
   }, [props.initialSheet]);
   // Only the first open fills the stage; New transaction → Invoice later is a
@@ -61,6 +102,7 @@ export function CustomerActions(props: {
     props.initialSheet === 'invoice' ? (props.initialStage ?? null) : null
   );
   const [key, setKey] = useState(0);
+  const [useStart, setUseStart] = useState(true);
   // Only the first open honours the row's invoice; New transaction → Payment
   // later lists everything owing.
   const [onlyInvoice, setOnlyInvoice] = useState(
@@ -69,9 +111,11 @@ export function CustomerActions(props: {
   const open = (s: CustomerSheet) => {
     setOnlyInvoice(null);
     setStage(null);
+    setUseStart(false);
     setKey((k) => k + 1);
     setSheet(s);
   };
+  const close = (o: boolean) => !o && setSheet(null);
   return (
     <>
       <DropdownMenu>
@@ -81,7 +125,7 @@ export function CustomerActions(props: {
             <ChevronDown className="size-4" />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem onSelect={() => open('invoice')}>
             <FilePlus2 className="size-4" />
             Invoice
@@ -90,13 +134,29 @@ export function CustomerActions(props: {
             <HandCoins className="size-4" />
             Payment
           </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => open('credit-note')}>
+            <FileMinus2 className="size-4" />
+            Credit note
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            Pay a credit back
+          </DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => open('expense')}>
+            <ReceiptText className="size-4" />
+            Expense
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => open('check')}>
+            <Landmark className="size-4" />
+            Cheque
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
       {sheet === 'invoice' && (
         <CreateInvoiceSheet
           key={`i${key}`}
           open
-          onOpenChange={(o) => !o && setSheet(null)}
+          onOpenChange={close}
           studentNumber={props.studentNumber}
           studentName={props.studentName}
           customerEmail={props.customerEmail}
@@ -108,7 +168,7 @@ export function CustomerActions(props: {
         <RecordPaymentSheet
           key={`p${key}`}
           open
-          onOpenChange={(o) => !o && setSheet(null)}
+          onOpenChange={close}
           studentNumber={props.studentNumber}
           studentName={props.studentName}
           openInvoices={
@@ -116,6 +176,8 @@ export function CustomerActions(props: {
               ? props.openInvoices.filter((o) => o.id === onlyInvoice)
               : props.openInvoices
           }
+          charges={onlyInvoice ? [] : props.charges}
+          creditNotes={props.creditNotes}
           credits={props.credits}
           depositAccounts={props.depositAccounts}
           paymentMethods={props.paymentMethods}
@@ -123,17 +185,31 @@ export function CustomerActions(props: {
           customerBalance={props.customerBalance}
         />
       )}
-      {sheet === 'refund-receipt' && (
+      {(sheet === 'refund-receipt' || sheet === 'credit-note') && (
         <SalesDocSheet
-          key={`r${key}`}
+          key={`d${sheet}${key}`}
           open
-          onOpenChange={(o) => !o && setSheet(null)}
-          kind="refund_receipt"
+          onOpenChange={close}
+          kind={sheet === 'refund-receipt' ? 'refund_receipt' : 'credit_memo'}
           studentNumber={props.studentNumber}
           studentName={props.studentName}
           customerEmail={props.customerEmail}
           bankAccounts={props.depositAccounts}
           paymentMethods={props.paymentMethods}
+          start={sheet === 'credit-note' && useStart ? start : null}
+        />
+      )}
+      {(sheet === 'expense' || sheet === 'check') && (
+        <RefundExpenseSheet
+          key={`e${sheet}${key}`}
+          open
+          onOpenChange={close}
+          kind={sheet}
+          studentNumber={props.studentNumber}
+          studentName={props.studentName}
+          bankAccounts={props.depositAccounts}
+          paymentMethods={props.paymentMethods}
+          credit={props.credit ?? 0}
         />
       )}
     </>
@@ -141,4 +217,10 @@ export function CustomerActions(props: {
 }
 
 /** The forms the customer page opens. */
-export type CustomerSheet = 'invoice' | 'payment' | 'refund-receipt';
+export type CustomerSheet =
+  | 'invoice'
+  | 'payment'
+  | 'refund-receipt'
+  | 'credit-note'
+  | 'expense'
+  | 'check';

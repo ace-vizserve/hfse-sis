@@ -20,12 +20,16 @@ import {
 import { prePaymentRefusal } from '@/lib/billing/payment-guard';
 import {
   mergeCreditLines,
+  newPaymentLines,
   paymentNote,
-  planAllocatedPayment,
-  planPayment,
+  planWithCreditNotes,
   type Allocation,
-  type PaymentPlan,
+  type CreditNoteUse,
+  type OutstandingType,
+  type PaymentPlanWithCredits,
 } from '@/lib/billing/payment-plan';
+import type { OpenItem } from '@/lib/billing/sales-docs';
+import { loadOpenItems } from '@/lib/billing/sales-docs.server';
 import { upsertPayment } from '@/lib/billing/store.server';
 import { round2 } from '@/lib/billing/view';
 import {
@@ -52,6 +56,8 @@ export type RecordPaymentInput = {
   /** The Memo the person typed. */
   memo?: string;
   useCredit: boolean;
+  /** Credit notes ticked under Credits, and how much of each. */
+  creditNotes?: CreditNoteUse[];
   /** One id per submit; QuickBooks de-duplicates retries on it. */
   requestId: string;
 };
@@ -60,7 +66,7 @@ export type RecordPaymentResult =
   | {
       ok: true;
       paymentId: string | null;
-      plan: PaymentPlan;
+      plan: PaymentPlanWithCredits;
       warnings: string[];
     }
   | {
@@ -157,19 +163,41 @@ export async function recordPayment(
     state: string;
   }>;
   const byId = new Map(rows.map((r) => [r.qbo_invoice_id, r]));
-  // Typed Payment cells name the invoices they pay; otherwise the ticked ones.
+  // Typed Payment cells name the transactions they pay; otherwise the ticked
+  // ones.
   const payIds = input.allocations
     ? [...new Set(input.allocations.map((a) => a.invoiceId))]
     : input.invoiceIds;
+  const creditNotes = input.creditNotes ?? [];
+  // Expenses / cheques paying a credit back, and credit notes, are not stored
+  // by the SIS: what is open on them is read from QuickBooks now.
+  let live: { charges: OpenItem[]; credits: OpenItem[] } = {
+    charges: [],
+    credits: [],
+  };
+  if (creditNotes.length > 0 || payIds.some((id) => !byId.has(id))) {
+    try {
+      live = await loadOpenItems(service, customerId);
+    } catch (e) {
+      console.error('[billing] record payment, open items:', e);
+      return { ok: false, status: 502, error: qboErrorMessage(e) };
+    }
+  }
+  const chargeById = new Map(live.charges.map((c) => [c.id, c]));
   for (const id of payIds) {
+    if (!byId.has(id) && chargeById.has(id)) continue;
     const r = byId.get(id);
     if (!r || r.state !== 'open' || Number(r.balance) <= 0)
       return {
         ok: false,
         status: 409,
-        error: `${r?.doc_number ?? 'One of the ticked invoices'} no longer has anything owing in QuickBooks. Reload the page and try again.`,
+        error: `${r?.doc_number ?? 'One of the ticked transactions'} no longer has anything owing in QuickBooks. Reload the page and try again.`,
       };
   }
+  const typeOf = (id: string): OutstandingType => {
+    const c = chargeById.get(id);
+    return c ? (c.type === 'check' ? 'Check' : 'Expense') : 'Invoice';
+  };
   // The bank must be one of QuickBooks' Bank accounts right now.
   let dep: DepositChoice | null = null;
   if (input.depositAccountId) {
@@ -212,12 +240,21 @@ export async function recordPayment(
   }
   const planArgs = {
     invoices: payIds.map((id) => {
-      const r = byId.get(id)!;
+      const r = byId.get(id);
+      if (r)
+        return {
+          id,
+          docNumber: r.doc_number,
+          txnDate: r.txn_date,
+          balance: Number(r.balance),
+        };
+      const c = chargeById.get(id)!;
       return {
         id,
-        docNumber: r.doc_number,
-        txnDate: r.txn_date,
-        balance: Number(r.balance),
+        docNumber: c.docNumber,
+        txnDate: c.txnDate,
+        balance: c.open,
+        txnType: typeOf(id),
       };
     }),
     credits: (
@@ -234,26 +271,37 @@ export async function recordPayment(
     useCredit: input.useCredit,
     amount: input.amount,
   };
-  let plan: PaymentPlan;
-  if (input.allocations) {
-    // Each typed amount is checked against QuickBooks' balance just read:
-    // this customer's, open, above 0, not over the balance, and all of them
-    // within the money plus the credit used.
-    const r = planAllocatedPayment({
-      ...planArgs,
-      allocations: input.allocations,
-    });
-    if (!r.ok) return { ok: false, status: 422, error: r.error };
-    plan = r.plan;
-  } else plan = planPayment(planArgs);
-  if (input.amount <= 0 && plan.creditUsed <= 0)
+  // Each typed amount is checked against QuickBooks' balance just read: this
+  // customer's, open, above 0, not over the balance, and all of them within
+  // the money plus the credit used. Credit notes: open now, within their
+  // unused credit, and not more than what they pay.
+  const planned = planWithCreditNotes({
+    ...planArgs,
+    ...(input.allocations ? { allocations: input.allocations } : {}),
+    creditNotes: live.credits.map((c) => ({
+      id: c.id,
+      docNumber: c.docNumber,
+      txnDate: c.txnDate,
+      total: c.amount,
+      open: c.open,
+    })),
+    memoUse: creditNotes,
+  });
+  if (!planned.ok) return { ok: false, status: 422, error: planned.error };
+  const plan: PaymentPlanWithCredits = planned.plan;
+  if (input.amount <= 0 && plan.creditUsed <= 0 && plan.memoUsed <= 0)
     return {
       ok: false,
       status: 422,
       error: 'Enter the amount received, or use credit on a ticked invoice.',
     };
 
-  const doc = (id: string) => byId.get(id)?.doc_number ?? id;
+  const doc = (id: string) =>
+    byId.get(id)?.doc_number ??
+    (chargeById.has(id)
+      ? `${typeOf(id) === 'Check' ? 'Cheque' : 'Expense'}${chargeById.get(id)!.docNumber ? ` ${chargeById.get(id)!.docNumber}` : ''}`
+      : id);
+  const creditDoc = new Map(live.credits.map((c) => [c.id, c.docNumber]));
   const warnings: string[] = [];
 
   // 2) Credit first.
@@ -289,7 +337,7 @@ export async function recordPayment(
           sparse: true,
           CustomerRef: Payment.CustomerRef,
           TotalAmt: Payment.TotalAmt,
-          Line: mergeCreditLines(Payment.Line ?? [], entries),
+          Line: mergeCreditLines(Payment.Line ?? [], entries, typeOf),
         },
         { requestId }
       );
@@ -330,9 +378,11 @@ export async function recordPayment(
     }
   }
 
-  // 3) The new money.
+  // 3) The new money, with the credit notes ticked: one Payment whose lines
+  // link each transaction it pays and each credit note (TotalAmt is the
+  // money alone — 0.00 when a credit note nets an expense / cheque).
   let paymentId: string | null = null;
-  if (input.amount > 0) {
+  if (input.amount > 0 || plan.memoUse.length > 0) {
     let created: QbPayment;
     try {
       const { Payment } = await qboRequest<{ Payment: QbPayment }>(
@@ -343,7 +393,9 @@ export async function recordPayment(
           CustomerRef: { value: customerId },
           TotalAmt: input.amount,
           TxnDate: input.txnDate,
-          DepositToAccountRef: { value: input.depositAccountId },
+          ...(input.amount > 0
+            ? { DepositToAccountRef: { value: input.depositAccountId } }
+            : {}),
           ...(input.reference?.trim()
             ? { PaymentRefNum: input.reference.trim() }
             : {}),
@@ -352,10 +404,7 @@ export async function recordPayment(
           ...(paymentNote(input.memo)
             ? { PrivateNote: paymentNote(input.memo) }
             : {}),
-          Line: plan.cashApply.map((a) => ({
-            Amount: a.amount,
-            LinkedTxn: [{ TxnId: a.invoiceId, TxnType: 'Invoice' }],
-          })),
+          Line: newPaymentLines(plan.cashApply, plan.memoUse, typeOf),
         },
         { requestId: input.requestId }
       );
@@ -406,6 +455,14 @@ export async function recordPayment(
           payment_method: method?.label ?? null,
           amounts_typed: !!input.allocations,
           invoices: plan.cashApply.map((a) => doc(a.invoiceId)),
+          ...(plan.memoUse.length > 0
+            ? {
+                credit_notes: plan.memoUse.map(
+                  (m) => creditDoc.get(m.creditMemoId) ?? m.creditMemoId
+                ),
+                credit_notes_used: plan.memoUsed,
+              }
+            : {}),
           left_as_credit: plan.leftover,
         },
       });

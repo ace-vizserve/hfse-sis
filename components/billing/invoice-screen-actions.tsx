@@ -38,7 +38,12 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { stashInvoiceCopy, type InvoiceCopy } from '@/lib/billing/invoice-copy';
+import {
+  stashCreditNoteStart,
+  stashInvoiceCopy,
+  type CreditNoteStart,
+  type InvoiceCopy,
+} from '@/lib/billing/invoice-copy';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
 import type { StageTarget } from '@/lib/billing/tie';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -65,7 +70,7 @@ export function InvoiceScreenActions({
   docNumber,
   studentNumber,
   qbUrl,
-  qbCreditMemoUrl,
+  creditNote,
   qbSettingsUrl,
   qbCompanyUrl,
   copy,
@@ -88,7 +93,10 @@ export function InvoiceScreenActions({
   /** The Registration / Fees stage this invoice fills, if any. */
   stage: StageTarget | null;
   qbUrl: string;
-  qbCreditMemoUrl: string;
+  /** "Create a credit note" (QuickBooks' More actions): this invoice's
+   *  lines and statement message start the Credit note form; null when the
+   *  invoice can't be read or is voided. */
+  creditNote: CreditNoteStart | null;
   /** QuickBooks' Sales settings (the invoice form's defaults). */
   qbSettingsUrl: string;
   /** QuickBooks' Company settings (the name and address on the invoice). */
@@ -210,6 +218,18 @@ export function InvoiceScreenActions({
           >
             Make a copy
           </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={!creditNote}
+            onSelect={() => {
+              if (!creditNote) return;
+              stashCreditNoteStart(studentNumber, creditNote);
+              router.push(
+                `/billing/${encodeURIComponent(studentNumber)}?new=credit-note&from=invoice`
+              );
+            }}
+          >
+            Create a credit note
+          </DropdownMenuItem>
           {voidable && (
             <DropdownMenuItem
               variant="destructive"
@@ -227,7 +247,6 @@ export function InvoiceScreenActions({
           </DropdownMenuLabel>
           <QbLink href={qbUrl}>Open in QuickBooks</QbLink>
           <QbLink href={qbUrl}>Make recurring</QbLink>
-          <QbLink href={qbCreditMemoUrl}>Create a credit note</QbLink>
           {voidBlocked && <QbLink href={qbUrl}>Void</QbLink>}
           <QbLink href={qbUrl}>Delete</QbLink>
           <QbLink href={qbUrl}>Create shipping label</QbLink>

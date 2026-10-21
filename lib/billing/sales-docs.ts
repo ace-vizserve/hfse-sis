@@ -7,6 +7,10 @@
 // what is still open on them — and on credit memos — from its Customer
 // Balance Detail report, the same open list QuickBooks' Receive payment shows.
 
+import type {
+  OpenCreditNote,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 import { round2 } from '@/lib/billing/view';
 
 /** The four kinds, by QuickBooks' transaction-list names. */
@@ -143,6 +147,35 @@ export function openItemsFromBalanceDetail(report: QbReport): OpenItem[] {
     });
   }
   return out;
+}
+
+/** Open expenses / cheques as Receive payment's Outstanding rows. */
+export function toPayableCharges(items: OpenItem[]): PayableInvoice[] {
+  return items
+    .filter((o) => o.type === 'expense' || o.type === 'check')
+    .map((o) => ({
+      id: o.id,
+      docNumber: o.docNumber,
+      txnDate: o.txnDate,
+      dueDate: o.dueDate,
+      balance: o.open,
+      total: o.amount,
+      items: '',
+      txnType: o.type === 'check' ? ('Check' as const) : ('Expense' as const),
+    }));
+}
+
+/** Credit notes with unused credit, as Receive payment's Credits. */
+export function toOpenCreditNotes(items: OpenItem[]): OpenCreditNote[] {
+  return items
+    .filter((o) => o.type === 'credit' && o.open > 0)
+    .map((o) => ({
+      id: o.id,
+      docNumber: o.docNumber,
+      txnDate: o.txnDate,
+      total: o.amount,
+      open: o.open,
+    }));
 }
 
 export type DocStatus = {

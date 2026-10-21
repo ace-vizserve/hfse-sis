@@ -172,6 +172,7 @@ export function SalesDocSheet({
           id: string;
           docNumber: string | null;
           warnings: string[];
+          appliedTo?: string[];
         }>(
           `/api/billing/students/${encodeURIComponent(studentNumber)}/sales-docs`,
           jsonInit('POST', {
@@ -214,6 +215,11 @@ export function SalesDocSheet({
       pending: `Creating the ${name.toLowerCase()} in QuickBooks…`,
       success: (d) => {
         for (const w of d.warnings) toast.warning(w);
+        // QuickBooks' "Automatically apply credits" put it on invoices.
+        if (d.appliedTo?.length)
+          toast.message(
+            `Applied to invoice ${d.appliedTo.join(', ')}, as QuickBooks' "Automatically apply credits" setting does.`
+          );
         return `${name}${d.docNumber ? ` ${d.docNumber}` : ''} created in QuickBooks`;
       },
       // Open it; its page reads QuickBooks fresh.

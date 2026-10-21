@@ -38,6 +38,16 @@ export const PaymentBody = z
       .max(4000, 'A memo is at most 4000 characters in QuickBooks.')
       .optional(),
     useCredit: z.boolean(),
+    // QuickBooks' "Credits": the credit notes ticked, and how much of each.
+    creditNotes: z
+      .array(
+        z.object({
+          creditMemoId: z.string().min(1),
+          amount: z.number().positive().max(1_000_000),
+        })
+      )
+      .max(50)
+      .optional(),
     requestId: z.string().uuid(),
   })
   .superRefine((b, ctx) => {

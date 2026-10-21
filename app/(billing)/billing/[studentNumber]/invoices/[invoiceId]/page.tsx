@@ -218,7 +218,18 @@ export default async function BillingInvoicePage({
               customerEmail={email}
               stage={stage}
               qbUrl={page.qbUrl}
-              qbCreditMemoUrl={qboAppUrl(page.environment, '/app/creditmemo')}
+              creditNote={
+                copy && !isVoided
+                  ? {
+                      from: docNo,
+                      statementMessage: d?.privateNote ?? null,
+                      lines: copy.lines.map((l, i) => ({
+                        ...l,
+                        itemName: d?.lines[i]?.itemName ?? null,
+                      })),
+                    }
+                  : null
+              }
               qbSettingsUrl={qboAppUrl(
                 page.environment,
                 '/app/settings?p=Sales'
@@ -251,6 +262,7 @@ export default async function BillingInvoicePage({
                   total: page.row.total,
                 }}
                 credits={page.credits}
+                creditNotes={page.creditNotes}
                 depositAccounts={page.depositAccounts}
                 paymentMethods={page.paymentMethods}
                 customerBalance={page.profile?.balance ?? null}

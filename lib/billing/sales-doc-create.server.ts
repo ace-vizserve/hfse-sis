@@ -9,7 +9,13 @@ import {
   type DepositChoice,
   type PaymentMethodChoice,
 } from '@/lib/billing/deposit-accounts.server';
-import { SIS_READ_FAILED } from '@/lib/billing/messages';
+import { loadCustomerHistory } from '@/lib/billing/history.server';
+import {
+  SIS_CATCH_UP,
+  SIS_READ_FAILED,
+  STAGE_NOT_UPDATED,
+} from '@/lib/billing/messages';
+import { newPaymentLines, planPayment } from '@/lib/billing/payment-plan';
 import {
   buildSalesDocBody,
   SALES_DOC_ENTITY,
@@ -23,6 +29,7 @@ import {
   QboError,
   qboErrorMessage,
   qboQuery,
+  qboReasonOnly,
   qboRequest,
   QboNotConnectedError,
   WRITE_OUTCOME_UNKNOWN,
@@ -37,6 +44,8 @@ export type SalesDocResult =
       id: string;
       docNumber: string | null;
       total: number;
+      /** Credit note: the invoices QuickBooks' auto-apply put it on. */
+      appliedTo: string[];
       warnings: string[];
     }
   | {
@@ -258,12 +267,123 @@ export async function createSalesDoc(
   } catch (e) {
     console.error(`[billing] audit row for ${AUDIT[kind]}:`, e);
   }
+  const warnings: string[] = [];
+  let appliedTo: string[] = [];
+  if (kind === 'credit_memo') {
+    // QuickBooks' "Automatically apply credits": when the company has it on,
+    // QuickBooks' own form puts a new credit on the oldest open invoices
+    // straight away; a credit made through the API is not, so the SIS does
+    // what the form would. Off (HFSE's company today): the credit waits for
+    // Receive payment / Use credit. A problem here never fails the request.
+    try {
+      appliedTo = await autoApplyCredit(service, {
+        customerId: customer.id,
+        creditMemoId: created.Id,
+        amount: Number(created.TotalAmt),
+        txnDate: input.txnDate,
+        requestId: `${input.requestId}-a`,
+      });
+    } catch (e) {
+      console.error('[billing] auto-apply credit note:', e);
+      warnings.push(
+        `The credit note was created, but QuickBooks didn't apply it to an invoice (${qboReasonOnly(e)}). Use it with Receive payment.`
+      );
+    }
+    if (appliedTo.length > 0)
+      try {
+        await logAction({
+          service,
+          actor,
+          action: 'qbo.payment.apply_credit',
+          entityType: 'qbo_credit_memo',
+          entityId: created.Id,
+          context: {
+            studentNumber,
+            credit_note: created.DocNumber ?? null,
+            amount: Number(created.TotalAmt),
+            invoices: appliedTo,
+            automatic: true,
+          },
+        });
+      } catch (e) {
+        console.error('[billing] audit row for auto-applied credit:', e);
+      }
+    // Store the invoices again so balances and the Registration / Fees
+    // stages follow.
+    try {
+      const h = await loadCustomerHistory(service, studentNumber);
+      if (h.tileProblem) warnings.push(STAGE_NOT_UPDATED);
+    } catch (e) {
+      console.error('[billing] re-read after credit note:', e);
+      warnings.push(SIS_CATCH_UP);
+    }
+  }
   return {
     ok: true,
     kind,
     id: created.Id,
     docNumber: created.DocNumber ?? null,
     total: Number(created.TotalAmt),
-    warnings: [],
+    appliedTo,
+    warnings,
   };
+}
+
+/**
+ * Applies a new credit note to the customer's oldest open invoices, as
+ * QuickBooks does when "Automatically apply credits" is on. Returns the
+ * invoice numbers it went to ([] when the setting is off or nothing is open).
+ */
+async function autoApplyCredit(
+  service: SupabaseClient,
+  args: {
+    customerId: string;
+    creditMemoId: string;
+    amount: number;
+    txnDate: string;
+    requestId: string;
+  }
+): Promise<string[]> {
+  const pref = await qboRequest<{
+    Preferences?: { SalesFormsPrefs?: { AutoApplyCredit?: boolean } };
+  }>(service, 'GET', '/preferences');
+  if (!pref.Preferences?.SalesFormsPrefs?.AutoApplyCredit) return [];
+  const open = await qboQuery<{
+    Id: string;
+    DocNumber?: string;
+    TxnDate?: string;
+    Balance: number;
+  }>(
+    service,
+    'Invoice',
+    `CustomerRef = '${qbEscape(args.customerId)}' AND Balance > '0'`
+  );
+  const plan = planPayment({
+    invoices: open.map((i) => ({
+      id: i.Id,
+      docNumber: i.DocNumber ?? null,
+      txnDate: i.TxnDate ?? null,
+      balance: Number(i.Balance),
+    })),
+    credits: [],
+    useCredit: false,
+    amount: args.amount,
+  });
+  if (plan.cashApply.length === 0) return [];
+  await qboRequest(
+    service,
+    'POST',
+    '/payment',
+    {
+      CustomerRef: { value: args.customerId },
+      TotalAmt: 0,
+      TxnDate: args.txnDate,
+      Line: newPaymentLines(plan.cashApply, [
+        { creditMemoId: args.creditMemoId, amount: plan.cashApplied },
+      ]),
+    },
+    { requestId: args.requestId }
+  );
+  const doc = new Map(open.map((i) => [i.Id, i.DocNumber ?? i.Id]));
+  return plan.cashApply.map((a) => doc.get(a.invoiceId) ?? a.invoiceId);
 }

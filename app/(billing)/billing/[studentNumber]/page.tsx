@@ -50,6 +50,7 @@ export default async function BillingCustomerPage({
     invoice?: string;
     stage?: string;
     ay?: string;
+    from?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -57,7 +58,7 @@ export default async function BillingCustomerPage({
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
   const [
     { studentNumber },
-    { tab, new: newSheet, invoice: newInvoice, stage: stageParam, ay },
+    { tab, new: newSheet, invoice: newInvoice, stage: stageParam, ay, from },
   ] = await Promise.all([params, searchParams]);
   // A Registration / Fees card's Create invoice in Billing.
   const fromStage =
@@ -160,13 +161,17 @@ export default async function BillingCustomerPage({
                 }))}
                 openInvoices={page.openInvoices}
                 credits={page.credits}
+                charges={page.openCharges}
+                creditNotes={page.openCredits}
+                credit={b.credit}
                 depositAccounts={page.depositAccounts}
                 paymentMethods={page.paymentMethods}
                 customerBalance={b.openBalance}
                 initialSheet={
                   newSheet === 'payment' ||
                   newSheet === 'invoice' ||
-                  newSheet === 'refund-receipt'
+                  newSheet === 'refund-receipt' ||
+                  newSheet === 'credit-note'
                     ? newSheet
                     : null
                 }
@@ -174,6 +179,7 @@ export default async function BillingCustomerPage({
                   newSheet === 'payment' ? (newInvoice ?? null) : null
                 }
                 initialStage={fromStage}
+                fromInvoice={newSheet === 'credit-note' && from === 'invoice'}
               />
             </>
           )
@@ -328,6 +334,8 @@ export default async function BillingCustomerPage({
               credit={b.credit}
               openInvoices={page.openInvoices}
               credits={page.credits}
+              charges={page.openCharges}
+              creditNotes={page.openCredits}
               depositAccounts={page.depositAccounts}
               paymentMethods={page.paymentMethods}
               customerBalance={b.openBalance}
@@ -345,6 +353,7 @@ export default async function BillingCustomerPage({
             profile={page.profile}
             openInvoices={page.openInvoices}
             credits={page.credits}
+            creditNotes={page.openCredits}
             depositAccounts={page.depositAccounts}
             paymentMethods={page.paymentMethods}
             canRecord={page.connected}

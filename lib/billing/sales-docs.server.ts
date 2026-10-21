@@ -132,6 +132,28 @@ export async function loadCustomerDocs(
   };
 }
 
+/**
+ * What is open on the customer right now (QuickBooks' Customer Balance
+ * Detail): expenses / cheques paying a credit back, and credit notes with
+ * unused credit — what Receive payment may tick.
+ */
+export async function loadOpenItems(
+  service: SupabaseClient,
+  customerId: string
+): Promise<{ charges: OpenItem[]; credits: OpenItem[] }> {
+  const open = openItemsFromBalanceDetail(
+    await qboRequest<QbReport>(
+      service,
+      'GET',
+      `/reports/CustomerBalanceDetail?customer=${encodeURIComponent(customerId)}&report_date=2099-12-31`
+    )
+  );
+  return {
+    charges: open.filter((o) => o.type === 'expense' || o.type === 'check'),
+    credits: open.filter((o) => o.type === 'credit'),
+  };
+}
+
 export type SalesDocDetail = {
   kind: SalesDocKind;
   id: string;

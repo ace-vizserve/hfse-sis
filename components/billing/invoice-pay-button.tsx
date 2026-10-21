@@ -5,7 +5,11 @@ import { useState } from 'react';
 
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
 import { Button } from '@/components/ui/button';
-import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
+import type {
+  CreditSource,
+  OpenCreditNote,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 
 // The invoice page's primary action: Record payment with only this invoice
 // listed.
@@ -14,6 +18,8 @@ export function InvoicePayButton(props: {
   studentName: string;
   invoice: PayableInvoice;
   credits: Array<CreditSource & { reference: string | null }>;
+  /** Credit notes with unused credit — Receive payment's Credits. */
+  creditNotes?: OpenCreditNote[];
   depositAccounts: Array<{ id: string; label: string }>;
   paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
@@ -44,6 +50,7 @@ export function InvoicePayButton(props: {
           studentName={props.studentName}
           openInvoices={[props.invoice]}
           credits={props.credits}
+          creditNotes={props.creditNotes}
           depositAccounts={props.depositAccounts}
           paymentMethods={props.paymentMethods}
           mode="pay"

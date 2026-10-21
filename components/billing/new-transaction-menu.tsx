@@ -20,12 +20,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 // QuickBooks' "New transaction ▾" on Sales transactions, item for item and in
-// its order (sandbox capture 2026-10-21). Invoice, Payment and Refund receipt
-// are done in Billing (pick the customer, their page opens with the form);
-// the others are made in QuickBooks, so they open there.
+// its order (sandbox capture 2026-10-21; Singapore names). Invoice, Payment,
+// Credit note and Refund receipt are done in Billing (pick the customer,
+// their page opens with the form); the others are made in QuickBooks, so
+// they open there.
 
 type Entry = { label: string; sheet: Pick } | { label: string; path: string };
-type Pick = 'invoice' | 'payment' | 'refund-receipt';
+type Pick = 'invoice' | 'payment' | 'credit-note' | 'refund-receipt';
 
 const ENTRIES: Entry[] = [
   { label: 'Invoice', sheet: 'invoice' },
@@ -33,7 +34,7 @@ const ENTRIES: Entry[] = [
   { label: 'Estimate', path: '/app/estimate' },
   { label: 'Payment link', path: '/app/paymentlinks' },
   { label: 'Sales receipt', path: '/app/salesreceipt' },
-  { label: 'Credit note', path: '/app/creditmemo' },
+  { label: 'Credit note', sheet: 'credit-note' },
   { label: 'Refund receipt', sheet: 'refund-receipt' },
   { label: 'Delayed credit', path: '/app/delayedcredit' },
   { label: 'Delayed charge', path: '/app/delayedcharge' },
@@ -44,6 +45,7 @@ const ENTRIES: Entry[] = [
 const TITLE: Record<Pick, string> = {
   invoice: 'Create invoice',
   payment: 'Receive payment',
+  'credit-note': 'Credit note',
   'refund-receipt': 'Refund receipt',
 };
 

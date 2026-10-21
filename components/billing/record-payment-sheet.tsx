@@ -43,13 +43,14 @@ import {
 import {
   oldestFirst,
   PAYMENT_NOTE_MAX,
-  planAllocatedPayment,
-  planPayment,
+  planWithCreditNotes,
   type Allocation,
   type CreditSource,
+  type OpenCreditNote,
   type PayableInvoice,
-  type PaymentPlan,
+  type PaymentPlanWithCredits,
 } from '@/lib/billing/payment-plan';
+import { openItemLabel } from '@/lib/billing/sales-docs';
 import { DEPOSIT_REQUIRED } from '@/lib/billing/payment-body';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { formatDay, round2, todaySg } from '@/lib/billing/view';
@@ -76,12 +77,18 @@ export function RecordPaymentSheet({
   paymentMethods = [],
   mode,
   customerBalance,
+  charges = [],
+  creditNotes = [],
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
   studentNumber: string;
   studentName: string;
   openInvoices: PayableInvoice[];
+  /** Expenses / cheques paying a credit back — more Outstanding Transactions. */
+  charges?: PayableInvoice[];
+  /** Credit notes with unused credit — QuickBooks' "Credits". */
+  creditNotes?: OpenCreditNote[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string; isDefault?: boolean }>;
   /** QuickBooks' payment methods (Cash, Cheque…); the field is optional. */
@@ -93,7 +100,11 @@ export function RecordPaymentSheet({
   customerBalance?: number | null;
 }) {
   const run = useWriteAction();
-  const invoices = useMemo(() => oldestFirst(openInvoices), [openInvoices]);
+  const invoices = useMemo(
+    () => oldestFirst([...openInvoices, ...charges]),
+    [openInvoices, charges]
+  );
+  const notes = useMemo(() => oldestFirst(creditNotes), [creditNotes]);
   const creditTotal = round2(credits.reduce((s, c) => s + c.unapplied, 0));
   const owed = round2(invoices.reduce((s, i) => s + i.balance, 0));
   const [useCredit, setUseCredit] = useState(
@@ -147,35 +158,78 @@ export function RecordPaymentSheet({
     ? true
     : Number.isFinite(typedCash) && typedCash >= 0;
 
-  const plan: PaymentPlan = (() => {
+  // QuickBooks' Credits: the credit notes ticked, with their Payment cells.
+  // Use credit starts with the credit notes ticked, oldest first, up to what
+  // the transactions still owe after unused payments; Receive payment starts
+  // with none.
+  const [memoCells, setMemoCells] = useState<Map<string, string>>(() => {
+    const m = new Map<string, string>();
+    if (mode !== 'credit') return m;
+    let need =
+      invoices.reduce((s, i) => s + cents(i.balance), 0) -
+      (creditTotal > 0 ? cents(creditTotal) : 0);
+    for (const n of notes) {
+      if (need <= 0) break;
+      const take = Math.min(need, cents(n.open));
+      m.set(n.id, (take / 100).toFixed(2));
+      need -= take;
+    }
+    return m;
+  });
+  const noteOpen = useMemo(
+    () => new Map(notes.map((n) => [n.id, n.open])),
+    [notes]
+  );
+  const memoBad = (id: string, s: string) => {
+    const v = cellValue(s);
+    return v === null || cents(v) > cents(noteOpen.get(id) ?? 0);
+  };
+  const memoUse = [...memoCells]
+    .filter(([id, s]) => !memoBad(id, s) && (cellValue(s) ?? 0) > 0)
+    .map(([creditMemoId, s]) => ({ creditMemoId, amount: cellValue(s)! }));
+  const badMemoCells = [...memoCells].filter(([id, s]) => memoBad(id, s));
+
+  const empty: PaymentPlanWithCredits = {
+    creditUse: [],
+    cashApply: [],
+    creditUsed: 0,
+    cashApplied: 0,
+    leftover: 0,
+    memoUse: [],
+    memoUsed: 0,
+  };
+  const planned = (() => {
     if (typed) {
       // The money is whatever the typed cells need after credit; nothing
       // is left over, as in QuickBooks.
       const total = allocations.reduce((s, a) => s + cents(a.amount), 0) / 100;
-      const r = planAllocatedPayment({
+      const r = planWithCreditNotes({
         invoices,
         credits,
         useCredit,
         amount: total,
         allocations,
+        creditNotes: notes,
+        memoUse,
       });
-      if (r.ok) return { ...r.plan, leftover: 0 };
-      return {
-        creditUse: [],
-        cashApply: [],
-        creditUsed: 0,
-        cashApplied: 0,
-        leftover: 0,
-      };
+      return r.ok ? { ...r, plan: { ...r.plan, leftover: 0 } } : r;
     }
-    return planPayment({
+    return planWithCreditNotes({
       invoices: invoices.filter((i) => ticked.has(i.id)),
       credits,
       useCredit,
       amount: amountValid ? typedCash : 0,
+      creditNotes: notes,
+      memoUse,
     });
   })();
-  const cash = typed ? plan.cashApplied : amountValid ? typedCash : 0;
+  const plan = planned.ok ? planned.plan : empty;
+  const planError = planned.ok ? null : planned.error;
+  const cash = typed
+    ? Math.max(0, Math.round((plan.cashApplied - plan.memoUsed) * 100) / 100)
+    : amountValid
+      ? typedCash
+      : 0;
 
   const applied = new Map<string, number>();
   for (const x of [...plan.creditUse, ...plan.cashApply])
@@ -196,12 +250,36 @@ export function RecordPaymentSheet({
       : ticked.has(id);
 
   const needsAccount = cash > 0;
-  const nothingToDo = cash <= 0 && plan.creditUsed <= 0;
+  const nothingToDo = cash <= 0 && plan.creditUsed <= 0 && plan.memoUsed <= 0;
   const valid =
     amountValid &&
     badCells.length === 0 &&
+    badMemoCells.length === 0 &&
+    !planError &&
     !nothingToDo &&
     (!needsAccount || !!account);
+
+  /** Ticking a credit note uses what the ticked transactions still need
+   *  (up to its unused credit), as QuickBooks fills it. */
+  const tickNote = (id: string, on: boolean) =>
+    setMemoCells((m) => {
+      const n = new Map(m);
+      if (!on) {
+        n.delete(id);
+        return n;
+      }
+      const need =
+        (typed
+          ? allocations.reduce((s, a) => s + cents(a.amount), 0)
+          : invoices
+              .filter((i) => ticked.has(i.id))
+              .reduce((s, i) => s + cents(i.balance), 0)) -
+        [...n.values()].reduce((s, v) => s + cents(cellValue(v) ?? 0), 0);
+      const open = cents(noteOpen.get(id) ?? 0);
+      const take = need > 0 ? Math.min(need, open) : open;
+      n.set(id, (take / 100).toFixed(2));
+      return n;
+    });
 
   const q = find.trim().toLowerCase();
   const visible = q
@@ -214,7 +292,7 @@ export function RecordPaymentSheet({
       try {
         return await apiFetch<{
           warnings: string[];
-          plan: { creditUsed: number; leftover: number };
+          plan: { creditUsed: number; leftover: number; memoUsed?: number };
         }>(
           `/api/billing/students/${encodeURIComponent(studentNumber)}/payments`,
           jsonInit('POST', {
@@ -229,6 +307,7 @@ export function RecordPaymentSheet({
               : invoices.filter((i) => ticked.has(i.id)).map((i) => i.id),
             ...(typed ? { allocations } : {}),
             useCredit,
+            ...(memoUse.length > 0 ? { creditNotes: memoUse } : {}),
             requestId,
           })
         );
@@ -256,7 +335,8 @@ export function RecordPaymentSheet({
       pending: 'Recording in QuickBooks…',
       success: (d) => {
         for (const w of d.warnings) toast.warning(w);
-        if (cash <= 0) return `${formatSgd(d.plan.creditUsed)} of credit used`;
+        if (cash <= 0)
+          return `${formatSgd(d.plan.creditUsed + (d.plan.memoUsed ?? 0))} of credit used`;
         return d.plan.leftover > 0
           ? `${formatSgd(cash)} recorded · ${formatSgd(d.plan.leftover)} kept as credit`
           : `${formatSgd(cash)} recorded in QuickBooks`;
@@ -496,7 +576,7 @@ export function RecordPaymentSheet({
             </SheetSection>
 
             <SheetSection
-              title="Outstanding invoices"
+              title="Outstanding transactions"
               aside={
                 invoices.length > 0 && (
                   <div className="relative w-full max-w-56">
@@ -588,10 +668,21 @@ export function RecordPaymentSheet({
                               </TableCell>
                               <TableCell className="whitespace-normal">
                                 <span className="block whitespace-nowrap">
-                                  Invoice{' '}
-                                  <span className="font-mono tabular-nums">
-                                    {doc}
-                                  </span>
+                                  {i.txnType && i.txnType !== 'Invoice' ? (
+                                    openItemLabel(
+                                      i.txnType === 'Check'
+                                        ? 'check'
+                                        : 'expense',
+                                      i.docNumber
+                                    )
+                                  ) : (
+                                    <>
+                                      Invoice{' '}
+                                      <span className="font-mono tabular-nums">
+                                        {doc}
+                                      </span>
+                                    </>
+                                  )}
                                 </span>
                                 <span className="block max-w-52 truncate text-[12px] text-muted-foreground">
                                   <span className="tabular-nums">
@@ -644,7 +735,109 @@ export function RecordPaymentSheet({
               </p>
             </SheetSection>
 
+            {notes.length > 0 && (
+              <SheetSection
+                title="Credits"
+                aside={
+                  <p className="text-[12px] text-muted-foreground">
+                    {notes.length === 1
+                      ? '1 credit note'
+                      : `${notes.length} credit notes`}
+                  </p>
+                }
+              >
+                <div className="overflow-x-auto rounded-xl border border-border">
+                  <Table className="[&_td]:px-3 [&_th]:px-3">
+                    <TableHeader>
+                      <TableRow className="bg-muted/40">
+                        <TableHead className="w-10">
+                          <span className="sr-only">Use</span>
+                        </TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead className="text-right">
+                          Original amount
+                        </TableHead>
+                        <TableHead className="text-right">
+                          Open balance
+                        </TableHead>
+                        <TableHead className="text-right">Payment</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {notes.map((n) => {
+                        const on = memoCells.has(n.id);
+                        const label = openItemLabel('credit', n.docNumber);
+                        const bad =
+                          on && memoBad(n.id, memoCells.get(n.id) ?? '');
+                        return (
+                          <TableRow
+                            key={n.id}
+                            data-state={on ? 'selected' : undefined}
+                          >
+                            <TableCell>
+                              <Checkbox
+                                aria-label={`Use ${label}`}
+                                checked={on}
+                                onCheckedChange={(v) =>
+                                  tickNote(n.id, v === true)
+                                }
+                              />
+                            </TableCell>
+                            <TableCell className="whitespace-nowrap">
+                              {label}
+                              <span className="block text-[12px] tabular-nums text-muted-foreground">
+                                {formatDay(n.txnDate)}
+                              </span>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatSgd(n.total)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatSgd(n.open)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <Input
+                                aria-label={`Payment from ${label}`}
+                                aria-invalid={bad || undefined}
+                                inputMode="decimal"
+                                value={memoCells.get(n.id) ?? ''}
+                                onChange={(e) =>
+                                  setMemoCells((m) =>
+                                    new Map(m).set(n.id, e.target.value)
+                                  )
+                                }
+                                className="ml-auto h-8 w-28 text-right tabular-nums"
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+                {showErrors && badMemoCells.length > 0 && (
+                  <FieldError>
+                    A credit can be from 0 up to that credit note&apos;s open
+                    balance.
+                  </FieldError>
+                )}
+                <p className="text-[12px] text-muted-foreground">
+                  Tick a credit note to use it on the transactions ticked above.
+                  To pay a credit back, tick it with the expense or cheque and
+                  set Amount received to 0.00.
+                </p>
+              </SheetSection>
+            )}
+
             <dl className="ml-auto grid w-full max-w-xs grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm">
+              {plan.memoUsed > 0 && (
+                <>
+                  <dt className="text-muted-foreground">Credits applied</dt>
+                  <dd className="text-right tabular-nums">
+                    {formatSgd(plan.memoUsed)}
+                  </dd>
+                </>
+              )}
               {plan.creditUsed > 0 && (
                 <>
                   <dt className="text-muted-foreground">Credit used</dt>
@@ -662,6 +855,7 @@ export function RecordPaymentSheet({
                 {formatSgd(plan.leftover)}
               </dd>
             </dl>
+            {planError && <FieldError>{planError}</FieldError>}
             {showErrors && nothingToDo && (
               <FieldError>
                 Enter the amount received, or use credit on a ticked invoice.

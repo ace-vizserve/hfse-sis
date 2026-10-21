@@ -32,7 +32,9 @@ import {
   type InvoiceDetail,
   type QbAddress,
 } from '@/lib/billing/live.server';
-import type { CreditSource } from '@/lib/billing/payment-plan';
+import type { CreditSource, OpenCreditNote } from '@/lib/billing/payment-plan';
+import { toOpenCreditNotes } from '@/lib/billing/sales-docs';
+import { loadOpenItems } from '@/lib/billing/sales-docs.server';
 import { loadStudentInfo } from '@/lib/billing/students.server';
 import { round2, todaySg } from '@/lib/billing/view';
 import {
@@ -65,6 +67,8 @@ export type InvoicePage = {
   payments: Array<PaymentRowView & { onThisInvoice: number }>;
   qbUrl: string;
   credits: Array<CreditSource & { reference: string | null }>;
+  /** Credit notes with unused credit (Receive payment's Credits), live. */
+  creditNotes: OpenCreditNote[];
   depositAccounts: Array<{ id: string; label: string }>;
   paymentMethods: PaymentMethodChoice[];
   /** QuickBooks' ‹ › on an invoice: this customer's older and newer invoice. */
@@ -105,7 +109,7 @@ export async function loadInvoicePage(
     ]);
   if (detail.d && detail.d.customerId !== link.qbo_customer_id) return null;
 
-  const [inv, pays, sends, dep, conn, info, siblings, methods] =
+  const [inv, pays, sends, dep, conn, info, siblings, methods, openNow] =
     await Promise.all([
       service
         .from('qbo_invoices')
@@ -148,6 +152,13 @@ export async function loadInvoicePage(
         console.error('[billing] invoice page, payment methods:', e);
         return [] as PaymentMethodChoice[];
       }),
+      // Credit notes to use on it, live; unreadable → none offered.
+      loadOpenItems(service, link.qbo_customer_id as string).catch(
+        (e: unknown) => {
+          console.error('[billing] invoice page, credit notes:', e);
+          return { charges: [], credits: [] };
+        }
+      ),
     ]);
   if (!inv.data) return null;
   const row = toInvoiceRow(inv.data as InvRow, todaySg());
@@ -212,6 +223,7 @@ export async function loadInvoicePage(
     payments,
     qbUrl: qboInvoiceUrl(environment, qboInvoiceId),
     credits: toCreditSources(allPayments),
+    creditNotes: toOpenCreditNotes(openNow.credits),
     depositAccounts: dep,
     paymentMethods: methods,
     ...neighbours(

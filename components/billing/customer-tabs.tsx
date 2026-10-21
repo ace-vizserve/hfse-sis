@@ -22,7 +22,11 @@ import type {
   PaymentRowView,
 } from '@/lib/billing/customer-page.server';
 import type { CustomerProfile } from '@/lib/billing/live.server';
-import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import type {
+  CreditSource,
+  OpenCreditNote,
+  OpenInvoice,
+} from '@/lib/billing/payment-plan';
 import { cn } from '@/lib/utils';
 
 // The customer page's tabs, named as QuickBooks names them: Transaction List
@@ -296,7 +300,10 @@ export function CustomerTabs({
   qbBase,
   initialTab,
   docs = [],
+  creditNotes = [],
 }: {
+  /** Credit notes with unused credit, for Receive payment's Credits. */
+  creditNotes?: OpenCreditNote[];
   studentNumber: string;
   studentName: string;
   level: string | null;
@@ -338,6 +345,7 @@ export function CustomerTabs({
           invoices={invoices}
           payments={payments}
           docs={docs}
+          creditNotes={creditNotes}
           openInvoices={openInvoices}
           credits={credits}
           depositAccounts={depositAccounts}

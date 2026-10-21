@@ -57,7 +57,11 @@ import type {
   InvoiceRowView,
   PaymentRowView,
 } from '@/lib/billing/customer-page.server';
-import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
+import type {
+  CreditSource,
+  OpenCreditNote,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 import {
   DOC_TYPE_LABEL,
   docPageHref,
@@ -404,6 +408,7 @@ export function CustomerTransactions({
   invoices,
   payments,
   docs = [],
+  creditNotes = [],
   openInvoices,
   credits,
   depositAccounts,
@@ -419,6 +424,8 @@ export function CustomerTransactions({
   invoices: InvoiceRowView[];
   payments: PaymentRowView[];
   docs?: SalesDocRow[];
+  /** Credit notes with unused credit, for Receive payment's Credits. */
+  creditNotes?: OpenCreditNote[];
   openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
@@ -1004,6 +1011,7 @@ export function CustomerTransactions({
           studentName={studentName}
           openInvoices={paying.invoices}
           credits={credits}
+          creditNotes={creditNotes}
           depositAccounts={depositAccounts}
           paymentMethods={paymentMethods}
           mode="pay"

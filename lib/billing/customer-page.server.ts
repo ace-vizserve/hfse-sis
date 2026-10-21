@@ -16,9 +16,17 @@ import {
   readCustomerProfile,
   type CustomerProfile,
 } from '@/lib/billing/live.server';
-import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
+import type {
+  CreditSource,
+  OpenCreditNote,
+  PayableInvoice,
+} from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
-import type { OpenItem, SalesDocRow } from '@/lib/billing/sales-docs';
+import {
+  toOpenCreditNotes,
+  toPayableCharges,
+  type SalesDocRow,
+} from '@/lib/billing/sales-docs';
 import { loadCustomerDocs } from '@/lib/billing/sales-docs.server';
 import {
   loadStudentInfo,
@@ -95,9 +103,9 @@ export type CustomerPage = {
   /** Refund receipts, credit memos, expenses and checks, read live. */
   docs: SalesDocRow[];
   /** Expenses / checks still open — Receive payment's Outstanding rows. */
-  openCharges: OpenItem[];
+  openCharges: PayableInvoice[];
   /** Credit memos with unused credit — Receive payment's Credits. */
-  openCredits: OpenItem[];
+  openCredits: OpenCreditNote[];
   stages: {
     ayCode: string;
     registration: string | null;
@@ -361,7 +369,10 @@ export async function loadCustomerPage(
   const stored = {
     owed: live_.reduce((s, i) => s + i.balance, 0),
     overdue: overdueRows.reduce((s, i) => s + i.balance, 0),
-    credit: payments.reduce((s, p) => s + p.unapplied, 0),
+    // Unused payments and credit notes' unused credit.
+    credit:
+      payments.reduce((s, p) => s + p.unapplied, 0) +
+      docs.openCredits.reduce((s, c) => s + c.open, 0),
   };
   const oldest = [...overdueRows].sort((a, b) =>
     (a.dueDate ?? '').localeCompare(b.dueDate ?? '')
@@ -413,8 +424,8 @@ export async function loadCustomerPage(
     depositAccounts: dep,
     paymentMethods: methods,
     docs: docs.rows,
-    openCharges: docs.openCharges,
-    openCredits: docs.openCredits,
+    openCharges: toPayableCharges(docs.openCharges),
+    openCredits: toOpenCreditNotes(docs.openCredits),
     stages,
     overdueOldest: oldest
       ? { docNumber: oldest.docNumber, dueDate: oldest.dueDate }
