@@ -103,6 +103,9 @@ export const ALL_AUDIT_ACTIONS = [
   // `system:quickbooks-sync` and `context.source = 'quickbooks'`.
   'qbo.invoice.create',
   'qbo.invoice.link',
+  // Link an invoice on a Registration / Fees stage (an existing QuickBooks
+  // invoice, found by its number, tied to the stage).
+  'qbo.invoice.link_stage',
   'qbo.invoice.send',
   // More actions → Void on the invoice page (unpaid invoices only).
   'qbo.invoice.void',

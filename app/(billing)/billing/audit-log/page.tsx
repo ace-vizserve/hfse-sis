@@ -33,6 +33,7 @@ const BILLING_AUDIT_ALLOWLIST = [
   'qbo.invoice.void',
   'qbo.invoice.update',
   'qbo.invoice.link',
+  'qbo.invoice.link_stage',
   'qbo.payment.create',
   'qbo.payment.apply_credit',
   'qbo.customer.create',
@@ -52,6 +53,7 @@ const BILLING_AUDIT_ALLOWLIST = [
 
 const INVOICE_ACTIONS = new Set([
   'qbo.invoice.create',
+  'qbo.invoice.link_stage',
   'qbo.invoice.send',
   'qbo.invoice.void',
   'qbo.invoice.update',

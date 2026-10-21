@@ -202,6 +202,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.discount_code.expire': 'Discount code expired',
   'qbo.invoice.create': 'QuickBooks invoice created',
   'qbo.invoice.link': 'QuickBooks invoice linked',
+  'qbo.invoice.link_stage': 'QuickBooks invoice linked to a stage',
   'qbo.invoice.send': 'QuickBooks invoice emailed',
   'qbo.invoice.void': 'QuickBooks invoice voided',
   'qbo.invoice.update': 'QuickBooks invoice edited',
@@ -1913,7 +1914,8 @@ function templateSummary(
     }
 
     case 'qbo.invoice.create':
-    case 'qbo.invoice.link': {
+    case 'qbo.invoice.link':
+    case 'qbo.invoice.link_stage': {
       const parts: string[] = [];
       const stage = str(ctx.stage);
       if (stage) parts.push(stage === 'fees' ? 'Fees' : 'Registration');

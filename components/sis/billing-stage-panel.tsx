@@ -1,6 +1,7 @@
 import { ArrowUpRight, FilePlus2 } from 'lucide-react';
 import Link from 'next/link';
 
+import { LinkStageInvoice } from '@/components/sis/link-stage-invoice';
 import { Button } from '@/components/ui/button';
 import {
   canCreateFromStage,
@@ -14,8 +15,8 @@ import {
 import { cn } from '@/lib/utils';
 
 // The body of the Registration / Fees stage card (spec 2026-10-21): one line
-// about the invoice tied to the stage, then Create invoice in Billing (no live
-// invoice yet) or Open invoice in Billing. Only Billing's roles get the
+// about the invoice tied to the stage, then Create invoice in Billing and Link
+// an invoice (no live invoice yet) or Open invoice in Billing. Only Billing's roles get the
 // actions; anyone else reads the line.
 export function BillingStagePanel({
   stage,
@@ -85,12 +86,21 @@ export function BillingStagePanel({
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           {create &&
             (studentNumber ? (
-              <Button asChild variant="outline" size="sm">
-                <Link href={createFromStageHref(studentNumber, stage, ayCode)}>
-                  <FilePlus2 className="size-3.5" />
-                  Create invoice in Billing
-                </Link>
-              </Button>
+              <>
+                <Button asChild variant="outline" size="sm">
+                  <Link
+                    href={createFromStageHref(studentNumber, stage, ayCode)}
+                  >
+                    <FilePlus2 className="size-3.5" />
+                    Create invoice in Billing
+                  </Link>
+                </Button>
+                <LinkStageInvoice
+                  studentNumber={studentNumber}
+                  stage={stage}
+                  ayCode={ayCode}
+                />
+              </>
             ) : (
               <div className="space-y-1">
                 <Button variant="outline" size="sm" disabled>
