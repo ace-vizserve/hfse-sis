@@ -8,6 +8,7 @@ import {
   Landmark,
   ReceiptText,
 } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 
 import { CreateInvoiceSheet } from '@/components/billing/create-invoice-sheet';
@@ -36,6 +37,7 @@ import type {
   OpenInvoice,
   PayableInvoice,
 } from '@/lib/billing/payment-plan';
+import { stageFromParams } from '@/lib/billing/stage-card';
 import type { StageTarget } from '@/lib/billing/tie';
 
 // The customer page's New transaction menu, as QuickBooks has it: Invoice,
@@ -80,7 +82,7 @@ export function CustomerActions(props: {
     props.initialSheet ?? null
   );
   // An invoice's "Create a credit note": its lines, once.
-  const [start] = useState<SalesDocStart | null>(() =>
+  const [start, setStart] = useState<SalesDocStart | null>(() =>
     props.initialSheet === 'credit-note' && props.fromInvoice
       ? readCreditNoteStart(props.studentNumber)
       : null
@@ -88,14 +90,6 @@ export function CustomerActions(props: {
   useEffect(() => {
     if (props.fromInvoice) clearCreditNoteStart(props.studentNumber);
   }, [props.fromInvoice, props.studentNumber]);
-  // Drop `?new=` once used, so a reload doesn't open the form again.
-  useEffect(() => {
-    if (!props.initialSheet) return;
-    const u = new URL(window.location.href);
-    for (const k of ['new', 'invoice', 'stage', 'ay', 'from'])
-      u.searchParams.delete(k);
-    window.history.replaceState(window.history.state, '', u);
-  }, [props.initialSheet]);
   // Only the first open fills the stage; New transaction → Invoice later is a
   // plain invoice, as on any customer page.
   const [stage, setStage] = useState(
@@ -108,6 +102,45 @@ export function CustomerActions(props: {
   const [onlyInvoice, setOnlyInvoice] = useState(
     props.initialInvoiceId ?? null
   );
+  // `?new=` on every arrival, not only the first: the app keeps a visited
+  // page alive (cacheComponents), so coming back to this customer reuses this
+  // component with its form closed and the server props of the first visit.
+  // The first visit's request is already open from the props above, so only
+  // a later change of the address opens one here (set during render, React's
+  // pattern for state that follows a changed input).
+  const params = useSearchParams();
+  const requested = params.get('new');
+  const [seenParams, setSeenParams] = useState(params);
+  if (params !== seenParams) {
+    setSeenParams(params);
+    const s = CUSTOMER_SHEETS.find((x) => x === requested);
+    if (s) {
+      const fromInv = s === 'credit-note' && params.get('from') === 'invoice';
+      setStart(fromInv ? readCreditNoteStart(props.studentNumber) : null);
+      setUseStart(fromInv);
+      setOnlyInvoice(s === 'payment' ? params.get('invoice') : null);
+      setStage(
+        s === 'invoice'
+          ? stageFromParams(
+              params.get('stage') ?? undefined,
+              params.get('ay') ?? undefined
+            )
+          : null
+      );
+      setKey((k) => k + 1);
+      setSheet(s);
+    }
+  }
+  const fromInvoiceNow = params.get('from') === 'invoice';
+  useEffect(() => {
+    if (!requested) return;
+    if (fromInvoiceNow) clearCreditNoteStart(props.studentNumber);
+    // Drop `?new=` once used, so a reload doesn't open the form again.
+    const u = new URL(window.location.href);
+    for (const k of ['new', 'invoice', 'stage', 'ay', 'from'])
+      u.searchParams.delete(k);
+    window.history.replaceState(window.history.state, '', u);
+  }, [requested, fromInvoiceNow, props.studentNumber]);
   const open = (s: CustomerSheet) => {
     setOnlyInvoice(null);
     setStage(null);
@@ -224,3 +257,11 @@ export type CustomerSheet =
   | 'credit-note'
   | 'expense'
   | 'check';
+
+/** The forms `?new=` may open. */
+const CUSTOMER_SHEETS: readonly CustomerSheet[] = [
+  'invoice',
+  'payment',
+  'refund-receipt',
+  'credit-note',
+];
