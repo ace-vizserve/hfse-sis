@@ -94,6 +94,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Stores the edited invoice in qbo_invoices (read uncached by the Billing loaders); the stage update goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/stage-link/route.ts':
     'Ties a QuickBooks invoice to a stage in qbo_invoices (read uncached by the Billing loaders); the stage update goes syncTilesForStudent → writeStageFromQbo, which busts the tags. Find writes nothing.',
+  'app/api/billing/students/[studentNumber]/sales-docs/route.ts':
+    'Creates a Refund receipt or Credit memo in QuickBooks; the only SIS write is its audit_log row, which no cached surface reads (the Billing pages read them live).',
   'app/api/billing/students/[studentNumber]/payments/route.ts':
     'Stores the payment in qbo_payments (read uncached by the Billing loaders); the stage move goes through loadCustomerHistory → writeStageFromQbo, which busts the tags.',
   // ── writes no database row at all ──────────────────────────────────────

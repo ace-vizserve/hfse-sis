@@ -9,9 +9,11 @@ import { useSearchParams } from 'next/navigation';
 import {
   StatusCell,
   dateRange,
+  docRow,
   invoiceRow,
   type TxnRow,
 } from '@/components/billing/customer-transactions';
+import { docPageHref, docQbPath } from '@/lib/billing/sales-docs';
 import {
   DateRangeFilter,
   useDateFilterParam,
@@ -134,7 +136,9 @@ const searchText = (r: SalesRow) =>
   [r.no ?? '', r.customerName, r.memo ?? '', r.studentNumber].join(' ');
 
 function paymentRow(p: PaymentListRow): SalesRow {
-  const unapplied = p.appliedTo.length === 0;
+  // By what QuickBooks leaves unapplied (a payment can net a credit note
+  // against an expense or cheque, with no invoice).
+  const unapplied = p.unapplied > 0 && p.unapplied >= p.total;
   return {
     key: `p${p.id}`,
     kind: 'payment',
@@ -288,6 +292,12 @@ export function SalesTable({
         credit: 0,
       })),
       ...list.payments.map(paymentRow),
+      ...list.docs.map((d) => ({
+        ...docRow(d),
+        studentNumber: d.studentNumber,
+        customerName: d.customerName,
+        credit: 0,
+      })),
     ],
     [list, today]
   );
@@ -359,9 +369,14 @@ export function SalesTable({
         cell: ({ row }) => {
           const r = row.original;
           const inv = r.kind === 'invoice' ? invoiceById.get(r.id) : null;
-          return inv ? (
+          const href = inv
+            ? invoicePageHref(inv)
+            : r.doc
+              ? docPageHref(r.studentNumber, r.doc.kind, r.id)
+              : null;
+          return href ? (
             <IdentifierLink
-              href={invoicePageHref(inv)}
+              href={href}
               className="font-mono text-[13px] tabular-nums"
             >
               {r.no ?? 'No number'}
@@ -417,7 +432,9 @@ export function SalesTable({
         meta: { label: 'Amount' },
         cell: ({ row }) => (
           <div className="whitespace-nowrap text-right tabular-nums">
-            {formatSgd(row.original.amount)}
+            {row.original.amount < 0
+              ? `-${formatSgd(-row.original.amount)}`
+              : formatSgd(row.original.amount)}
           </div>
         ),
       },
@@ -447,6 +464,31 @@ export function SalesTable({
         enableHiding: false,
         cell: ({ row }) => {
           const r = row.original;
+          if (r.doc) {
+            const page = docPageHref(r.studentNumber, r.doc.kind, r.id);
+            return (
+              <div className="flex justify-end">
+                <Button
+                  asChild
+                  variant="outline"
+                  size="sm"
+                  className="h-7 px-2.5 text-xs"
+                >
+                  {page ? (
+                    <Link href={page}>View</Link>
+                  ) : (
+                    <a
+                      href={`${qbBase}${docQbPath(r.doc.kind, r.id)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View
+                    </a>
+                  )}
+                </Button>
+              </div>
+            );
+          }
           if (r.kind === 'payment')
             return (
               <div className="flex justify-end">
@@ -524,7 +566,8 @@ export function SalesTable({
       },
       {
         id: 'balance',
-        accessorFn: (r) => (r.invoice ? r.invoice.balance : r.credit),
+        accessorFn: (r) =>
+          r.invoice ? r.invoice.balance : r.doc ? r.doc.open : r.credit,
         header: ({ column }) => (
           <div className="flex justify-end">
             <SortableHeader column={column} align="right">
@@ -538,7 +581,9 @@ export function SalesTable({
             {formatSgd(
               row.original.invoice
                 ? row.original.invoice.balance
-                : row.original.credit
+                : row.original.doc
+                  ? row.original.doc.open
+                  : row.original.credit
             )}
           </div>
         ),

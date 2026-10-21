@@ -36,6 +36,30 @@ const cases: Array<[string, AuditLinkRow, AuditRowLink | null]> = [
     { href: '/billing/H260162/invoices/423', label: 'Open invoice' },
   ],
   [
+    'refund receipt → its page',
+    row('qbo_refund_receipt', 'qbo.refund_receipt.create', '436', {
+      studentNumber: 'H230021',
+    }),
+    {
+      href: '/billing/H230021/refund-receipts/436',
+      label: 'Open refund receipt',
+    },
+  ],
+  [
+    'credit note → its page',
+    row('qbo_credit_memo', 'qbo.credit_memo.create', '434', {
+      studentNumber: 'H230021',
+    }),
+    { href: '/billing/H230021/credit-notes/434', label: 'Open credit note' },
+  ],
+  [
+    'expense / cheque → the customer',
+    row('qbo_purchase', 'qbo.check.create', '430', {
+      studentNumber: 'H230021',
+    }),
+    { href: '/billing/H230021', label: 'Open customer' },
+  ],
+  [
     'payment → the customer',
     row('qbo_payment', 'qbo.payment.create', '414', {
       studentNumber: 'H220003',

@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 
 import { CreateInvoiceSheet } from '@/components/billing/create-invoice-sheet';
 import { RecordPaymentSheet } from '@/components/billing/record-payment-sheet';
+import { SalesDocSheet } from '@/components/billing/sales-doc-sheet';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -29,19 +30,19 @@ export function CustomerActions(props: {
   }>;
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
-  depositAccounts: Array<{ id: string; label: string }>;
+  depositAccounts: Array<{ id: string; label: string; isDefault?: boolean }>;
   paymentMethods?: Array<{ id: string; label: string }>;
   customerBalance?: number | null;
-  /** Opened from the Customers list' Receive payment / Create invoice
-   *  (`?new=payment` / `?new=invoice`), as QuickBooks opens the form. */
-  initialSheet?: 'invoice' | 'payment' | null;
+  /** Opened from a list's New transaction ▾ (`?new=payment`, `?new=invoice`,
+   *  `?new=refund-receipt`), as QuickBooks opens the form. */
+  initialSheet?: CustomerSheet | null;
   /** With `?new=payment&invoice=<id>`: the form lists only that invoice. */
   initialInvoiceId?: string | null;
   /** With `?new=invoice&stage=…&ay=…` (a Registration / Fees card's Create
    *  invoice in Billing): the first Create invoice fills that stage. */
   initialStage?: StageTarget | null;
 }) {
-  const [sheet, setSheet] = useState<'invoice' | 'payment' | null>(
+  const [sheet, setSheet] = useState<CustomerSheet | null>(
     props.initialSheet ?? null
   );
   // Drop `?new=` once used, so a reload doesn't open the form again.
@@ -65,7 +66,7 @@ export function CustomerActions(props: {
   const [onlyInvoice, setOnlyInvoice] = useState(
     props.initialInvoiceId ?? null
   );
-  const open = (s: 'invoice' | 'payment') => {
+  const open = (s: CustomerSheet) => {
     setOnlyInvoice(null);
     setStage(null);
     setKey((k) => k + 1);
@@ -122,6 +123,22 @@ export function CustomerActions(props: {
           customerBalance={props.customerBalance}
         />
       )}
+      {sheet === 'refund-receipt' && (
+        <SalesDocSheet
+          key={`r${key}`}
+          open
+          onOpenChange={(o) => !o && setSheet(null)}
+          kind="refund_receipt"
+          studentNumber={props.studentNumber}
+          studentName={props.studentName}
+          customerEmail={props.customerEmail}
+          bankAccounts={props.depositAccounts}
+          paymentMethods={props.paymentMethods}
+        />
+      )}
     </>
   );
 }
+
+/** The forms the customer page opens. */
+export type CustomerSheet = 'invoice' | 'payment' | 'refund-receipt';

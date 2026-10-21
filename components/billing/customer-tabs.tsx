@@ -4,6 +4,7 @@ import { ExternalLink, Pencil } from 'lucide-react';
 import * as React from 'react';
 
 import { CustomerTransactions } from '@/components/billing/customer-transactions';
+import type { SalesDocRow } from '@/lib/billing/sales-docs';
 import { EditCustomerSheet } from '@/components/billing/edit-customer-sheet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -294,6 +295,7 @@ export function CustomerTabs({
   customerBalance,
   qbBase,
   initialTab,
+  docs = [],
 }: {
   studentNumber: string;
   studentName: string;
@@ -301,6 +303,8 @@ export function CustomerTabs({
   linkedName: string;
   invoices: InvoiceRowView[];
   payments: PaymentRowView[];
+  /** Refund receipts, credit memos, expenses and checks (read live). */
+  docs?: SalesDocRow[];
   profile: CustomerProfile | null;
   openInvoices: Array<OpenInvoice & { items: string }>;
   credits: Array<CreditSource & { reference: string | null }>;
@@ -333,6 +337,7 @@ export function CustomerTabs({
           customerName={linkedName}
           invoices={invoices}
           payments={payments}
+          docs={docs}
           openInvoices={openInvoices}
           credits={credits}
           depositAccounts={depositAccounts}

@@ -58,6 +58,14 @@ import type {
   PaymentRowView,
 } from '@/lib/billing/customer-page.server';
 import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
+import {
+  DOC_TYPE_LABEL,
+  docPageHref,
+  docQbPath,
+  docStatus,
+  type DocKind,
+  type SalesDocRow,
+} from '@/lib/billing/sales-docs';
 import { formatDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { cn } from '@/lib/utils';
@@ -73,10 +81,12 @@ type Tone = 'bad' | 'good' | 'warn' | 'plain';
 
 export type TxnRow = {
   key: string;
-  kind: 'invoice' | 'payment';
+  kind: 'invoice' | 'payment' | DocKind;
   id: string;
   date: string | null;
-  type: 'Invoice' | 'Payment';
+  /** QuickBooks' type name: Invoice, Payment, Refund, Credit Memo, Expense,
+   *  Check. */
+  type: string;
   no: string | null;
   memo: string | null;
   amount: number;
@@ -86,7 +96,28 @@ export type TxnRow = {
   tone: Tone;
   invoice?: InvoiceRowView;
   payment?: PaymentRowView;
+  doc?: SalesDocRow;
 };
+
+/** A refund receipt, credit memo, expense or check, as QuickBooks' list
+ *  prints it: refunds and credits as minus amounts. */
+export function docRow(d: SalesDocRow): TxnRow {
+  const s = docStatus(d);
+  return {
+    key: `${d.kind}${d.id}`,
+    kind: d.kind,
+    id: d.id,
+    date: d.txnDate,
+    type: DOC_TYPE_LABEL[d.kind],
+    no: d.docNumber,
+    memo: d.memo,
+    amount: d.kind === 'refund' || d.kind === 'credit' ? -d.total : d.total,
+    status: s.status,
+    statusKey: s.statusKey,
+    tone: s.tone,
+    doc: d,
+  };
+}
 
 const DAY_MS = 86_400_000;
 const daysBetween = (from: string, to: string) =>
@@ -147,7 +178,9 @@ export function invoiceRow(i: InvoiceRowView, today: string): TxnRow {
 }
 
 function paymentRow(p: PaymentRowView): TxnRow {
-  const unapplied = p.appliedTo.length === 0;
+  // By what QuickBooks leaves unapplied, not by invoice links: a payment can
+  // also net a credit note against an expense or cheque (a refund).
+  const unapplied = p.unapplied > 0 && p.unapplied >= p.total;
   return {
     key: `p${p.id}`,
     kind: 'payment',
@@ -370,6 +403,7 @@ export function CustomerTransactions({
   customerName,
   invoices,
   payments,
+  docs = [],
   openInvoices,
   credits,
   depositAccounts,
@@ -384,6 +418,7 @@ export function CustomerTransactions({
   customerName: string;
   invoices: InvoiceRowView[];
   payments: PaymentRowView[];
+  docs?: SalesDocRow[];
   openInvoices: PayableInvoice[];
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
@@ -410,8 +445,9 @@ export function CustomerTransactions({
     () => [
       ...invoices.map((i) => invoiceRow(i, today)),
       ...payments.map(paymentRow),
+      ...docs.map(docRow),
     ],
-    [invoices, payments, today]
+    [invoices, payments, docs, today]
   );
   // The Date filter narrows what the table gets; Type (status tabs) and
   // Status (facet) are the table's own, kept in its URL params.
@@ -474,19 +510,27 @@ export function CustomerTransactions({
           <SortableHeader column={column}>No.</SortableHeader>
         ),
         meta: { label: 'No.' },
-        cell: ({ row }) =>
-          row.original.kind === 'invoice' ? (
+        cell: ({ row }) => {
+          const r = row.original;
+          const href =
+            r.kind === 'invoice'
+              ? invoiceHref(r.id)
+              : r.doc
+                ? docPageHref(studentNumber, r.doc.kind, r.id)
+                : null;
+          return href ? (
             <IdentifierLink
-              href={invoiceHref(row.original.id)}
+              href={href}
               className="font-mono text-[13px] tabular-nums"
             >
-              {row.original.no ?? 'No number'}
+              {r.no ?? 'No number'}
             </IdentifierLink>
           ) : (
             <span className="font-mono text-[13px] tabular-nums">
-              {row.original.no ?? ''}
+              {r.no ?? ''}
             </span>
-          ),
+          );
+        },
         enableHiding: false,
       },
       {
@@ -570,6 +614,40 @@ export function CustomerTransactions({
         // Print ▾ on a paid one, View on a payment.
         cell: ({ row }) => {
           const r = row.original;
+          if (r.doc) {
+            const page = docPageHref(studentNumber, r.doc.kind, r.id);
+            return (
+              <div className="flex justify-end">
+                {page ? (
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="h-7 px-2.5 text-xs"
+                  >
+                    <Link href={page}>View</Link>
+                  </Button>
+                ) : (
+                  qbBase && (
+                    <Button
+                      asChild
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2.5 text-xs"
+                    >
+                      <a
+                        href={`${qbBase}${docQbPath(r.doc.kind, r.id)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        View
+                      </a>
+                    </Button>
+                  )
+                )}
+              </div>
+            );
+          }
           if (r.kind === 'payment')
             return (
               <div className="flex justify-end">
@@ -685,7 +763,11 @@ export function CustomerTransactions({
       {
         id: 'balance',
         accessorFn: (r) =>
-          r.invoice ? r.invoice.balance : (r.payment?.unapplied ?? 0),
+          r.invoice
+            ? r.invoice.balance
+            : r.doc
+              ? r.doc.open
+              : (r.payment?.unapplied ?? 0),
         header: ({ column }) => (
           <div className="flex justify-end">
             <SortableHeader column={column} align="right">
@@ -698,9 +780,13 @@ export function CustomerTransactions({
           const r = row.original;
           const v = r.invoice
             ? r.invoice.balance
-            : r.payment && r.payment.unapplied > 0
-              ? -r.payment.unapplied
-              : 0;
+            : r.doc
+              ? r.doc.kind === 'credit'
+                ? -r.doc.open
+                : r.doc.open
+              : r.payment && r.payment.unapplied > 0
+                ? -r.payment.unapplied
+                : 0;
           return (
             <div className="whitespace-nowrap text-right tabular-nums">
               {v < 0 ? `-${formatSgd(-v)}` : formatSgd(v)}

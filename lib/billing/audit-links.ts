@@ -58,6 +58,18 @@ export function billingAuditRowTarget(
         label: 'Open invoice',
       };
     }
+    case 'qbo_refund_receipt':
+    case 'qbo_credit_memo': {
+      const sn = studentNumberOf(row);
+      const id = row.entity_id;
+      if (!sn || !id || !QBO_ID.test(id)) return null;
+      const refund = row.entity_type === 'qbo_refund_receipt';
+      return {
+        href: `${customerPage(sn)}/${refund ? 'refund-receipts' : 'credit-notes'}/${id}`,
+        label: refund ? 'Open refund receipt' : 'Open credit note',
+      };
+    }
+    case 'qbo_purchase':
     case 'qbo_payment':
     case 'qbo_customer': {
       const sn = studentNumberOf(row);

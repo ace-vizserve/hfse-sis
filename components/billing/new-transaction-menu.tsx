@@ -1,6 +1,6 @@
 'use client';
 
-import { ChevronDown } from 'lucide-react';
+import { ChevronDown, ExternalLink } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
@@ -16,25 +16,36 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-// QuickBooks' "New transaction ▾" on a list page, item for item. Invoice and
-// Payment are done in Billing (pick the customer, their page opens with the
-// form); the others are made in QuickBooks, so they open there.
+// QuickBooks' "New transaction ▾" on Sales transactions, item for item and in
+// its order (sandbox capture 2026-10-21). Invoice, Payment and Refund receipt
+// are done in Billing (pick the customer, their page opens with the form);
+// the others are made in QuickBooks, so they open there.
 
-const IN_QUICKBOOKS: Array<{ label: string; path: string }> = [
-  { label: 'Recurring payment', path: '/app/recurringtransactions' },
+type Entry = { label: string; sheet: Pick } | { label: string; path: string };
+type Pick = 'invoice' | 'payment' | 'refund-receipt';
+
+const ENTRIES: Entry[] = [
+  { label: 'Invoice', sheet: 'invoice' },
+  { label: 'Payment', sheet: 'payment' },
   { label: 'Estimate', path: '/app/estimate' },
-  { label: 'Sales order', path: '/app/salesorder' },
   { label: 'Payment link', path: '/app/paymentlinks' },
   { label: 'Sales receipt', path: '/app/salesreceipt' },
-  { label: 'Credit memo', path: '/app/creditmemo' },
+  { label: 'Credit note', path: '/app/creditmemo' },
+  { label: 'Refund receipt', sheet: 'refund-receipt' },
+  { label: 'Delayed credit', path: '/app/delayedcredit' },
   { label: 'Delayed charge', path: '/app/delayedcharge' },
   { label: 'Time activity', path: '/app/timeactivity' },
-  { label: 'Statement', path: '/app/customerstatements' },
+  { label: 'Sales order', path: '/app/salesorder' },
 ];
+
+const TITLE: Record<Pick, string> = {
+  invoice: 'Create invoice',
+  payment: 'Receive payment',
+  'refund-receipt': 'Refund receipt',
+};
 
 export function NewTransactionMenu({
   customers,
@@ -45,7 +56,7 @@ export function NewTransactionMenu({
   qbBase: string;
 }) {
   const router = useRouter();
-  const [pick, setPick] = useState<'invoice' | 'payment' | null>(null);
+  const [pick, setPick] = useState<Pick | null>(null);
   return (
     <>
       <DropdownMenu>
@@ -56,26 +67,26 @@ export function NewTransactionMenu({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuItem onSelect={() => setPick('invoice')}>
-            Invoice
-          </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setPick('payment')}>
-            Payment
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          {IN_QUICKBOOKS.map((t) => (
-            <DropdownMenuItem key={t.label} asChild>
-              <a href={`${qbBase}${t.path}`} target="_blank" rel="noreferrer">
+          {ENTRIES.map((t) =>
+            'sheet' in t ? (
+              <DropdownMenuItem key={t.label} onSelect={() => setPick(t.sheet)}>
                 {t.label}
-              </a>
-            </DropdownMenuItem>
-          ))}
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem key={t.label} asChild>
+                <a href={`${qbBase}${t.path}`} target="_blank" rel="noreferrer">
+                  {t.label}
+                  <ExternalLink className="ml-auto size-3.5 text-muted-foreground" />
+                </a>
+              </DropdownMenuItem>
+            )
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
       <CommandDialog
         open={!!pick}
         onOpenChange={(o) => !o && setPick(null)}
-        title={pick === 'payment' ? 'Receive payment' : 'Create invoice'}
+        title={pick ? TITLE[pick] : 'New transaction'}
         description="Choose the customer"
       >
         <CommandInput placeholder="Choose a customer" />

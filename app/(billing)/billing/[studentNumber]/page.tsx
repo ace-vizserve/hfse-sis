@@ -164,7 +164,9 @@ export default async function BillingCustomerPage({
                 paymentMethods={page.paymentMethods}
                 customerBalance={b.openBalance}
                 initialSheet={
-                  newSheet === 'payment' || newSheet === 'invoice'
+                  newSheet === 'payment' ||
+                  newSheet === 'invoice' ||
+                  newSheet === 'refund-receipt'
                     ? newSheet
                     : null
                 }
@@ -339,6 +341,7 @@ export default async function BillingCustomerPage({
             linkedName={page.link.displayName}
             invoices={page.invoices}
             payments={page.payments}
+            docs={page.docs}
             profile={page.profile}
             openInvoices={page.openInvoices}
             credits={page.credits}

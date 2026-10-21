@@ -213,6 +213,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.customer.link': 'Student linked to QuickBooks customer',
   'qbo.payment.create': 'Payment recorded in QuickBooks',
   'qbo.payment.apply_credit': 'Customer credit used in QuickBooks',
+  'qbo.refund_receipt.create': 'QuickBooks refund receipt created',
+  'qbo.credit_memo.create': 'QuickBooks credit note created',
+  'qbo.expense.create': 'Credit paid back by an expense in QuickBooks',
+  'qbo.check.create': 'Credit paid back by a cheque in QuickBooks',
   'billing.link.run': 'Students linked to QuickBooks',
   'billing.mapping.update': 'Billing tile mapping changed',
   'billing.years.update': 'Billing year ranges changed',
@@ -2004,6 +2008,28 @@ function templateSummary(
       }
       const account = str(ctx.deposit_account);
       if (account) parts.push(account);
+      return joinParts(parts);
+    }
+    case 'qbo.refund_receipt.create':
+    case 'qbo.credit_memo.create':
+    case 'qbo.expense.create':
+    case 'qbo.check.create': {
+      const parts: string[] = [];
+      const doc = str(ctx.doc_number);
+      if (doc) parts.push(`no. ${doc}`);
+      const total = Number(ctx.total);
+      if (
+        ctx.total !== undefined &&
+        ctx.total !== null &&
+        Number.isFinite(total)
+      )
+        parts.push(
+          `S$${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
+      const customer = str(ctx.customer);
+      if (customer) parts.push(customer);
+      const account = str(ctx.refund_from) || str(ctx.account);
+      if (account) parts.push(`from ${account}`);
       return joinParts(parts);
     }
     case 'qbo.payment.apply_credit': {

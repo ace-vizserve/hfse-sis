@@ -119,6 +119,12 @@ export const ALL_AUDIT_ACTIONS = [
   'qbo.customer.link',
   'qbo.payment.create',
   'qbo.payment.apply_credit',
+  // Refunds, as QuickBooks does them: a Refund receipt; a Credit memo; and
+  // money paid back on a credit by an Expense or a Check to the customer.
+  'qbo.refund_receipt.create',
+  'qbo.credit_memo.create',
+  'qbo.expense.create',
+  'qbo.check.create',
   'billing.link.run',
   'billing.mapping.update',
   'billing.years.update',
@@ -322,6 +328,10 @@ export type AuditEntityType =
   | 'qbo_connection'
   | 'qbo_payment'
   | 'qbo_item'
+  | 'qbo_refund_receipt'
+  | 'qbo_credit_memo'
+  // An Expense or a Check (QuickBooks' Purchase) paying a customer back.
+  | 'qbo_purchase'
   | 'billing_setting'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.

@@ -54,7 +54,7 @@ export default async function BillingSalesPage({
       <BillingPageHeader
         crumbs={[{ label: 'Sales' }, { label: 'Sales transactions' }]}
         title="Sales transactions"
-        description="Every invoice and payment of the linked students' QuickBooks customers, read live from QuickBooks."
+        description="Every invoice, payment, refund receipt and credit note of the linked students' QuickBooks customers, read live from QuickBooks."
         actions={
           list.connected ? (
             <>

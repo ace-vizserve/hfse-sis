@@ -18,6 +18,8 @@ import {
 } from '@/lib/billing/live.server';
 import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
+import type { OpenItem, SalesDocRow } from '@/lib/billing/sales-docs';
+import { loadCustomerDocs } from '@/lib/billing/sales-docs.server';
 import {
   loadStudentInfo,
   type StudentInfo,
@@ -90,6 +92,12 @@ export type CustomerPage = {
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   paymentMethods: PaymentMethodChoice[];
+  /** Refund receipts, credit memos, expenses and checks, read live. */
+  docs: SalesDocRow[];
+  /** Expenses / checks still open — Receive payment's Outstanding rows. */
+  openCharges: OpenItem[];
+  /** Credit memos with unused credit — Receive payment's Credits. */
+  openCredits: OpenItem[];
   stages: {
     ayCode: string;
     registration: string | null;
@@ -247,6 +255,9 @@ export async function loadCustomerPage(
     credits: [],
     depositAccounts: [],
     paymentMethods: [],
+    docs: [],
+    openCharges: [],
+    openCredits: [],
     stages: null,
     overdueOldest: null,
   };
@@ -300,7 +311,7 @@ export async function loadCustomerPage(
       .catch(() => null),
   ]);
 
-  const [inv, pay, dep, methods] = await Promise.all([
+  const [inv, pay, dep, methods, docs] = await Promise.all([
     service
       .from('qbo_invoices')
       .select(INVOICE_COLS)
@@ -325,6 +336,11 @@ export async function loadCustomerPage(
     loadPaymentMethods(service).catch((e: unknown) => {
       console.error('[billing] customer page, payment methods:', e);
       return [] as PaymentMethodChoice[];
+    }),
+    // Refunds and credits, live; unreadable → none listed, page renders.
+    loadCustomerDocs(service, customerId).catch((e: unknown) => {
+      console.error('[billing] customer page, refunds and credits:', e);
+      return { rows: [], openCharges: [], openCredits: [] };
     }),
   ]);
   for (const r of [inv, pay])
@@ -396,6 +412,9 @@ export async function loadCustomerPage(
     credits: toCreditSources(payments),
     depositAccounts: dep,
     paymentMethods: methods,
+    docs: docs.rows,
+    openCharges: docs.openCharges,
+    openCredits: docs.openCredits,
     stages,
     overdueOldest: oldest
       ? { docNumber: oldest.docNumber, dueDate: oldest.dueDate }

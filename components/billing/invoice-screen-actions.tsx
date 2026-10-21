@@ -227,7 +227,7 @@ export function InvoiceScreenActions({
           </DropdownMenuLabel>
           <QbLink href={qbUrl}>Open in QuickBooks</QbLink>
           <QbLink href={qbUrl}>Make recurring</QbLink>
-          <QbLink href={qbCreditMemoUrl}>Create a credit memo</QbLink>
+          <QbLink href={qbCreditMemoUrl}>Create a credit note</QbLink>
           {voidBlocked && <QbLink href={qbUrl}>Void</QbLink>}
           <QbLink href={qbUrl}>Delete</QbLink>
           <QbLink href={qbUrl}>Create shipping label</QbLink>
