@@ -1,10 +1,14 @@
 'use client';
 
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Check, ChevronsUpDown } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
-import { SheetFields, SheetSection } from '@/components/billing/sheet-section';
+import {
+  NewCustomerFields,
+  useNewCustomerForm,
+} from '@/components/billing/new-customer-form';
+import { SheetSection } from '@/components/billing/sheet-section';
 import { Button } from '@/components/ui/button';
 import {
   Command,
@@ -19,7 +23,6 @@ import {
   FieldError,
   FieldLabel,
 } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
 import {
   Popover,
   PopoverContent,
@@ -34,21 +37,14 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { CustomerForm } from '@/lib/billing/customer-form';
 import type { NewCustomerStudent } from '@/lib/billing/new-customer';
-import { shouldRenewAfter } from '@/lib/billing/request-id';
-import { useWriteAction } from '@/lib/hooks/use-write-action';
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { apiFetch } from '@/lib/query/fetcher';
 import { cn } from '@/lib/utils';
 
 // Billing → New customer: pick a student with no QuickBooks customer, check
 // the form (filled from their newest application), add it to QuickBooks —
 // linked to the student in the same step. A customer always belongs to a
 // student here: one with none would never show in Billing.
-
-type Key = keyof CustomerForm;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function NewCustomerSheet({
   open,
@@ -60,7 +56,6 @@ export function NewCustomerSheet({
   /** Open on this student (To review's row ▾); omitted = staff pick one. */
   student?: { studentNumber: string; name: string } | null;
 }) {
-  const run = useWriteAction();
   const [picked, setPicked] = useState<{
     studentNumber: string;
     name: string;
@@ -72,89 +67,21 @@ export function NewCustomerSheet({
       apiFetch<{ students: NewCustomerStudent[] }>('/api/billing/new-customer'),
     enabled: open && !preset,
   });
-  const draft = useQuery({
-    queryKey: ['billing-new-customer-form', picked?.studentNumber],
-    queryFn: () =>
-      apiFetch<{ form: CustomerForm }>(
-        `/api/billing/new-customer?student=${encodeURIComponent(picked!.studentNumber)}`
-      ),
-    enabled: open && !!picked,
-    staleTime: 0,
-    gcTime: 0,
+  const f = useNewCustomerForm({
+    studentNumber: picked?.studentNumber ?? null,
+    enabled: open,
   });
-  // Edits, kept per student so picking another starts from their own form.
-  const [edits, setEdits] = useState<{ sn: string; form: CustomerForm }>();
-  const form =
-    edits && edits.sn === picked?.studentNumber
-      ? edits.form
-      : (draft.data?.form ?? null);
-  const [requestId, setRequestId] = useState(() => crypto.randomUUID());
-  const unclearRef = useRef(false);
-  const [showErrors, setShowErrors] = useState(false);
-  const [saving, setSaving] = useState(false);
-
-  const set = (k: Key) => (e: React.ChangeEvent<HTMLInputElement>) =>
-    setEdits({
-      sn: picked!.studentNumber,
-      form: { ...form!, [k]: e.target.value },
-    });
-  const nameMissing = !!form && form.displayName.trim() === '';
-  const emailBad =
-    !!form && form.email.trim() !== '' && !EMAIL.test(form.email.trim());
-
-  const add = useMutation({
-    mutationFn: async (v: { studentNumber: string; form: CustomerForm }) => {
-      try {
-        return await apiFetch<{ displayName: string }>(
-          `/api/billing/students/${encodeURIComponent(v.studentNumber)}/customer`,
-          jsonInit('POST', { form: v.form, requestId })
-        );
-      } catch (err) {
-        if (shouldRenewAfter(err, unclearRef))
-          setRequestId(crypto.randomUUID());
-        throw err;
-      }
-    },
-  });
+  const { form, saving } = f;
+  const [pickedMissing, setPickedMissing] = useState(false);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (!picked || !form) {
-      setShowErrors(true);
+    if (!picked) {
+      setPickedMissing(true);
       return;
     }
-    if (nameMissing || emailBad) {
-      setShowErrors(true);
-      return;
-    }
-    setSaving(true);
-    await run(
-      () => add.mutateAsync({ studentNumber: picked.studentNumber, form }),
-      {
-        pending: 'Adding to QuickBooks…',
-        success: (d) => `${d.displayName} added to QuickBooks and linked`,
-        onResolved: () => onOpenChange(false),
-      }
-    );
-    setSaving(false);
+    await f.submit({ onResolved: () => onOpenChange(false) });
   }
-
-  const text = (
-    k: Key,
-    label: string,
-    opts?: { mono?: boolean; type?: string }
-  ) => (
-    <Field>
-      <FieldLabel htmlFor={`new-${k}`}>{label}</FieldLabel>
-      <Input
-        id={`new-${k}`}
-        type={opts?.type}
-        value={form?.[k] ?? ''}
-        onChange={set(k)}
-        className={opts?.mono ? 'font-mono' : undefined}
-      />
-    </Field>
-  );
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -199,7 +126,7 @@ export function NewCustomerSheet({
                         variant="outline"
                         role="combobox"
                         aria-expanded={pickerOpen}
-                        aria-invalid={showErrors && !picked}
+                        aria-invalid={pickedMissing && !picked}
                         className="w-full justify-between font-normal"
                       >
                         <span
@@ -264,81 +191,14 @@ export function NewCustomerSheet({
                   {students.isError && (
                     <FieldError>{(students.error as Error).message}</FieldError>
                   )}
-                  {showErrors && !picked && (
+                  {pickedMissing && !picked && (
                     <FieldError>Choose the student first.</FieldError>
                   )}
                 </Field>
               )}
             </SheetSection>
 
-            {!picked ? null : draft.isError ? (
-              <p className="text-sm text-destructive">
-                {(draft.error as Error).message} Close and try again.
-              </p>
-            ) : !form ? (
-              <div className="space-y-3">
-                {Array.from({ length: 6 }, (_, i) => (
-                  <Skeleton key={i} className="h-10 w-full" />
-                ))}
-              </div>
-            ) : (
-              <>
-                <SheetSection title="Name">
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                    {text('givenName', 'First name')}
-                    {text('middleName', 'Middle name')}
-                    {text('familyName', 'Last name')}
-                  </div>
-                  <SheetFields>
-                    <Field>
-                      <FieldLabel htmlFor="new-displayName">
-                        Customer display name *
-                      </FieldLabel>
-                      <Input
-                        id="new-displayName"
-                        value={form.displayName}
-                        onChange={set('displayName')}
-                        aria-invalid={showErrors && nameMissing}
-                      />
-                      {showErrors && nameMissing && (
-                        <FieldError>
-                          Customer display name is required.
-                        </FieldError>
-                      )}
-                    </Field>
-                    {text('companyName', 'Company name (parents)')}
-                  </SheetFields>
-                </SheetSection>
-                <SheetSection title="Contact">
-                  <SheetFields>
-                    <Field>
-                      <FieldLabel htmlFor="new-email">Email</FieldLabel>
-                      <Input
-                        id="new-email"
-                        type="email"
-                        value={form.email}
-                        onChange={set('email')}
-                        aria-invalid={showErrors && emailBad}
-                      />
-                      {showErrors && emailBad && (
-                        <FieldError>That is not an email address.</FieldError>
-                      )}
-                    </Field>
-                    {text('phone', 'Phone number', { mono: true })}
-                    {text('mobile', 'Mobile number', { mono: true })}
-                  </SheetFields>
-                </SheetSection>
-                <SheetSection title="Billing address">
-                  <SheetFields>
-                    {text('billLine1', 'Street address 1')}
-                    {text('billLine2', 'Street address 2')}
-                    {text('billCity', 'City')}
-                    {text('billPostalCode', 'Postal code', { mono: true })}
-                    {text('billCountry', 'Country')}
-                  </SheetFields>
-                </SheetSection>
-              </>
-            )}
+            {picked && <NewCustomerFields f={f} />}
           </div>
 
           <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">

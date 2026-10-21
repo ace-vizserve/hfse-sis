@@ -1,7 +1,7 @@
 'use client';
 
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { AlertTriangle, Plus, Trash2 } from 'lucide-react';
+import { AlertTriangle, CopyPlus, Layers, Plus, Trash2 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -43,7 +43,8 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { clearInvoiceCopy, readInvoiceCopy } from '@/lib/billing/invoice-copy';
 import { INVOICE_NOTE_MAX } from '@/lib/billing/invoice-create-body';
-import type { StageTarget } from '@/lib/billing/tie';
+import type { SameItems } from '@/lib/billing/same-items';
+import type { BillingStage, StageTarget } from '@/lib/billing/tie';
 import { duplicateTileWarning, todaySg } from '@/lib/billing/view';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -70,6 +71,11 @@ type Result = {
   docNumber: string | null;
   sentTo: string | null;
   warnings: string[];
+};
+
+const STAGE_NAME: Record<BillingStage, string> = {
+  registration: 'Registration',
+  fees: 'Fees',
 };
 
 const emptyLine = (key: number): Line => ({
@@ -213,6 +219,36 @@ export function CreateInvoiceSheet({
       }
     },
   });
+  // Same items as last time: the lines of the newest invoice tied to this
+  // stage, any student. Fills the form; staff adjust.
+  const [sameNote, setSameNote] = useState<string | null>(null);
+  const same = useMutation({
+    mutationFn: () =>
+      apiFetch<SameItems>(
+        `/api/billing/stage-items?stage=${encodeURIComponent(stage!.stage)}`
+      ),
+    onSuccess: (d) => {
+      if (d.lines.length === 0) {
+        setSameNote(
+          `No invoice has been made from ${STAGE_NAME[stage!.stage]} yet, so there is nothing to copy. Pick the products below.`
+        );
+        return;
+      }
+      setLines(
+        d.lines.map((l, i) => ({
+          key: nextKey() + i,
+          itemId: l.itemId,
+          description: l.description,
+          qty: String(l.qty),
+          unitPrice: String(l.unitPrice),
+        }))
+      );
+      setSameNote(
+        `Filled from invoice ${d.from ?? 'the last one'}. Check the lines before you create it.`
+      );
+    },
+    onError: (e) => setSameNote((e as Error).message),
+  });
   const setLine = (key: number, patch: Partial<Line>) =>
     setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const nextKey = () => Math.max(0, ...lines.map((x) => x.key)) + 1;
@@ -282,6 +318,21 @@ export function CreateInvoiceSheet({
           </SheetHeader>
 
           <div className="min-h-0 flex-1 space-y-8 overflow-y-auto px-6 py-6">
+            {stage && (
+              <div className="flex items-start gap-4 rounded-xl border border-brand-indigo-soft bg-accent p-4">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+                  <Layers className="size-4" />
+                </div>
+                <p className="flex-1 text-sm leading-relaxed text-foreground">
+                  This invoice fills{' '}
+                  <span className="font-semibold">
+                    {studentName}&rsquo;s {STAGE_NAME[stage.stage]} for{' '}
+                    {stage.ayCode}
+                  </span>
+                  . Its number, status and payment date go into that stage.
+                </p>
+              </div>
+            )}
             <SheetSection title="Invoice details">
               <SheetFields>
                 <Field>
@@ -482,6 +533,19 @@ export function CreateInvoiceSheet({
                   </Table>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
+                  {stage && (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      loading={same.isPending}
+                      loadingText="Copying…"
+                      onClick={() => same.mutate()}
+                    >
+                      {!same.isPending && <CopyPlus className="size-3.5" />}
+                      Same items as last time
+                    </Button>
+                  )}
                   <Button
                     type="button"
                     size="sm"
@@ -503,6 +567,9 @@ export function CreateInvoiceSheet({
                   </Button>
                 </div>
               </div>
+              {sameNote && (
+                <p className="text-[13px] text-muted-foreground">{sameNote}</p>
+              )}
               {showErrors && !linesValid && (
                 <FieldError>
                   Each line needs a product or service, a quantity above 0 and a

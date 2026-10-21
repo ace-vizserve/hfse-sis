@@ -60,13 +60,28 @@ function codeLines(pattern: string): string[] {
   }
 }
 
+/**
+ * The surfaces that deliberately keep the plain box, each with its reason.
+ *
+ * - Billing's Create invoice "Memo on statement": QuickBooks stores the memo
+ *   (PrivateNote) as plain text, so the formatting editor would send its
+ *   markup into QuickBooks.
+ */
+const PLAIN_TEXTAREA_ALLOWED = ['components/billing/create-invoice-sheet.tsx'];
+
 describe('the plain Textarea is retired', () => {
   it('is imported by nothing', () => {
-    expect(grep("from '@/components/ui/textarea'")).toEqual([]);
+    expect(
+      grep("from '@/components/ui/textarea'").filter(
+        (f) => !PLAIN_TEXTAREA_ALLOWED.includes(f)
+      )
+    ).toEqual([]);
   });
 
   it('is rendered by nothing', () => {
-    expect(grep('<Textarea[ />]')).toEqual([]);
+    expect(
+      grep('<Textarea[ />]').filter((f) => !PLAIN_TEXTAREA_ALLOWED.includes(f))
+    ).toEqual([]);
   });
 
   it('has no hand-rolled raw <textarea> anywhere', () => {

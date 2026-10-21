@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
+import type { StageTarget } from '@/lib/billing/tie';
 
 // The customer page's New transaction menu, as QuickBooks has it: Invoice or
 // Payment. Each sheet mounts fresh on every open.
@@ -36,6 +37,9 @@ export function CustomerActions(props: {
   initialSheet?: 'invoice' | 'payment' | null;
   /** With `?new=payment&invoice=<id>`: the form lists only that invoice. */
   initialInvoiceId?: string | null;
+  /** With `?new=invoice&stage=…&ay=…` (a Registration / Fees card's Create
+   *  invoice in Billing): the first Create invoice fills that stage. */
+  initialStage?: StageTarget | null;
 }) {
   const [sheet, setSheet] = useState<'invoice' | 'payment' | null>(
     props.initialSheet ?? null
@@ -46,8 +50,15 @@ export function CustomerActions(props: {
     const u = new URL(window.location.href);
     u.searchParams.delete('new');
     u.searchParams.delete('invoice');
+    u.searchParams.delete('stage');
+    u.searchParams.delete('ay');
     window.history.replaceState(window.history.state, '', u);
   }, [props.initialSheet]);
+  // Only the first open fills the stage; New transaction → Invoice later is a
+  // plain invoice, as on any customer page.
+  const [stage, setStage] = useState(
+    props.initialSheet === 'invoice' ? (props.initialStage ?? null) : null
+  );
   const [key, setKey] = useState(0);
   // Only the first open honours the row's invoice; New transaction → Payment
   // later lists everything owing.
@@ -56,6 +67,7 @@ export function CustomerActions(props: {
   );
   const open = (s: 'invoice' | 'payment') => {
     setOnlyInvoice(null);
+    setStage(null);
     setKey((k) => k + 1);
     setSheet(s);
   };
@@ -88,6 +100,7 @@ export function CustomerActions(props: {
           studentName={props.studentName}
           customerEmail={props.customerEmail}
           existing={props.existing}
+          stage={stage}
         />
       )}
       {sheet === 'payment' && (

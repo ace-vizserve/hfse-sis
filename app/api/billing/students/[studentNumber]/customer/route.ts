@@ -169,6 +169,9 @@ export async function POST(
       return NextResponse.json(
         {
           error: `QuickBooks already has a customer, supplier or employee named “${name}”. Change the display name, or use Find in QuickBooks to link the customer that has it.`,
+          // The name taken, so Create invoice's customer step can offer
+          // linking that customer instead.
+          duplicateName: name,
         },
         { status: 409 }
       );

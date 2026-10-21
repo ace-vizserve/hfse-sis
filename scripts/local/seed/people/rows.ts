@@ -644,6 +644,15 @@ function grade(r: Rng, ay: Ay): string {
     : `<p>${got}/${total} - ${pct}%</p>`;
 }
 
+/** Migration 195's mapping for Registration and Fees statuses. */
+function billingStageStatus(s: string | null): string | null {
+  if (s === 'Finished' || s === 'Paid') return 'Paid';
+  if (s === 'Unpaid' || s === 'Invoiced' || s === 'Re-invoiced')
+    return 'Unpaid';
+  if (s === 'Pending') return 'Ready for invoicing';
+  return s;
+}
+
 /**
  * The status row as it stands once the year's story is written, EXCEPT that
  * a child who joins a class is written as Enrolled with that class: the
@@ -823,6 +832,11 @@ export function statusRow(a: AppSpec): Row {
         documentStatus ?? (r.chance(0.7) ? 'Incomplete' : 'Finished');
     }
   }
+  // Registration and Fees in the statuses migration 195 moved them to
+  // (spec 2026-10-21): the draws above stay as production's old words, so the
+  // random sequence (and every other column) is unchanged.
+  registrationStatus = billingStageStatus(registrationStatus);
+  feeStatus = billingStageStatus(feeStatus);
 
   const signatory = r.pick(['Mother', 'Father']);
   const contractDate = after(1, 40);
@@ -873,11 +887,11 @@ export function statusRow(a: AppSpec): Row {
     applicationUpdatedBy: terminal ? staff() : null,
     registrationStatus,
     registrationInvoice:
-      registrationStatus === 'Finished' || registrationStatus === 'Unpaid'
+      registrationStatus === 'Paid' || registrationStatus === 'Unpaid'
         ? `RI${pad(r.int(0, 99999999), 8)}`
         : null,
     registrationPaymentDate:
-      registrationStatus === 'Finished' ? after(1, 20) : null,
+      registrationStatus === 'Paid' ? after(1, 20) : null,
     registrationRemarks:
       registrationStatus && r.chance(0.05)
         ? 'Registration fee waived for sibling.'
@@ -912,12 +926,15 @@ export function statusRow(a: AppSpec): Row {
     contractUpdatedDate: contractStatus ? contractDate : null,
     contractUpdatedby: contractStatus ? staff() : null,
     feeStatus,
+    // Ready for invoicing has no invoice yet; its number is still drawn so
+    // the random sequence is unchanged.
     feeInvoice:
       feeStatus && feeStatus !== 'Cancelled'
-        ? `INV${pad(r.int(0, 9999999), 7)}`
+        ? ((n: string) => (feeStatus === 'Ready for invoicing' ? null : n))(
+            `INV${pad(r.int(0, 9999999), 7)}`
+          )
         : null,
-    feePaymentDate:
-      feeStatus === 'Paid' || feeStatus === 'Finished' ? feeDate : null,
+    feePaymentDate: feeStatus === 'Paid' ? feeDate : null,
     feeStartDate:
       feeStatus && ay !== 'AY2025'
         ? ay === 'AY2026'

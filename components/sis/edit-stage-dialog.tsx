@@ -42,7 +42,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { StageStatusBadge } from '@/components/sis/status-badge';
+import { cn } from '@/lib/utils';
 import {
   APPLICATION_TERMINAL_REASON_VALUES,
   APPLICATION_TERMINAL_REASON_LABELS,
@@ -66,6 +69,24 @@ import {
 
 const OTHER_SENTINEL = '__other__';
 
+/** Registration / Fees statuses only QuickBooks writes (spec 2026-10-21). */
+const QBO_SET_STATUSES: ReadonlySet<string> = new Set([
+  'Unpaid',
+  'Partially paid',
+  'Overdue',
+  'Paid',
+  'Voided',
+]);
+
+/** What each staff-set Registration / Fees status means. */
+const STAFF_STATUS_HELP: Record<string, string | undefined> = {
+  'Ready for invoicing':
+    'Shows Create invoice. Lists the student as waiting to be invoiced.',
+  'Not required':
+    'No fee for this student, e.g. a current student. Counts as done.',
+  Cancelled: 'The application stopped here.',
+};
+
 type ExtraValues = Record<string, string | null>;
 
 export function EditStageDialog({
@@ -77,6 +98,8 @@ export function EditStageDialog({
   initialExtras,
   prereqStatuses,
   qboManaged = false,
+  hasLiveInvoice = false,
+  qboInvoiceNumber = null,
 }: {
   ayCode: string;
   enroleeNumber: string;
@@ -100,6 +123,11 @@ export function EditStageDialog({
    * route enforces the same rule (`lib/qbo/stage-lock.ts`).
    */
   qboManaged?: boolean;
+  /** A live (not voided) invoice is tied to this stage: Ready for invoicing
+   *  is off (the stage route refuses it too). */
+  hasLiveInvoice?: boolean;
+  /** The tied invoice's number, for "Set by QuickBooks from invoice …". */
+  qboInvoiceNumber?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [pendingMidTerm, setPendingMidTerm] = useState<MidTermPayload | null>(
@@ -806,48 +834,144 @@ export function EditStageDialog({
                     </div>
                   )}
 
-                  <FormItem>
-                    <FormLabel>Status</FormLabel>
-                    <Select
-                      value={statusChoice}
-                      onValueChange={setStatusChoice}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="No status" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {canonicalOptions.map((opt) => (
-                          <SelectItem key={opt} value={opt}>
-                            {opt}
-                          </SelectItem>
-                        ))}
-                        {!qboLocked && (
-                          <SelectItem value={OTHER_SENTINEL}>Other…</SelectItem>
+                  {qboLocked ? (
+                    <>
+                      {/* Registration / Fees with QuickBooks connected (spec
+                          2026-10-21): the money statuses are read-only here;
+                          staff pick only from what they own. */}
+                      <div className="space-y-2">
+                        <p className="text-sm font-medium text-foreground">
+                          Status
+                        </p>
+                        <div className="flex flex-wrap items-center gap-2.5 rounded-lg border border-hairline bg-muted/40 px-3 py-2.5">
+                          <StageStatusBadge
+                            status={initialStatus}
+                            stage={stageKey}
+                          />
+                          <span className="text-xs text-ink-3">
+                            {QBO_SET_STATUSES.has(initialStatus ?? '')
+                              ? qboInvoiceNumber
+                                ? `Set by QuickBooks from invoice ${qboInvoiceNumber}`
+                                : 'Set by QuickBooks'
+                              : initialStatus
+                                ? 'Set by staff'
+                                : 'Not set yet'}
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Unpaid, Partially paid, Overdue, Paid and Voided
+                          always come from the invoice in QuickBooks.
+                        </p>
+                      </div>
+                      <div className="space-y-2">
+                        <p
+                          id="staff-status-label"
+                          className="text-sm font-medium text-foreground"
+                        >
+                          Set by staff
+                        </p>
+                        <RadioGroup
+                          value={statusChoice}
+                          onValueChange={setStatusChoice}
+                          aria-labelledby="staff-status-label"
+                          className="gap-2"
+                        >
+                          {canonicalOptions.map((opt) => {
+                            const off =
+                              opt === 'Ready for invoicing' &&
+                              hasLiveInvoice &&
+                              initialStatus !== opt;
+                            const kept = !STAFF_STATUS_HELP[opt];
+                            return (
+                              <label
+                                key={opt}
+                                className={cn(
+                                  'flex items-start gap-3 rounded-lg border border-hairline px-3 py-2.5 has-[[data-state=checked]]:border-brand-indigo-soft has-[[data-state=checked]]:bg-accent',
+                                  off ? 'cursor-not-allowed' : 'cursor-pointer'
+                                )}
+                              >
+                                <RadioGroupItem
+                                  value={opt}
+                                  disabled={off}
+                                  className="mt-0.5"
+                                />
+                                <span className="space-y-0.5">
+                                  <span
+                                    className={cn(
+                                      'block text-sm font-medium',
+                                      off ? 'text-ink-5' : 'text-foreground'
+                                    )}
+                                  >
+                                    {kept ? `Leave as ${opt}` : opt}
+                                  </span>
+                                  <span
+                                    className={cn(
+                                      'block text-xs',
+                                      off
+                                        ? 'text-ink-5'
+                                        : 'text-muted-foreground'
+                                    )}
+                                  >
+                                    {off
+                                      ? 'Already invoiced, so this is off.'
+                                      : kept
+                                        ? 'As QuickBooks set it.'
+                                        : STAFF_STATUS_HELP[opt]}
+                                  </span>
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </RadioGroup>
+                        {statusMissing && (
+                          <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                            <AlertTriangle className="size-3.5 shrink-0" />
+                            {stageStatusMissingMessage(stageKey)}
+                          </p>
                         )}
-                      </SelectContent>
-                    </Select>
-                    {statusChoice === OTHER_SENTINEL && (
-                      <Input
-                        placeholder="Enter custom status"
-                        value={statusOther}
-                        onChange={(e) => setStatusOther(e.target.value)}
-                        className="mt-2"
-                        maxLength={120}
-                      />
-                    )}
-                    {statusMissing ? (
-                      <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
-                        <AlertTriangle className="size-3.5 shrink-0" />
-                        {stageStatusMissingMessage(stageKey)}
-                      </p>
-                    ) : qboLocked ? (
-                      <FormDescription>
-                        This status follows QuickBooks. You can set Cancelled
-                        here, or reopen a Cancelled stage as Pending.
-                      </FormDescription>
-                    ) : null}
-                    <FormMessage />
-                  </FormItem>
+                      </div>
+                    </>
+                  ) : (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select
+                        value={statusChoice}
+                        onValueChange={setStatusChoice}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="No status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {canonicalOptions.map((opt) => (
+                            <SelectItem key={opt} value={opt}>
+                              {opt}
+                            </SelectItem>
+                          ))}
+                          {!qboLocked && (
+                            <SelectItem value={OTHER_SENTINEL}>
+                              Other…
+                            </SelectItem>
+                          )}
+                        </SelectContent>
+                      </Select>
+                      {statusChoice === OTHER_SENTINEL && (
+                        <Input
+                          placeholder="Enter custom status"
+                          value={statusOther}
+                          onChange={(e) => setStatusOther(e.target.value)}
+                          className="mt-2"
+                          maxLength={120}
+                        />
+                      )}
+                      {statusMissing && (
+                        <p className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                          <AlertTriangle className="size-3.5 shrink-0" />
+                          {stageStatusMissingMessage(stageKey)}
+                        </p>
+                      )}
+                      <FormMessage />
+                    </FormItem>
+                  )}
 
                   {stageKey === 'application' && isTerminalStatus && (
                     <div className="space-y-4 rounded-lg border border-hairline p-4">
@@ -1113,7 +1237,14 @@ export function EditStageDialog({
                       name="remarks"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Remarks</FormLabel>
+                          <FormLabel>
+                            Remarks
+                            {qboLocked && (
+                              <span className="font-normal text-muted-foreground">
+                                (internal)
+                              </span>
+                            )}
+                          </FormLabel>
                           <FormControl>
                             <RichTextEditor
                               value={field.value ?? ''}

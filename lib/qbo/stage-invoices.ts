@@ -2,33 +2,35 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { rowsOfCustomer } from '@/lib/billing/sync-helpers';
 import {
-  tileInvoiceState,
-  tileLine,
-  type TileLine,
-} from '@/lib/billing/tile-line';
+  summarizeStageInvoices,
+  type StageBilling,
+} from '@/lib/billing/stage-card';
+import { rowsOfCustomer } from '@/lib/billing/sync-helpers';
+import { tileInvoiceState } from '@/lib/billing/tile-line';
 import { connectedRealmId } from '@/lib/qbo/client';
 import { qboEnv } from '@/lib/qbo/env';
 import type { QboStageKey } from '@/lib/qbo/stage-state';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// What the Registration and Fees tiles show now that Billing owns invoicing
-// (Phase 5, spec "Screens"): one read-only line each, read from the Billing
-// copy of the student's QuickBooks invoices, and a link to Billing. Before
-// go-live (no QuickBooks keys on this server) it returns null and the tiles
-// show nothing about QuickBooks.
+// What the Registration and Fees cards need from Billing (spec 2026-10-21
+// "Stage card"): the invoices TIED to each stage, summed up — the number, what
+// is owed or when it was paid, the invoice to open — read from the Billing
+// copy of the student's QuickBooks invoices. Before go-live (no QuickBooks
+// keys on this server) it returns null and the cards show only the stage.
 
 export type QboStageData = {
   connected: boolean;
   studentNumber: string | null;
   linked: boolean;
-  registration: TileLine | null;
-  fees: TileLine | null;
+  /** Null when not linked (no invoices are read). */
+  registration: StageBilling | null;
+  fees: StageBilling | null;
 };
 
 type Row = {
+  qbo_invoice_id: string;
   doc_number: string | null;
   txn_date: string | null;
   due_date: string | null;
@@ -39,11 +41,6 @@ type Row = {
   stage_keys: string[] | null;
   qbo_customer_id: string | null;
 };
-
-type Current = Record<
-  QboStageKey,
-  { status: string | null; startDate: string | null }
->;
 
 async function tileRows(
   service: SupabaseClient,
@@ -75,7 +72,7 @@ async function tileRows(
   const { data, error } = await service
     .from('qbo_invoices')
     .select(
-      'doc_number, txn_date, due_date, state, payment_date, total, balance, stage_keys, qbo_customer_id'
+      'qbo_invoice_id, doc_number, txn_date, due_date, state, payment_date, total, balance, stage_keys, qbo_customer_id'
     )
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId)
@@ -96,6 +93,7 @@ const onTile = (rows: Row[], stage: QboStageKey) =>
   rows
     .filter((r) => (r.stage_keys ?? []).includes(stage))
     .map((r) => ({
+      qboInvoiceId: r.qbo_invoice_id,
       docNumber: r.doc_number,
       txnDate: r.txn_date,
       dueDate: r.due_date,
@@ -106,13 +104,13 @@ const onTile = (rows: Row[], stage: QboStageKey) =>
     }));
 
 /**
- * The read-only lines for this enrolee's Registration and Fees tiles. A read
- * failure never breaks the application page: the tiles then show no line.
+ * The tied invoices of this enrolee's Registration and Fees stages. A read
+ * failure never breaks the application page: the cards then show only the
+ * stage.
  */
 export async function loadStageInvoices(
   ayCode: string,
-  enroleeNumber: string,
-  current?: Current
+  enroleeNumber: string
 ): Promise<QboStageData | null> {
   if (!qboEnv()) return null;
   try {
@@ -125,27 +123,14 @@ export async function loadStageInvoices(
         registration: null,
         fees: null,
       };
-    // Without the stage's own status and start date (the application page
-    // doesn't pass them), report a paid tile as plainly paid;
-    // BillingTileLine adds "add the start date" from the tile itself.
-    const cur: Current = current ?? {
-      registration: { status: 'Paid', startDate: 'known' },
-      fees: { status: 'Paid', startDate: 'known' },
-    };
     return {
       connected: true,
       studentNumber: t.studentNumber,
       linked: t.linked,
       registration: t.linked
-        ? tileLine(
-            'registration',
-            onTile(t.rows, 'registration'),
-            cur.registration
-          )
+        ? summarizeStageInvoices(onTile(t.rows, 'registration'))
         : null,
-      fees: t.linked
-        ? tileLine('fees', onTile(t.rows, 'fees'), cur.fees)
-        : null,
+      fees: t.linked ? summarizeStageInvoices(onTile(t.rows, 'fees')) : null,
     };
   } catch (e) {
     console.warn('[billing] tile lines unavailable:', e);

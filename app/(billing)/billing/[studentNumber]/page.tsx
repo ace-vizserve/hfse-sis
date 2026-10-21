@@ -19,11 +19,13 @@ import { CustomerTabs } from '@/components/billing/customer-tabs';
 import { EditCustomerButton } from '@/components/billing/edit-customer-button';
 import { NotConnectedPanel } from '@/components/billing/not-connected-panel';
 import { RefreshButton } from '@/components/billing/refresh-button';
+import { StageCustomerSheet } from '@/components/billing/stage-customer-sheet';
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { Button } from '@/components/ui/button';
 import { PageShell } from '@/components/ui/page-shell';
 import { hrefPathname, isRouteAllowed } from '@/lib/auth/roles';
 import { loadCustomerPage } from '@/lib/billing/customer-page.server';
+import { stageFromParams } from '@/lib/billing/stage-card';
 import { formatDay } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 import { qboAppUrl } from '@/lib/qbo/env';
@@ -42,13 +44,24 @@ export default async function BillingCustomerPage({
   searchParams,
 }: {
   params: Promise<{ studentNumber: string }>;
-  searchParams: Promise<{ tab?: string; new?: string; invoice?: string }>;
+  searchParams: Promise<{
+    tab?: string;
+    new?: string;
+    invoice?: string;
+    stage?: string;
+    ay?: string;
+  }>;
 }) {
   const sessionUser = await getSessionUser();
   if (!sessionUser) redirect('/login');
   if (!canInvoiceInQbo(sessionUser.role)) redirect('/');
-  const [{ studentNumber }, { tab, new: newSheet, invoice: newInvoice }] =
-    await Promise.all([params, searchParams]);
+  const [
+    { studentNumber },
+    { tab, new: newSheet, invoice: newInvoice, stage: stageParam, ay },
+  ] = await Promise.all([params, searchParams]);
+  // A Registration / Fees card's Create invoice in Billing.
+  const fromStage =
+    newSheet === 'invoice' ? stageFromParams(stageParam, ay) : null;
   const initialTab =
     tab === 'payments' || tab === 'details' ? tab : 'transactions';
   const page = await loadCustomerPage(
@@ -158,6 +171,7 @@ export default async function BillingCustomerPage({
                 initialInvoiceId={
                   newSheet === 'payment' ? (newInvoice ?? null) : null
                 }
+                initialStage={fromStage}
               />
             </>
           )
@@ -183,27 +197,40 @@ export default async function BillingCustomerPage({
       {!page.connected ? (
         <NotConnectedPanel canConnect={sessionUser.role === 'superadmin'} />
       ) : !page.link ? (
-        <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
-            <UserSearch className="size-4" />
+        <>
+          {/* Create invoice from a stage, for a student with no customer yet:
+            step 1 finds or adds the customer, then the page reloads linked and
+            Create invoice opens (the URL keeps new / stage / ay). */}
+          {fromStage && (
+            <StageCustomerSheet
+              studentNumber={page.studentNumber}
+              studentName={name}
+              initialSearch={name.split(',')[0]?.trim() ?? ''}
+            />
+          )}
+          <div className="flex items-start gap-4 rounded-xl border border-primary/30 bg-accent p-5">
+            <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
+              <UserSearch className="size-4" />
+            </div>
+            <div className="flex-1 space-y-1.5">
+              <p className="font-serif text-base font-semibold text-foreground">
+                Find their QuickBooks customer
+              </p>
+              <p className="text-sm text-muted-foreground">
+                The SIS couldn&rsquo;t match this student to a QuickBooks
+                customer by itself. Pick the right one, or add them to
+                QuickBooks.
+              </p>
+              <Button asChild variant="outline" size="sm" className="mt-2">
+                <Link
+                  href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
+                >
+                  Open in To review
+                </Link>
+              </Button>
+            </div>
           </div>
-          <div className="flex-1 space-y-1.5">
-            <p className="font-serif text-base font-semibold text-foreground">
-              Find their QuickBooks customer
-            </p>
-            <p className="text-sm text-muted-foreground">
-              The SIS couldn&rsquo;t match this student to a QuickBooks customer
-              by itself. Pick the right one, or add them to QuickBooks.
-            </p>
-            <Button asChild variant="outline" size="sm" className="mt-2">
-              <Link
-                href={`/billing/review?student=${encodeURIComponent(page.studentNumber)}`}
-              >
-                Open in To review
-              </Link>
-            </Button>
-          </div>
-        </div>
+        </>
       ) : (
         <>
           {page.refreshError && (

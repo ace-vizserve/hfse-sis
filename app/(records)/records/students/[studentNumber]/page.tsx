@@ -1949,8 +1949,19 @@ function PostEnrolmentChecklist({
     );
   }
 
+  // Registration / Fees (spec 2026-10-21): the staff-set statuses say what
+  // they mean; the rest name the invoice.
+  const billingNote = (s: string | null): string | null =>
+    s?.trim() === 'Ready for invoicing'
+      ? 'Waiting to be invoiced'
+      : s?.trim() === 'Not required'
+        ? 'No fee'
+        : null;
+
   const stages: Array<{
     label: string;
+    /** Registration / Fees read their own chip recipes. */
+    stageKey?: 'registration' | 'fees';
     status: string | null;
     sublabel?: string | null;
     updated: string | null;
@@ -1958,12 +1969,15 @@ function PostEnrolmentChecklist({
   }> = [
     {
       label: 'Registration',
+      stageKey: 'registration',
       status: status.registrationStatus,
-      sublabel: status.registrationPaymentDate
-        ? `Paid ${formatShort(status.registrationPaymentDate)}`
-        : status.registrationInvoice
-          ? `Invoice ${status.registrationInvoice}`
-          : null,
+      sublabel:
+        billingNote(status.registrationStatus) ??
+        (status.registrationPaymentDate
+          ? `Paid ${formatShort(status.registrationPaymentDate)}`
+          : status.registrationInvoice
+            ? `Invoice ${status.registrationInvoice}`
+            : null),
       updated: status.registrationUpdatedDate,
       updatedBy: status.registrationUpdatedBy,
     },
@@ -1992,14 +2006,17 @@ function PostEnrolmentChecklist({
     },
     {
       label: 'Fees',
+      stageKey: 'fees',
       status: status.feeStatus,
-      sublabel: status.feePaymentDate
-        ? `Paid ${formatShort(status.feePaymentDate)}`
-        : status.feeStartDate
-          ? `Starts ${formatShort(status.feeStartDate)}`
-          : status.feeInvoice
-            ? `Invoice ${status.feeInvoice}`
-            : null,
+      sublabel:
+        billingNote(status.feeStatus) ??
+        (status.feePaymentDate
+          ? `Paid ${formatShort(status.feePaymentDate)}`
+          : status.feeStartDate
+            ? `Starts ${formatShort(status.feeStartDate)}`
+            : status.feeInvoice
+              ? `Invoice ${status.feeInvoice}`
+              : null),
       updated: status.feeUpdatedDate,
       updatedBy: status.feeUpdatedBy,
     },
@@ -2061,7 +2078,7 @@ function PostEnrolmentChecklist({
                   <h3 className="font-serif text-sm font-semibold tracking-tight text-foreground">
                     {s.label}
                   </h3>
-                  <StageStatusBadge status={s.status} />
+                  <StageStatusBadge status={s.status} stage={s.stageKey} />
                 </div>
                 {(s.sublabel || s.updated || s.updatedBy) && (
                   <p className="mt-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
@@ -2115,21 +2132,27 @@ function stageStripeClass(status: string | null): string {
     t === 'Valid' ||
     t === 'Verified' ||
     t === 'Paid' ||
+    t === 'Not required' ||
     t === 'Claimed'
   ) {
     return 'bg-brand-mint';
   }
+  // Ready for invoicing: waiting to be invoiced. Partially paid: some owed.
   if (
     t === 'Pending' ||
     t === 'Incomplete' ||
     t === 'Uploaded' ||
     t === 'To follow' ||
-    t === 'Unpaid'
+    t === 'Ready for invoicing' ||
+    t === 'Partially paid'
   ) {
     return 'bg-brand-amber';
   }
-  if (t === 'Rejected' || t === 'Expired') return 'bg-destructive';
-  if (t === 'Cancelled' || t === 'Withdrawn') return 'bg-muted-foreground/30';
+  if (t === 'Rejected' || t === 'Expired' || t === 'Overdue')
+    return 'bg-destructive';
+  if (t === 'Cancelled' || t === 'Withdrawn' || t === 'Voided')
+    return 'bg-muted-foreground/30';
+  // In flight (Unpaid, Sent, Ongoing Assessment, …).
   return 'bg-brand-indigo';
 }
 

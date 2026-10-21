@@ -26,7 +26,7 @@ import {
   SectionTransferDialog,
   type SiblingSection,
 } from '@/components/sis/section-transfer-dialog';
-import { BillingTileLine } from '@/components/sis/billing-tile-line';
+import { BillingStagePanel } from '@/components/sis/billing-stage-panel';
 import { StageScrollLink } from '@/components/sis/stage-scroll-link';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -56,6 +56,7 @@ import type {
 } from '@/lib/sis/class-assignment';
 import type { QboStageData } from '@/lib/qbo/stage-invoices';
 import { classTileState } from '@/lib/sis/class-tile-state';
+import { stageTone, type StageTone } from '@/lib/sis/stage-tone';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
@@ -208,37 +209,20 @@ const APPLICATION_TILE: Record<
 };
 
 // Status-driven left-stripe color. Single source of truth — the stage tile's
-// stripe and the StageStatusBadge variant must read as the SAME tone, since
-// both answer the same question ("what state is this stage in?"). Status
+// stripe, the rails' discs and the group counts all read `stageTone`
+// (lib/sis/stage-tone.ts), since
+// they answer the same question ("what state is this stage in?"). Status
 // values are the canonical set from STAGE_STATUS_OPTIONS in lib/schemas/sis.
+const STRIPE_BY_TONE: Record<StageTone, string> = {
+  done: 'bg-brand-mint',
+  failed: 'bg-destructive/70',
+  pending: 'bg-brand-amber',
+  active: 'bg-brand-indigo',
+  empty: 'bg-border',
+};
+
 function statusStripeClass(status: string | null): string {
-  const s = (status ?? '').trim();
-  if (!s) return 'bg-border';
-  // Done — terminal-positive.
-  if (
-    /^(finished|verified|paid|signed|claimed|enrolled|enrolled \(conditional\))$/i.test(
-      s
-    )
-  ) {
-    return 'bg-brand-mint';
-  }
-  // Failed — terminal-negative.
-  if (/^(cancelled|withdrawn|rejected|expired)$/i.test(s)) {
-    return 'bg-destructive/70';
-  }
-  // Pending — needs attention.
-  if (/^(pending|unpaid|incomplete)$/i.test(s)) {
-    return 'bg-brand-amber';
-  }
-  // Active / in-flight.
-  if (
-    /^(submitted|ongoing verification|processing|ongoing assessment|generated|sent|invoiced|re-invoiced)$/i.test(
-      s
-    )
-  ) {
-    return 'bg-brand-indigo';
-  }
-  return 'bg-border';
+  return STRIPE_BY_TONE[stageTone(status)];
 }
 
 // Per-stage iconography. Used in the stage-tile's top-left gradient tile
@@ -312,14 +296,7 @@ function stageBucketCounts(stages: StageCard[]): {
     active: 0,
     empty: 0,
   };
-  for (const s of stages) {
-    const stripe = statusStripeClass(s.status);
-    if (stripe === 'bg-brand-mint') counts.done += 1;
-    else if (stripe === 'bg-destructive/70') counts.failed += 1;
-    else if (stripe === 'bg-brand-amber') counts.pending += 1;
-    else if (stripe === 'bg-brand-indigo') counts.active += 1;
-    else counts.empty += 1;
-  }
+  for (const s of stages) counts[stageTone(s.status)] += 1;
   return counts;
 }
 
@@ -849,33 +826,6 @@ function ApplicationStatusCard({
   );
 }
 
-// Stage status → visual tone discriminator. Five buckets matching
-// `statusStripeClass` regex groups so the disc recipes stay in lockstep
-// with the §9.3 tone vocabulary used elsewhere on this page.
-type StageTone = 'done' | 'failed' | 'pending' | 'active' | 'empty';
-
-function stageTone(status: string | null): StageTone {
-  const s = (status ?? '').trim();
-  if (!s) return 'empty';
-  if (
-    /^(finished|verified|paid|signed|claimed|enrolled|enrolled \(conditional\))$/i.test(
-      s
-    )
-  ) {
-    return 'done';
-  }
-  if (/^(cancelled|withdrawn|rejected|expired)$/i.test(s)) return 'failed';
-  if (/^(pending|unpaid|incomplete)$/i.test(s)) return 'pending';
-  if (
-    /^(submitted|ongoing verification|processing|ongoing assessment|generated|sent|invoiced|re-invoiced)$/i.test(
-      s
-    )
-  ) {
-    return 'active';
-  }
-  return 'empty';
-}
-
 // Per-tone visual recipe for stepper discs. Done discs earn the project
 // signature gradient (mint→sky); failed get destructive; active gets
 // indigo→navy; pending gets amber; empty stays quiet with a hairline
@@ -1233,6 +1183,16 @@ function StageStatusTile({
   const classLine = classState && 'line' in classState ? classState.line : null;
   const classAction =
     classState && 'action' in classState ? classState.action : null;
+  // Registration / Fees: filled from the invoice tied to them in Billing
+  // (spec 2026-10-21) — their own chip, line and Billing actions.
+  const billingStage =
+    stage.key === 'registration' || stage.key === 'fees' ? stage.key : null;
+  const billing = billingStage && qbo?.connected ? qbo[billingStage] : null;
+  const shownExtras = billingStage
+    ? (stage.extras ?? []).filter(
+        (e) => e.label !== 'Invoice' && e.label !== 'Payment date'
+      )
+    : stage.extras;
 
   return (
     <div
@@ -1262,15 +1222,34 @@ function StageStatusTile({
             initialRemarks={stage.remarks}
             initialExtras={stage.extrasInitial}
             qboManaged={!!qbo?.connected}
+            hasLiveInvoice={!!billing?.hasLive}
+            qboInvoiceNumber={
+              billing?.lead?.docNumber ?? stage.extrasInitial.invoice ?? null
+            }
           />
         ) : null}
       </div>
 
       <div className="pl-1">
-        <StageStatusBadge status={stage.status} />
+        <StageStatusBadge status={stage.status} stage={stage.key} />
       </div>
 
-      {stage.updatedAt ? (
+      {billingStage ? (
+        <BillingStagePanel
+          stage={billingStage}
+          ayCode={ayCode}
+          status={stage.status}
+          invoice={stage.extrasInitial.invoice ?? null}
+          paymentDate={stage.extrasInitial.paymentDate ?? null}
+          startDate={stage.extrasInitial.startDate ?? null}
+          updatedBy={stage.updatedBy}
+          updatedAt={stage.updatedAt}
+          connected={!!qbo?.connected}
+          studentNumber={qbo?.studentNumber ?? null}
+          billing={billing}
+          canOpen={canInvoice}
+        />
+      ) : stage.updatedAt ? (
         <span className="pl-1 font-mono text-[10px] uppercase tracking-wider tabular-nums text-muted-foreground">
           {/* "Assigned" only for a child on a class list — a class named on
               the admissions row before enrolment has been updated, not
@@ -1288,9 +1267,9 @@ function StageStatusTile({
           Not assigned yet
         </span>
       ) : null}
-      {stage.extras && stage.extras.some((e) => !isFieldEmpty(e)) && (
+      {shownExtras && shownExtras.some((e) => !isFieldEmpty(e)) && (
         <div className="pl-1">
-          <ExtrasChips fields={stage.extras} />
+          <ExtrasChips fields={shownExtras} />
         </div>
       )}
       {/* RENDERED — same field, same reasoning as the application card above.
@@ -1300,18 +1279,6 @@ function StageStatusTile({
         html={stage.remarks}
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
-      {(stage.key === 'registration' || stage.key === 'fees') &&
-        qbo?.connected && (
-          <BillingTileLine
-            line={qbo[stage.key]}
-            stage={stage.key}
-            stageStatus={stage.status}
-            startDate={stage.extrasInitial.startDate ?? null}
-            studentNumber={qbo.studentNumber}
-            linked={qbo.linked}
-            canOpen={canInvoice}
-          />
-        )}
       {/* Both controls are placement actions, so both gate on the placement
           role, not merely on canEdit. The move opens in place rather than
           linking to /sis/sections/[id]: admissions holds the placement right
