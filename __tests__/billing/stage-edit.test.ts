@@ -14,6 +14,7 @@ import {
   initialChoice,
   invoicedSummary,
   remarksPayload,
+  voidableOnCancel,
 } from '@/lib/billing/stage-edit';
 import { qboLockViolation } from '@/lib/qbo/stage-lock';
 
@@ -180,6 +181,14 @@ describe('the invoiced shape', () => {
       money: { label: 'Paid on', value: '12 Oct 2026' },
       due: null,
     });
+  });
+
+  it('Cancel this stage offers the void only while nothing is paid', () => {
+    expect(voidableOnCancel(billing())).toEqual({ qboInvoiceId: '77' });
+    expect(voidableOnCancel(billing({ owed: 50 }))).toBeNull();
+    expect(voidableOnCancel(billing({ owed: 0, allPaid: true }))).toBeNull();
+    expect(voidableOnCancel(billing({ lead: null }))).toBeNull();
+    expect(voidableOnCancel(null)).toBeNull();
   });
 });
 

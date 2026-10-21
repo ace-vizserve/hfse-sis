@@ -3,10 +3,11 @@
 import { useMutation } from '@tanstack/react-query';
 import { AlertTriangle, ArrowUpRight } from 'lucide-react';
 import Link from 'next/link';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { DatePicker } from '@/components/ui/date-picker';
 import {
   DialogDescription,
@@ -16,6 +17,7 @@ import {
 } from '@/components/ui/dialog';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
+import { shouldRenewAfter } from '@/lib/billing/request-id';
 import {
   showsOpenInvoice,
   stageInvoiceHref,
@@ -35,6 +37,7 @@ import {
   type StagePayload,
   type StaffStageStatus,
   type StartDateEdit,
+  voidableOnCancel,
 } from '@/lib/billing/stage-edit';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { QBO_OWNED_FIELD_KEYS } from '@/lib/qbo/stage-lock';
@@ -95,6 +98,12 @@ export function BillingStageEdit({
   );
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [busy, setBusy] = useState<'save' | 'cancel' | null>(null);
+  // Cancel this stage can void the unpaid invoice too, through Billing's own
+  // void (one request id per confirm, kept once an answer was unclear).
+  const voidable = canOpenBilling ? voidableOnCancel(billing) : null;
+  const [voidToo, setVoidToo] = useState(true);
+  const voidRequestId = useRef<string | null>(null);
+  const voidUnclear = useRef(false);
 
   const startEdit: StartDateEdit | undefined =
     stageKey === 'fees'
@@ -120,25 +129,55 @@ export function BillingStageEdit({
   });
   const run = useWriteAction();
 
-  async function send(payload: StagePayload, kind: 'save' | 'cancel') {
+  async function voidLead(qboInvoiceId: string) {
+    voidRequestId.current ??= crypto.randomUUID();
+    try {
+      await apiFetch(
+        `/api/billing/invoices/${encodeURIComponent(qboInvoiceId)}/void`,
+        jsonInit('POST', { requestId: voidRequestId.current })
+      );
+      voidRequestId.current = null;
+      voidUnclear.current = false;
+    } catch (err) {
+      if (shouldRenewAfter(err, voidUnclear)) voidRequestId.current = null;
+      throw err;
+    }
+  }
+
+  async function send(
+    payload: StagePayload,
+    kind: 'save' | 'cancel',
+    voidFirst?: { qboInvoiceId: string; number: string }
+  ) {
     setBusy(kind);
-    await run(() => save.mutateAsync(payload), {
-      pending:
-        kind === 'cancel'
-          ? `Cancelling ${label.toLowerCase()}…`
-          : `Saving ${label.toLowerCase()}…`,
-      success:
-        kind === 'cancel'
-          ? `${label} cancelled`
-          : shape === 'invoiced' && !payload.extras
-            ? 'Remarks saved'
-            : `${label} saved`,
-      error: (e: unknown) =>
-        (e instanceof ApiError && e.body && typeof e.body === 'object'
-          ? (e.body as { error?: string }).error
-          : undefined) ?? 'Failed to save',
-      onResolved: () => onDone(),
-    });
+    await run(
+      async () => {
+        // Void first: if QuickBooks refuses, the stage is left as it was.
+        if (voidFirst) await voidLead(voidFirst.qboInvoiceId);
+        return save.mutateAsync(payload);
+      },
+      {
+        pending:
+          kind === 'cancel'
+            ? voidFirst
+              ? `Voiding ${voidFirst.number} and cancelling ${label.toLowerCase()}…`
+              : `Cancelling ${label.toLowerCase()}…`
+            : `Saving ${label.toLowerCase()}…`,
+        success:
+          kind === 'cancel'
+            ? voidFirst
+              ? `${voidFirst.number} voided and ${label} cancelled`
+              : `${label} cancelled`
+            : shape === 'invoiced' && !payload.extras
+              ? 'Remarks saved'
+              : `${label} saved`,
+        error: (e: unknown) =>
+          (e instanceof ApiError && e.body && typeof e.body === 'object'
+            ? (e.body as { error?: string }).error
+            : undefined) ?? 'Failed to save',
+        onResolved: () => onDone(),
+      }
+    );
     setBusy(null);
   }
 
@@ -335,9 +374,43 @@ export function BillingStageEdit({
           role="alert"
           className="flex shrink-0 flex-col gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 sm:flex-row sm:items-center sm:justify-between"
         >
-          <p className="text-sm text-foreground">
-            Cancel {label} for this applicant? QuickBooks won’t change it back.
-          </p>
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">
+              Cancel {label} for this applicant?
+            </p>
+            {voidable ? (
+              <>
+                <div className="flex items-start gap-2">
+                  <Checkbox
+                    id="cancel-void-too"
+                    checked={voidToo}
+                    onCheckedChange={(v) => setVoidToo(v === true)}
+                    disabled={busy !== null}
+                    className="mt-0.5"
+                  />
+                  <label
+                    htmlFor="cancel-void-too"
+                    className="text-sm text-foreground"
+                  >
+                    Also void invoice {summary.number} in QuickBooks
+                  </label>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {voidToo
+                    ? 'The parent will no longer owe it.'
+                    : `Invoice ${summary.number} stays open and the parent still owes it.`}
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                {summary.money.label !== 'Owed'
+                  ? `This only marks the stage Cancelled. Invoice ${summary.number} stays paid in QuickBooks. Any refund is done in QuickBooks.`
+                  : billing && billing.owed !== billing.total
+                    ? `This only marks the stage Cancelled. Invoice ${summary.number} has a payment on it, so it stays open in QuickBooks. Void or refund it in QuickBooks.`
+                    : `This only marks the stage Cancelled. Invoice ${summary.number} stays open in QuickBooks and the parent still owes it.`}
+              </p>
+            )}
+          </div>
           <div className="flex shrink-0 justify-end gap-2">
             <Button
               type="button"
@@ -354,9 +427,19 @@ export function BillingStageEdit({
               size="sm"
               loading={busy === 'cancel'}
               loadingText="Cancelling…"
-              onClick={() => void send(cancelPayload(remarks), 'cancel')}
+              onClick={() =>
+                void send(
+                  cancelPayload(remarks),
+                  'cancel',
+                  voidable && voidToo
+                    ? { ...voidable, number: summary.number }
+                    : undefined
+                )
+              }
             >
-              Cancel {label}
+              {voidable && voidToo
+                ? `Void and cancel ${label}`
+                : `Cancel ${label}`}
             </Button>
           </div>
         </div>

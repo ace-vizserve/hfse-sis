@@ -122,6 +122,19 @@ export function cancelPayload(remarks: string | null): StagePayload {
   return { status: 'Cancelled', remarks };
 }
 
+/**
+ * The invoice Cancel this stage may void too: the lead invoice, while nothing
+ * has been paid on the stage (Billing's void refuses an invoice with a
+ * payment — that one is voided or refunded in QuickBooks).
+ */
+export function voidableOnCancel(
+  billing: StageBilling | null
+): { qboInvoiceId: string } | null {
+  if (!billing?.lead || billing.owed <= 0 || billing.owed !== billing.total)
+    return null;
+  return { qboInvoiceId: billing.lead.qboInvoiceId };
+}
+
 /** Cancel this stage shows unless the stage already reads Cancelled. */
 export function canCancelStage(status: string | null): boolean {
   return norm(status) !== 'Cancelled';
