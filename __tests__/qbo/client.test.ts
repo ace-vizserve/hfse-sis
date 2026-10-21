@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { randomBytes } from 'node:crypto';
+
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   QboError,
@@ -13,6 +15,7 @@ import {
 } from '@/lib/qbo/client';
 import { qboInvoiceUrl } from '@/lib/qbo/env';
 import { canInvoiceInQbo } from '@/lib/qbo/roles';
+import { decryptToken, encryptToken } from '@/lib/qbo/token-crypto';
 
 describe('QuickBooks client helpers', () => {
   it('escapes quotes and backslashes for the query language', () => {
@@ -225,6 +228,186 @@ describe('QuickBooks client helpers', () => {
       const urls = fetchMock.mock.calls.map((c) => String(c[0]));
       expect(urls[0]).toMatch(/\/payment\?minorversion=\d+&requestid=abc-c0$/);
       expect(urls[1]).not.toContain('requestid');
+    });
+  });
+
+  describe('token refresh with encrypted storage', () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+      vi.unstubAllEnvs();
+    });
+
+    // `rotated` set = the compare-and-swap loses, and the re-read (a distinct
+    // `neq` query, so a render's fetch memo can't return the first read)
+    // finds that row as another request saved it.
+    function fakeService(
+      row: Record<string, unknown>,
+      rotated?: Record<string, unknown>
+    ) {
+      const updates: { cols: Record<string, string>; eqs: unknown[][] }[] = [];
+      const neqs: unknown[][] = [];
+      const service = {
+        from: () => ({
+          select: () => ({
+            eq: () => ({
+              maybeSingle: async () => ({ data: row, error: null }),
+              neq: (...a: unknown[]) => {
+                neqs.push(a);
+                return {
+                  maybeSingle: async () => ({
+                    data: rotated ?? null,
+                    error: null,
+                  }),
+                };
+              },
+            }),
+          }),
+          update: (cols: Record<string, string>) => {
+            const u = { cols, eqs: [] as unknown[][] };
+            updates.push(u);
+            const chain = {
+              eq: (...a: unknown[]) => {
+                u.eqs.push(a);
+                return chain;
+              },
+              select: async () => ({
+                data: rotated ? [] : [{ id: 1 }],
+                error: null,
+              }),
+            };
+            return chain;
+          },
+        }),
+      } as never;
+      return { service, updates, neqs };
+    }
+
+    function stubIntuit() {
+      const fetchMock = vi.fn(async (url: unknown, init?: RequestInit) => {
+        if (String(url).includes('oauth2/v1/tokens')) {
+          return {
+            ok: true,
+            status: 200,
+            json: async () => ({
+              access_token: 'AT-new',
+              refresh_token: 'RT-new',
+              expires_in: 3600,
+            }),
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: { get: () => null },
+          json: async () => ({ auth: init?.headers }),
+        };
+      });
+      vi.stubGlobal('fetch', fetchMock);
+      return fetchMock;
+    }
+
+    beforeEach(() => {
+      vi.stubEnv('QBO_TOKEN_KEY', randomBytes(32).toString('base64'));
+      vi.stubEnv('QBO_CLIENT_ID', 'cid');
+      vi.stubEnv('QBO_CLIENT_SECRET', 'secret');
+      vi.stubEnv('QBO_REDIRECT_URI', 'http://localhost/cb');
+    });
+
+    it('compares against the stored ciphertext and saves both tokens encrypted', async () => {
+      const stored = encryptToken('RT-old');
+      const { service, updates } = fakeService({
+        realm_id: 'r1',
+        environment: 'sandbox',
+        refresh_token: stored,
+        access_token: encryptToken('AT-old'),
+        access_token_expires_at: new Date(Date.now() - 1000).toISOString(),
+      });
+      const fetchMock = stubIntuit();
+
+      await qboRequest(service, 'GET', '/companyinfo/r1');
+
+      const tokenBody = String(
+        (fetchMock.mock.calls[0][1] as RequestInit).body
+      );
+      expect(tokenBody).toContain('refresh_token=RT-old');
+      expect(updates).toHaveLength(1);
+      expect(updates[0].eqs).toContainEqual(['refresh_token', stored]);
+      expect(updates[0].cols.refresh_token).toMatch(/^v1:/);
+      expect(updates[0].cols.access_token).toMatch(/^v1:/);
+      expect(decryptToken(updates[0].cols.refresh_token)).toBe('RT-new');
+      expect(decryptToken(updates[0].cols.access_token)).toBe('AT-new');
+      const apiHeaders = (fetchMock.mock.calls[1][1] as RequestInit)
+        .headers as Record<string, string>;
+      expect(apiHeaders.Authorization).toBe('Bearer AT-new');
+    });
+
+    it('reads a row saved before encryption and re-saves it encrypted', async () => {
+      const { service, updates } = fakeService({
+        realm_id: 'r1',
+        environment: 'sandbox',
+        refresh_token: 'RT-plain',
+        access_token: 'AT-plain',
+        access_token_expires_at: new Date(Date.now() - 1000).toISOString(),
+      });
+      const fetchMock = stubIntuit();
+
+      await qboRequest(service, 'GET', '/companyinfo/r1');
+
+      expect(
+        String((fetchMock.mock.calls[0][1] as RequestInit).body)
+      ).toContain('refresh_token=RT-plain');
+      expect(updates[0].eqs).toContainEqual(['refresh_token', 'RT-plain']);
+      expect(updates[0].cols.refresh_token).toMatch(/^v1:/);
+    });
+
+    it('on a lost compare-and-swap, adopts the encrypted tokens another request saved', async () => {
+      const stored = encryptToken('RT-old');
+      const expired = new Date(Date.now() - 1000).toISOString();
+      const { service, updates, neqs } = fakeService(
+        {
+          realm_id: 'r1',
+          environment: 'sandbox',
+          refresh_token: stored,
+          access_token: encryptToken('AT-old'),
+          access_token_expires_at: expired,
+        },
+        {
+          realm_id: 'r1',
+          environment: 'sandbox',
+          refresh_token: encryptToken('RT-old'), // same token, new IV
+          access_token: encryptToken('AT-winner'),
+          access_token_expires_at: new Date(
+            Date.now() + 3_600_000
+          ).toISOString(),
+        }
+      );
+      const fetchMock = stubIntuit();
+
+      await qboRequest(service, 'GET', '/companyinfo/r1');
+
+      expect(updates[0].eqs).toContainEqual(['refresh_token', stored]);
+      expect(neqs).toEqual([['refresh_token', stored]]);
+      const apiHeaders = (fetchMock.mock.calls[1][1] as RequestInit)
+        .headers as Record<string, string>;
+      expect(apiHeaders.Authorization).toBe('Bearer AT-winner');
+    });
+
+    it('does not refresh at all without a usable key', async () => {
+      vi.stubEnv('QBO_TOKEN_KEY', '');
+      const { service, updates } = fakeService({
+        realm_id: 'r1',
+        environment: 'sandbox',
+        refresh_token: 'RT-plain',
+        access_token: 'AT-plain',
+        access_token_expires_at: new Date(Date.now() - 1000).toISOString(),
+      });
+      const fetchMock = stubIntuit();
+
+      await expect(qboRequest(service, 'GET', '/x')).rejects.toThrow(
+        /QBO_TOKEN_KEY/
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(updates).toHaveLength(0);
     });
   });
 

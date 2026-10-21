@@ -3,6 +3,11 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { qboApiBase, qboEnv, type QboEnv } from '@/lib/qbo/env';
+import {
+  assertTokenKey,
+  decryptToken,
+  encryptToken,
+} from '@/lib/qbo/token-crypto';
 
 // The one door to the QuickBooks API. Reads the stored connection, refreshes
 // the access token when it is about to expire, saves the refresh token Intuit
@@ -99,26 +104,87 @@ export async function revokeToken(refreshToken: string): Promise<void> {
   if (!res.ok) throw new QboError(res.status, null, 'revoke refused');
 }
 
+// The tokens here are DECRYPTED. `stored_refresh_token` is the refresh token
+// exactly as read from the row (ciphertext, or plaintext from before
+// encryption): the compare-and-swap must match that string, since encrypting
+// the same token again gives a different value (random IV).
 type ConnectionRow = {
   realm_id: string;
   environment: 'sandbox' | 'production';
   refresh_token: string;
+  stored_refresh_token: string;
   access_token: string | null;
   access_token_expires_at: string | null;
 };
 
+/** The token columns to save for a fresh token set, encrypted. */
+export function encryptedTokenColumns(t: TokenSet): {
+  refresh_token: string;
+  access_token: string;
+  access_token_expires_at: string;
+} {
+  return {
+    refresh_token: encryptToken(t.refresh_token),
+    access_token: encryptToken(t.access_token),
+    access_token_expires_at: new Date(
+      Date.now() + t.expires_in * 1000
+    ).toISOString(),
+  };
+}
+
+const CONNECTION_COLUMNS =
+  'realm_id, environment, refresh_token, access_token, access_token_expires_at';
+
 async function loadConnection(service: SupabaseClient): Promise<ConnectionRow> {
   const { data, error } = await service
     .from('qbo_connection')
-    .select(
-      'realm_id, environment, refresh_token, access_token, access_token_expires_at'
-    )
+    .select(CONNECTION_COLUMNS)
     .eq('id', 1)
     .maybeSingle();
   if (error)
     throw new Error(`QuickBooks connection lookup failed: ${error.message}`);
   if (!data) throw new QboNotConnectedError();
-  return data as ConnectionRow;
+  return toConnection(data);
+}
+
+/**
+ * The connection as another request saved it after rotating away from
+ * `usedStored`, or null when nobody has. A different query from
+ * loadConnection on purpose: during a page render Next.js memoizes identical
+ * GET fetches, so re-running loadConnection would hand back the row as first
+ * read, never the other request's save.
+ */
+async function loadRotatedConnection(
+  service: SupabaseClient,
+  usedStored: string
+): Promise<ConnectionRow | null> {
+  const { data, error } = await service
+    .from('qbo_connection')
+    .select(CONNECTION_COLUMNS)
+    .eq('id', 1)
+    .neq('refresh_token', usedStored)
+    .maybeSingle();
+  if (error)
+    throw new Error(`QuickBooks connection lookup failed: ${error.message}`);
+  return data ? toConnection(data) : null;
+}
+
+function toConnection(data: unknown): ConnectionRow {
+  const row = data as {
+    realm_id: string;
+    environment: 'sandbox' | 'production';
+    refresh_token: string;
+    access_token: string | null;
+    access_token_expires_at: string | null;
+  };
+  return {
+    realm_id: row.realm_id,
+    environment: row.environment,
+    refresh_token: decryptToken(row.refresh_token),
+    stored_refresh_token: row.refresh_token,
+    access_token: row.access_token ? decryptToken(row.access_token) : null,
+    access_token_expires_at: row.access_token_expires_at,
+  };
 }
 
 /**
@@ -149,6 +215,7 @@ function isFresh(row: ConnectionRow): boolean {
 function adopt(conn: ConnectionRow, from: ConnectionRow): void {
   conn.access_token = from.access_token;
   conn.refresh_token = from.refresh_token;
+  conn.stored_refresh_token = from.stored_refresh_token;
   conn.access_token_expires_at = from.access_token_expires_at;
 }
 
@@ -159,7 +226,12 @@ async function accessToken(
 ): Promise<string> {
   if (!force && isFresh(conn)) return conn.access_token as string;
 
+  // Intuit retires the old refresh token as it hands out a new one, so the new
+  // one must be savable (encryptable) before we ask.
+  assertTokenKey();
+
   let usedRefresh = conn.refresh_token;
+  let usedStored = conn.stored_refresh_token;
   let t: TokenSet;
   try {
     t = await tokenCall({
@@ -170,36 +242,39 @@ async function accessToken(
     if (!(e instanceof QboError && e.code === 'invalid_grant')) throw e;
     // Refused. If another request rotated the token meanwhile, our copy is
     // simply out of date: retry once with the stored one.
-    const latest = await loadConnection(service);
-    if (latest.refresh_token === usedRefresh) throw e;
+    const latest = await loadRotatedConnection(service, usedStored);
+    if (!latest || latest.refresh_token === usedRefresh) throw e;
     adopt(conn, latest);
     usedRefresh = latest.refresh_token;
+    usedStored = latest.stored_refresh_token;
     t = await tokenCall({
       grant_type: 'refresh_token',
       refresh_token: usedRefresh,
     });
   }
 
-  const expiresAt = new Date(Date.now() + t.expires_in * 1000).toISOString();
+  const columns = encryptedTokenColumns(t);
+  const expiresAt = columns.access_token_expires_at;
+  // Compare-and-swap against the stored string as read, never a fresh
+  // encryption (see ConnectionRow).
   const { data, error } = await service
     .from('qbo_connection')
-    .update({
-      access_token: t.access_token,
-      refresh_token: t.refresh_token,
-      access_token_expires_at: expiresAt,
-    })
+    .update(columns)
     .eq('id', 1)
-    .eq('refresh_token', usedRefresh)
+    .eq('refresh_token', usedStored)
     .select('id');
   if (error)
     throw new Error(`Saving the QuickBooks key failed: ${error.message}`);
 
   if (!data || data.length === 0) {
     // Compare-and-swap lost: another request rotated the token first. Take its
-    // result if it is usable; never write our own copy over it.
-    const latest = await loadConnection(service);
-    const stale = force && latest.access_token === conn.access_token;
-    if (isFresh(latest) && !stale) {
+    // result if it is usable; never write our own copy over it. (Encryption
+    // makes every save a new stored string, so concurrent refreshes now
+    // always land here — even when Intuit hands back the same refresh token.)
+    const latest = await loadRotatedConnection(service, usedStored);
+    const stale =
+      !!latest && force && latest.access_token === conn.access_token;
+    if (latest && isFresh(latest) && !stale) {
       adopt(conn, latest);
       return latest.access_token as string;
     }
@@ -208,6 +283,7 @@ async function accessToken(
 
   conn.access_token = t.access_token;
   conn.refresh_token = t.refresh_token;
+  conn.stored_refresh_token = columns.refresh_token;
   conn.access_token_expires_at = expiresAt;
   return t.access_token;
 }

@@ -3,11 +3,13 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import {
+  encryptedTokenColumns,
   exchangeAuthCode,
   qboErrorMessage,
   qboRequest,
 } from '@/lib/qbo/client';
 import { qboEnv } from '@/lib/qbo/env';
+import { assertTokenKey } from '@/lib/qbo/token-crypto';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -68,17 +70,23 @@ export async function GET(request: NextRequest) {
       `error=${encodeURIComponent('This SIS already has invoices from a different QuickBooks company. Ask the developer before connecting another one.')}`
     );
   }
+  // The keys are stored encrypted; without a usable QBO_TOKEN_KEY they could
+  // not be saved, so stop before Intuit hands them out.
+  try {
+    assertTokenKey();
+  } catch (e) {
+    console.error('[qbo callback]', (e as Error).message);
+    return back(
+      `error=${encodeURIComponent("The QuickBooks encryption key isn't set on this server.")}`
+    );
+  }
   try {
     const tokens = await exchangeAuthCode(code);
     const { error } = await service.from('qbo_connection').upsert({
       id: 1,
       realm_id: realmId,
       environment: env.environment,
-      refresh_token: tokens.refresh_token,
-      access_token: tokens.access_token,
-      access_token_expires_at: new Date(
-        Date.now() + tokens.expires_in * 1000
-      ).toISOString(),
+      ...encryptedTokenColumns(tokens),
       connected_by: auth.user.id,
       connected_by_email: auth.user.email,
       connected_at: new Date().toISOString(),

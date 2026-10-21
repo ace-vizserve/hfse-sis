@@ -4,6 +4,7 @@ import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { revokeToken } from '@/lib/qbo/client';
 import { QBO_ADMIN_ROLES } from '@/lib/qbo/roles';
+import { decryptToken } from '@/lib/qbo/token-crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // POST /api/quickbooks/disconnect — superadmin. Revokes the key at Intuit and
@@ -20,10 +21,14 @@ export async function POST() {
     .maybeSingle();
   if (!data) return NextResponse.json({ ok: true });
   let revoked = true;
-  await revokeToken(data.refresh_token).catch((e) => {
-    revoked = false;
-    console.warn('[qbo disconnect] revoke failed, forgetting anyway:', e);
-  });
+  // A key that can't be decrypted (QBO_TOKEN_KEY changed) can't be revoked
+  // either; the connection is forgotten anyway.
+  await Promise.resolve()
+    .then(() => revokeToken(decryptToken(data.refresh_token)))
+    .catch((e) => {
+      revoked = false;
+      console.warn('[qbo disconnect] revoke failed, forgetting anyway:', e);
+    });
   const { error } = await service.from('qbo_connection').delete().eq('id', 1);
   if (error)
     return NextResponse.json({ error: error.message }, { status: 500 });
