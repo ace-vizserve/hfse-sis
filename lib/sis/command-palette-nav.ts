@@ -8,6 +8,7 @@ import {
   InboxIcon,
   ListTodoIcon,
   PlaneIcon,
+  ReceiptTextIcon,
   Settings2Icon,
   SparklesIcon,
   StethoscopeIcon,
@@ -112,6 +113,13 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Admissions — Enrolled, steps still open',
     group: 'Modules',
     icon: ListTodoIcon,
+  },
+  {
+    // Same role set as the /admissions prefix — isRouteAllowed() decides.
+    href: '/admissions/ready-for-invoicing',
+    label: 'Admissions — Ready for invoicing',
+    group: 'Modules',
+    icon: ReceiptTextIcon,
   },
   {
     href: '/records',

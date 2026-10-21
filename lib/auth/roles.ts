@@ -454,6 +454,19 @@ const ADMISSIONS_NAV: NavSection[] = [
           'superadmin',
         ],
       },
+      // Registration / Fees stages ticked "Ready for invoicing" — the list
+      // whoever invoices works down (spec 2026-10-21). Same audience as the
+      // page's own guard; Create invoice inside is limited to canInvoiceInQbo.
+      {
+        href: '/admissions/ready-for-invoicing',
+        label: 'Ready for invoicing',
+        requiresRoles: [
+          'admissions',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+      },
       // KD #77: surfaces the parallel pipeline for the AY where
       // accepting_applications=true AND is_current=false. The page itself
       // renders an empty state when no such AY exists, so the entry can
