@@ -322,7 +322,8 @@ export function BillingStageEdit({
             )}
           </dl>
           <p className="text-xs text-ink-3">
-            To change the amount or bill again, void it in Billing first.
+            To change the lines, use Edit invoice in Billing. To bill again,
+            void it there first.
           </p>
         </section>
         {startField}
