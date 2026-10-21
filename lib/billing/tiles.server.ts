@@ -4,13 +4,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   stageFromInvoices,
+  staleStageReset,
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
 import { rowsOfCustomer } from '@/lib/billing/sync-helpers';
 import { todaySg } from '@/lib/billing/view';
 import { connectedRealmId } from '@/lib/qbo/client';
 import { fetchAllPages } from '@/lib/supabase/paginate';
-import { QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
+import { blank, QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
 import {
   QBO_SYNC_LABEL,
   QBO_SYSTEM_ACTOR,
@@ -119,7 +120,26 @@ export async function syncTilesForStudent(
             (r) => r.ay_code === ayCode && (r.stage_keys ?? []).includes(stage)
           )
           .map(toTile);
-        const patch = stageFromInvoices(stage, tied, current, today);
+        let patch = stageFromInvoices(stage, tied, current, today);
+        // No tied invoice, but the stage still shows the number of a stored
+        // invoice that isn't this stage's any more (relinked, moved to
+        // another student, or untied): clear it.
+        if (
+          !patch &&
+          tied.length === 0 &&
+          !blank(current.invoice) &&
+          (current.status ?? '').trim() !== 'Cancelled'
+        ) {
+          const { data: hit, error: hitErr } = await service
+            .from('qbo_invoices')
+            .select('qbo_invoice_id')
+            .eq('realm_id', realmId)
+            .eq('doc_number', current.invoice!.trim())
+            .limit(1);
+          if (hitErr)
+            throw new Error(`Invoice number lookup failed: ${hitErr.message}`);
+          patch = staleStageReset(current, (hit ?? []).length > 0);
+        }
         if (!patch) continue;
         const res = await writeStageFromQbo(service, {
           ayCode,

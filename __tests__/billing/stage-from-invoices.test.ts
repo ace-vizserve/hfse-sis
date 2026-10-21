@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   stageFromInvoices,
+  staleStageReset,
   tileNeedsStartDate,
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
@@ -217,5 +218,36 @@ describe('tileNeedsStartDate — false branches', () => {
     ).toBe(false);
     expect(tileNeedsStartDate('registration', paid, snap())).toBe(false);
     expect(tileNeedsStartDate('fees', [], snap())).toBe(false);
+  });
+});
+
+describe('staleStageReset', () => {
+  it('clears a money stage whose number is a stored invoice no longer tied', () => {
+    expect(
+      staleStageReset(snap({ status: 'Unpaid', invoice: 'HFSE100' }), true)
+    ).toEqual({ status: null, invoice: null });
+    expect(
+      staleStageReset(
+        snap({ status: 'Paid', invoice: 'HFSE100', paymentDate: '2026-10-01' }),
+        true
+      )
+    ).toEqual({ status: null, invoice: null, paymentDate: null });
+  });
+  it('keeps Ready for invoicing and Not required, clearing only the number', () => {
+    for (const status of ['Ready for invoicing', 'Not required'])
+      expect(
+        staleStageReset(snap({ status, invoice: 'HFSE100' }), true)
+      ).toEqual({ invoice: null });
+  });
+  it('never touches Cancelled, a blank number, or a number matching no stored invoice', () => {
+    expect(
+      staleStageReset(snap({ status: 'Cancelled', invoice: 'HFSE100' }), true)
+    ).toBeNull();
+    expect(
+      staleStageReset(snap({ status: 'Unpaid', invoice: ' ' }), true)
+    ).toBeNull();
+    expect(
+      staleStageReset(snap({ status: 'Unpaid', invoice: 'R-0042' }), false)
+    ).toBeNull();
   });
 });

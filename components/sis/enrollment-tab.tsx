@@ -1223,6 +1223,7 @@ function StageStatusTile({
             initialExtras={stage.extrasInitial}
             qboManaged={!!qbo?.connected}
             hasLiveInvoice={!!billing?.hasLive}
+            allInvoicesPaid={!!billing?.allPaid}
             qboInvoiceNumber={
               billing?.lead?.docNumber ?? stage.extrasInitial.invoice ?? null
             }

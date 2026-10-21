@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  notRequiredBlock,
   paidOnStartDate,
   qboLockViolation,
   staffStatusOptions,
@@ -44,11 +45,56 @@ describe('qboLockViolation', () => {
       })
     ).toBeNull();
   });
-  it('allows Not required and Cancelled, even with a live invoice', () => {
-    for (const status of ['Not required', 'Cancelled'])
-      expect(
-        qboLockViolation(before, { status }, { hasLiveInvoice: true })
-      ).toBeNull();
+  it('allows Cancelled, even with a live invoice', () => {
+    expect(
+      qboLockViolation(
+        before,
+        { status: 'Cancelled' },
+        { hasLiveInvoice: true }
+      )
+    ).toBeNull();
+  });
+  it('allows Not required while no live invoice is tied', () => {
+    expect(
+      qboLockViolation(
+        before,
+        { status: 'Not required' },
+        { hasLiveInvoice: false }
+      )
+    ).toBeNull();
+    expect(
+      qboLockViolation(
+        { status: 'Voided', invoice: '1042', paymentDate: null },
+        { status: 'Not required' }
+      )
+    ).toBeNull();
+  });
+  it('refuses Not required while a tied invoice is open', () => {
+    expect(
+      qboLockViolation(
+        before,
+        { status: 'Not required' },
+        { hasLiveInvoice: true }
+      )
+    ).toBe('Void the open invoice in Billing first, then set Not required.');
+  });
+  it('refuses Not required when the tied invoices are paid', () => {
+    expect(
+      qboLockViolation(
+        { status: 'Paid', invoice: '1042', paymentDate: '2026-10-01' },
+        { status: 'Not required' },
+        { hasLiveInvoice: true, allPaid: true }
+      )
+    ).toBe('This stage is already paid.');
+  });
+  it('keeping Not required is never refused', () => {
+    expect(
+      qboLockViolation(
+        { status: 'Not required', invoice: '1042', paymentDate: null },
+        { status: 'Not required' },
+        { hasLiveInvoice: true }
+      )
+    ).toBeNull();
   });
   it('allows Ready for invoicing while no live invoice is tied', () => {
     expect(
@@ -108,6 +154,21 @@ describe('qboLockViolation', () => {
         { status: 'Unpaid' }
       )
     ).toMatch(/follows QuickBooks/);
+  });
+});
+
+describe('notRequiredBlock', () => {
+  it('null without a live invoice; a reason with an open or paid one', () => {
+    expect(notRequiredBlock()).toBeNull();
+    expect(
+      notRequiredBlock({ hasLiveInvoice: false, allPaid: false })
+    ).toBeNull();
+    expect(notRequiredBlock({ hasLiveInvoice: true })).toMatch(
+      /Void the open invoice/
+    );
+    expect(notRequiredBlock({ hasLiveInvoice: true, allPaid: true })).toBe(
+      'This stage is already paid.'
+    );
   });
 });
 

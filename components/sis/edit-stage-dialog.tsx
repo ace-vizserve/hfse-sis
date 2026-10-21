@@ -33,7 +33,11 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { DatePicker } from '@/components/ui/date-picker';
-import { QBO_OWNED_FIELD_KEYS, staffStatusOptions } from '@/lib/qbo/stage-lock';
+import {
+  notRequiredBlock,
+  QBO_OWNED_FIELD_KEYS,
+  staffStatusOptions,
+} from '@/lib/qbo/stage-lock';
 import { Input } from '@/components/ui/input';
 import {
   Select,
@@ -99,6 +103,7 @@ export function EditStageDialog({
   prereqStatuses,
   qboManaged = false,
   hasLiveInvoice = false,
+  allInvoicesPaid = false,
   qboInvoiceNumber = null,
 }: {
   ayCode: string;
@@ -124,8 +129,10 @@ export function EditStageDialog({
    */
   qboManaged?: boolean;
   /** A live (not voided) invoice is tied to this stage: Ready for invoicing
-   *  is off (the stage route refuses it too). */
+   *  and Not required are off (the stage route refuses them too). */
   hasLiveInvoice?: boolean;
+  /** Every live tied invoice is paid (picks Not required's reason). */
+  allInvoicesPaid?: boolean;
   /** The tied invoice's number, for "Set by QuickBooks from invoice …". */
   qboInvoiceNumber?: string | null;
 }) {
@@ -877,10 +884,18 @@ export function EditStageDialog({
                           className="gap-2"
                         >
                           {canonicalOptions.map((opt) => {
+                            const notRequiredReason =
+                              opt === 'Not required' && initialStatus !== opt
+                                ? notRequiredBlock({
+                                    hasLiveInvoice,
+                                    allPaid: allInvoicesPaid,
+                                  })
+                                : null;
                             const off =
-                              opt === 'Ready for invoicing' &&
-                              hasLiveInvoice &&
-                              initialStatus !== opt;
+                              (opt === 'Ready for invoicing' &&
+                                hasLiveInvoice &&
+                                initialStatus !== opt) ||
+                              notRequiredReason !== null;
                             const kept = !STAFF_STATUS_HELP[opt];
                             return (
                               <label
@@ -912,11 +927,13 @@ export function EditStageDialog({
                                         : 'text-muted-foreground'
                                     )}
                                   >
-                                    {off
-                                      ? 'Already invoiced, so this is off.'
-                                      : kept
-                                        ? 'As QuickBooks set it.'
-                                        : STAFF_STATUS_HELP[opt]}
+                                    {notRequiredReason
+                                      ? notRequiredReason
+                                      : off
+                                        ? 'Already invoiced, so this is off.'
+                                        : kept
+                                          ? 'As QuickBooks set it.'
+                                          : STAFF_STATUS_HELP[opt]}
                                   </span>
                                 </span>
                               </label>

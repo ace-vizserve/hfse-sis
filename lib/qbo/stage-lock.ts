@@ -4,7 +4,7 @@
 // Billing (the tile's QuickBooks actions were removed in Billing Phase 5) and
 // the sync. Staff own the start date, the remarks, and the statuses
 // QuickBooks cannot know: Ready for invoicing (only while no live invoice is
-// tied to the stage), Not required and Cancelled (spec 2026-10-21). Before QuickBooks is
+// tied to the stage), Not required (likewise) and Cancelled (spec 2026-10-21). Before QuickBooks is
 // connected, or after it is disconnected, none of this applies and the stage
 // is edited by hand as before.
 //
@@ -42,6 +42,25 @@ export function staffStatusOptions(current: string | null): string[] {
   return out;
 }
 
+/** The invoices tied to the stage, as the lock reads them. */
+export type TiedInvoiceFacts = {
+  /** A live (not voided) invoice is tied to this stage. */
+  hasLiveInvoice?: boolean;
+  /** Every live tied invoice is paid. */
+  allPaid?: boolean;
+};
+
+/**
+ * Why Not required can't be set, or null. While a tied invoice is open (or
+ * paid), the next sync would write its status straight back over it.
+ */
+export function notRequiredBlock(opts?: TiedInvoiceFacts): string | null {
+  if (!opts?.hasLiveInvoice) return null;
+  return opts.allPaid
+    ? 'This stage is already paid.'
+    : 'Void the open invoice in Billing first, then set Not required.';
+}
+
 /** Why this hand edit is refused while QuickBooks owns the stage, or null. */
 export function qboLockViolation(
   before: {
@@ -53,8 +72,7 @@ export function qboLockViolation(
     status: string | null | undefined;
     extras?: Record<string, string | null | undefined>;
   },
-  /** A live (not voided) invoice is tied to this stage. */
-  opts?: { hasLiveInvoice?: boolean }
+  opts?: TiedInvoiceFacts
 ): string | null {
   const ex = payload.extras ?? {};
   for (const key of QBO_OWNED_FIELD_KEYS) {
@@ -77,6 +95,7 @@ export function qboLockViolation(
   if (next === 'Ready for invoicing' && opts?.hasLiveInvoice) {
     return 'This stage already has an invoice in QuickBooks, so it can’t go back to Ready for invoicing. Open the student’s Billing page to see it.';
   }
+  if (next === 'Not required') return notRequiredBlock(opts);
   return null;
 }
 

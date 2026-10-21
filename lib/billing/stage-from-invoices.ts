@@ -133,6 +133,29 @@ export function stageFromInvoices(
   return patch ? onlyChanges(patch, current) : null;
 }
 
+/**
+ * A stage with NO tied invoice whose number is a stored QuickBooks invoice
+ * that isn't this stage's any more (the student was relinked to another
+ * customer, or their customer moved to another student, or the invoice was
+ * untied): the number, payment date and money status are cleared, since staff
+ * can't clear a QuickBooks-owned number by hand. `numberIsStoredInvoice` says
+ * the stage's number matches a stored invoice; a number that matches none
+ * (typed before Billing) is left alone. Cancelled is never touched; Ready for
+ * invoicing and Not required are staff's and stay.
+ */
+export function staleStageReset(
+  current: StageSnapshot,
+  numberIsStoredInvoice: boolean
+): StagePatch | null {
+  if (!numberIsStoredInvoice || blank(current.invoice)) return null;
+  const status = (current.status ?? '').trim();
+  if (status === 'Cancelled') return null;
+  const patch: StagePatch = KEEP_WHEN_ALL_VOIDED.has(status)
+    ? { invoice: null, paymentDate: null }
+    : { status: null, invoice: null, paymentDate: null };
+  return onlyChanges(patch, current);
+}
+
 export function tileNeedsStartDate(
   stage: QboStageKey,
   invoices: Array<Pick<TileInvoice, 'state'>>,
