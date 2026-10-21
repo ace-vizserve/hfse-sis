@@ -8,35 +8,18 @@ import {
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
 import { formatDay, formatShortDay } from '@/lib/billing/view';
+import { sgDate } from '@/lib/dates';
 import { formatSgd } from '@/lib/qbo/format';
 
-/** The chip tone of a Registration / Fees status — exact values only. */
-export type BillingStageTone =
-  | 'blank'
-  | 'ready'
-  | 'unpaid'
-  | 'partial'
-  | 'overdue'
-  | 'paid'
-  | 'muted';
+// The chip tone lives in the one tone table, lib/sis/stage-tone.ts.
+export { billingStageTone, type BillingStageTone } from '@/lib/sis/stage-tone';
 
-const TONE_OF: Record<string, BillingStageTone> = {
-  'Ready for invoicing': 'ready',
-  Unpaid: 'unpaid',
-  'Partially paid': 'partial',
-  Overdue: 'overdue',
-  Paid: 'paid',
-  Voided: 'muted',
-  'Not required': 'muted',
-  Cancelled: 'muted',
-};
-
-export function billingStageTone(
-  status: string | null | undefined
-): BillingStageTone {
-  const s = (status ?? '').trim();
-  if (!s) return 'blank';
-  return TONE_OF[s] ?? 'muted';
+/** A UTC timestamp as its Singapore day, "20 Oct 2026"; null when unreadable. */
+function sgDay(iso: string | null): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return formatDay(sgDate(iso));
 }
 
 /** The tied invoices of one stage, summed up for its card. */
@@ -94,6 +77,9 @@ export function summarizeStageInvoices(
 
 export type StageCardLine = { text: string; attention: boolean };
 
+/** Owed statuses: a stage holding one with nothing tied was billed before Billing. */
+const OWED_BEFORE_BILLING = new Set(['Unpaid', 'Partially paid', 'Overdue']);
+
 /**
  * The one line under the chip:
  *   "HFSE069006 · S$200.00 owed · due 4 Nov" / "HFSE062240 · paid 12 Oct 2026"
@@ -111,6 +97,8 @@ export function stageCardLine(a: {
   updatedAt: string | null;
   /** The tied invoices; null when not linked or QuickBooks isn't connected. */
   billing: StageBilling | null;
+  /** QuickBooks is connected, so `billing` is the whole story. */
+  connected?: boolean;
 }): StageCardLine {
   const status = (a.status ?? '').trim();
   const b = a.billing;
@@ -131,12 +119,21 @@ export function stageCardLine(a: {
   const due = formatShortDay(b?.dueDate);
   const join = (...parts: Array<string | null | false>) =>
     parts.filter(Boolean).join(' · ');
+  // Owed but no QuickBooks invoice tied: billed before Billing. Create invoice
+  // stays hidden (it would bill twice), so the card says why and what to do.
+  // Paid keeps its own line — nothing is left to bill.
+  if (a.connected && OWED_BEFORE_BILLING.has(status) && !b?.hasLive) {
+    const typed = a.invoice?.trim();
+    return line(
+      `Invoiced before Billing${typed ? `: ${typed}` : ''}. Tick Ready for invoicing in Edit to bill here.`
+    );
+  }
   switch (status) {
     case '':
       return line('Nobody has asked for an invoice yet.');
     case 'Ready for invoicing': {
       const who = a.updatedBy?.trim();
-      const when = a.updatedAt ? formatDay(a.updatedAt) : null;
+      const when = sgDay(a.updatedAt);
       const ticked =
         who && when
           ? `Ticked by ${who} on ${when}.`

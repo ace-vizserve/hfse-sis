@@ -54,6 +54,7 @@ export async function GET(request: NextRequest) {
     sameItemsFrom((data ?? []) as SameItemsRow[], stage) ?? {
       from: null,
       lines: [],
+      skipped: false,
     }
   );
 }

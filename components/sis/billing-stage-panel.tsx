@@ -54,6 +54,7 @@ export function BillingStagePanel({
     updatedBy,
     updatedAt,
     billing,
+    connected,
   });
   const actions = connected && canOpen;
   const create = actions && canCreateFromStage(status, billing);

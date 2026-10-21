@@ -11,8 +11,10 @@ import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // GET /api/billing/customers?q= — QuickBooks customers whose name contains q,
-// for To review → Pick another. Never a sub-customer; each says which student
-// already has it.
+// for To review → Pick another and Create invoice's step 1. Never a
+// sub-customer; each says which student already has it. Inactive customers are
+// listed too (flagged `active: false`) — a name QuickBooks calls taken is often
+// an inactive one, and staff need to see it to make it active there first.
 export async function GET(request: NextRequest) {
   const auth = await requireRole([...QBO_INVOICE_ROLES]);
   if ('error' in auth) return auth.error;
@@ -24,21 +26,26 @@ export async function GET(request: NextRequest) {
     const found = await qboQuery<{
       Id: string;
       DisplayName: string;
+      Active?: boolean;
       Job?: boolean;
       ParentRef?: unknown;
       FullyQualifiedName?: string;
     }>(
       service,
       'Customer',
-      `Active = true and DisplayName LIKE '%${qbEscape(q)}%'`,
+      // QuickBooks leaves inactive records out unless the query names both.
+      `Active IN (true, false) and DisplayName LIKE '%${qbEscape(q)}%'`,
       'orderby DisplayName maxresults 50'
     );
-    const students = found.filter(
-      (c) =>
-        !c.Job &&
-        c.ParentRef == null &&
-        !(c.FullyQualifiedName ?? '').includes(':')
-    );
+    const students = found
+      .filter(
+        (c) =>
+          !c.Job &&
+          c.ParentRef == null &&
+          !(c.FullyQualifiedName ?? '').includes(':')
+      )
+      // Active ones first; the sort is stable, so each half keeps name order.
+      .sort((a, b) => Number(a.Active === false) - Number(b.Active === false));
     const { data: held } = await service
       .from('qbo_customers')
       .select('qbo_customer_id, student_number')
@@ -57,6 +64,7 @@ export async function GET(request: NextRequest) {
       customers: students.slice(0, 30).map((c) => ({
         id: c.Id,
         displayName: c.DisplayName,
+        active: c.Active !== false,
         linkedTo: holder.get(c.Id) ?? null,
       })),
     });

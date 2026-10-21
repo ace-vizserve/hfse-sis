@@ -10,7 +10,11 @@ import {
   type StageBilling,
 } from '@/lib/billing/stage-card';
 import type { TileInvoice } from '@/lib/billing/stage-from-invoices';
-import { stageTone } from '@/lib/sis/stage-tone';
+import {
+  BILLING_STAGE_LOOK,
+  billingStatusLook,
+  stageTone,
+} from '@/lib/sis/stage-tone';
 
 const inv = (
   o: Partial<TileInvoice & { qboInvoiceId: string }>
@@ -46,8 +50,28 @@ describe('billingStageTone', () => {
     expect(billingStageTone('Overdue')).toBe('overdue');
     expect(billingStageTone('Paid')).toBe('paid');
     expect(billingStageTone('Voided')).toBe('muted');
-    expect(billingStageTone('Not required')).toBe('muted');
+    expect(billingStageTone('Not required')).toBe('paid');
     expect(billingStageTone('Cancelled')).toBe('muted');
+    expect(billingStageTone(' partially PAID ')).toBe('partial');
+  });
+});
+
+describe('one tone table for Registration / Fees', () => {
+  it('chip, stripe and badge agree', () => {
+    const look = (s: string) => billingStatusLook(s)!;
+    expect(look('Paid')).toBe(BILLING_STAGE_LOOK.paid);
+    expect(look('Not required')).toBe(BILLING_STAGE_LOOK.paid);
+    expect(look('Paid').stripe).toBe('bg-brand-mint');
+    expect(look('Overdue').stripe).toBe('bg-destructive');
+    expect(look('Overdue').badge).toBe('blocked');
+    expect(look('Partially paid').stripe).toBe('bg-brand-amber');
+    expect(look('Unpaid').stripe).toBe('bg-brand-indigo');
+    expect(look('Unpaid').badge).toBe('default');
+    expect(look('Ready for invoicing').disc).toBe('pending');
+    expect(look('Ready for invoicing').badge).toBe('warning');
+    expect(look('Voided')).toBe(BILLING_STAGE_LOOK.muted);
+    expect(look('Cancelled')).toBe(BILLING_STAGE_LOOK.muted);
+    expect(billingStatusLook('Finished')).toBeNull();
   });
 });
 
@@ -70,6 +94,10 @@ describe('stageTone (Enrollment tab stripes and counts)', () => {
     expect(stageTone('Enrolled (Conditional)')).toBe('done');
     expect(stageTone('Pending')).toBe('pending');
     expect(stageTone('Ongoing Assessment')).toBe('active');
+  });
+  it('reads legacy lowercase values', () => {
+    expect(stageTone('finished')).toBe('done');
+    expect(stageTone(' PENDING ')).toBe('pending');
   });
 });
 
@@ -167,6 +195,36 @@ describe('stageCardLine', () => {
         updatedAt: '2026-10-20T03:00:00+00:00',
       }).text
     ).toBe('Ticked by Miss Luz on 20 Oct 2026. No invoice yet.'));
+  it('Ready for invoicing: the day is Singapore’s', () =>
+    expect(
+      stageCardLine({
+        ...base,
+        status: 'Ready for invoicing',
+        updatedBy: 'Miss Luz',
+        updatedAt: '2026-10-20T17:30:00Z',
+      }).text
+    ).toBe('Ticked by Miss Luz on 21 Oct 2026. No invoice yet.'));
+  it('owed with nothing tied: invoiced before Billing', () => {
+    expect(
+      stageCardLine({
+        ...base,
+        status: 'Unpaid',
+        invoice: 'HFSE050001',
+        connected: true,
+      }).text
+    ).toBe(
+      'Invoiced before Billing: HFSE050001. Tick Ready for invoicing in Edit to bill here.'
+    );
+    expect(
+      stageCardLine({ ...base, status: 'Overdue', connected: true }).text
+    ).toBe(
+      'Invoiced before Billing. Tick Ready for invoicing in Edit to bill here.'
+    );
+    // Not connected: the card can't know what is tied.
+    expect(
+      stageCardLine({ ...base, status: 'Unpaid', invoice: 'HFSE050001' }).text
+    ).toBe('HFSE050001');
+  });
   it('Voided, Not required, Cancelled, Not set', () => {
     expect(
       stageCardLine({ ...base, status: 'Voided', invoice: 'HFSE069003' }).text

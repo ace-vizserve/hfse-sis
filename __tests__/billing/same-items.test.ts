@@ -35,7 +35,25 @@ describe('sameItemsFrom', () => {
     ).toEqual({
       from: 'HFSE069006',
       lines: [{ itemId: '7', description: '', qty: 2, unitPrice: 150 }],
+      skipped: false,
     });
+  });
+  it('leaves out discounts and lines with no product, and says so', () => {
+    const got = sameItemsFrom(
+      [
+        row({
+          lines: [
+            line({}),
+            line({ itemId: '9', amount: -50, description: 'Sibling discount' }),
+            line({ itemId: null, amount: 10 }),
+          ],
+        }),
+      ],
+      'registration'
+    );
+    expect(got?.lines).toHaveLength(1);
+    expect(got?.lines[0].itemId).toBe('7');
+    expect(got?.skipped).toBe(true);
   });
   it('skips voided, other stages and lines with no product', () => {
     expect(

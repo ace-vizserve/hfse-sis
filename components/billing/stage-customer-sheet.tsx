@@ -40,13 +40,19 @@ export function StageCustomerSheet({
   // Restarted (search prefilled) when QuickBooks says the name is taken.
   const [search, setSearch] = useState({ key: 0, q: initialSearch });
   const [duplicate, setDuplicate] = useState<string | null>(null);
+  // The name QuickBooks called taken, once "Find and link it" searched for it.
+  const [takenName, setTakenName] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
   const f = useNewCustomerForm({
     studentNumber,
     enabled: open && !existing,
     onDuplicate: setDuplicate,
   });
+  const busy = linking || f.saving;
 
   const close = (o: boolean) => {
+    // A Link or Add is on its way to QuickBooks: stay open until it answers.
+    if (!o && busy) return;
     setOpen(o);
     if (o) return;
     // Closed without a customer: drop the request so a reload doesn't reopen.
@@ -97,6 +103,7 @@ export function StageCustomerSheet({
               <Switch
                 id="stage-existing"
                 checked={existing}
+                disabled={busy}
                 onCheckedChange={(on) => {
                   setExisting(on);
                   if (!on) setDuplicate(null);
@@ -110,6 +117,15 @@ export function StageCustomerSheet({
                 studentNumber={studentNumber}
                 studentName={studentName}
                 initialSearch={search.q}
+                onBusyChange={setLinking}
+                emptyNote={
+                  takenName
+                    ? {
+                        q: takenName,
+                        text: 'QuickBooks already uses this name for someone who isn’t a customer. Change the display name and try again.',
+                      }
+                    : null
+                }
               />
             ) : (
               <>
@@ -131,6 +147,7 @@ export function StageCustomerSheet({
                         size="sm"
                         onClick={() => {
                           setSearch((s) => ({ key: s.key + 1, q: duplicate }));
+                          setTakenName(duplicate);
                           setDuplicate(null);
                           setExisting(true);
                         }}
@@ -154,7 +171,7 @@ export function StageCustomerSheet({
 
           <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
             <SheetClose asChild>
-              <Button type="button" variant="outline" disabled={f.saving}>
+              <Button type="button" variant="outline" disabled={busy}>
                 Cancel
               </Button>
             </SheetClose>

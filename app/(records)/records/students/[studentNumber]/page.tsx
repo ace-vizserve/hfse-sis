@@ -90,6 +90,7 @@ import {
 import type { ProfileUpdateInput } from '@/lib/schemas/sis';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import { isLevelLocked } from '@/lib/sis/level-lock';
+import { billingStatusLook } from '@/lib/sis/stage-tone';
 import { loadLevelLabelResolver } from '@/lib/sis/levels';
 import {
   getEnrollmentHistory,
@@ -2121,38 +2122,34 @@ function PostEnrolmentChecklist({
 }
 
 // Stripe color keyed off the same semantic mapping as <StageStatusBadge> — see
-// `components/sis/status-badge.tsx::STAGE_VARIANT`. Keeps the visual language
-// consistent across this checklist and the admissions EnrollmentTab.
+// `components/sis/status-badge.tsx::STAGE_VARIANT`. Registration / Fees
+// statuses read the one tone table (lib/sis/stage-tone.ts BILLING_STAGE_LOOK),
+// as the chip and the admissions EnrollmentTab do.
 function stageStripeClass(status: string | null): string {
   const t = (status ?? '').trim();
   if (!t) return 'bg-muted-foreground/30';
+  const billing = billingStatusLook(t);
+  if (billing) return billing.stripe;
   if (
     t === 'Finished' ||
     t === 'Signed' ||
     t === 'Valid' ||
     t === 'Verified' ||
-    t === 'Paid' ||
-    t === 'Not required' ||
     t === 'Claimed'
   ) {
     return 'bg-brand-mint';
   }
-  // Ready for invoicing: waiting to be invoiced. Partially paid: some owed.
   if (
     t === 'Pending' ||
     t === 'Incomplete' ||
     t === 'Uploaded' ||
-    t === 'To follow' ||
-    t === 'Ready for invoicing' ||
-    t === 'Partially paid'
+    t === 'To follow'
   ) {
     return 'bg-brand-amber';
   }
-  if (t === 'Rejected' || t === 'Expired' || t === 'Overdue')
-    return 'bg-destructive';
-  if (t === 'Cancelled' || t === 'Withdrawn' || t === 'Voided')
-    return 'bg-muted-foreground/30';
-  // In flight (Unpaid, Sent, Ongoing Assessment, …).
+  if (t === 'Rejected' || t === 'Expired') return 'bg-destructive';
+  if (t === 'Withdrawn') return 'bg-muted-foreground/30';
+  // In flight (Sent, Ongoing Assessment, …).
   return 'bg-brand-indigo';
 }
 

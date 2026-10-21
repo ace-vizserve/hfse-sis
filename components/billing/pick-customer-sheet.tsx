@@ -1,5 +1,7 @@
 'use client';
 
+import { useState } from 'react';
+
 import { CustomerSearch } from '@/components/billing/customer-search';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,8 +28,16 @@ export function PickCustomerSheet({
   studentName: string;
   initialSearch: string;
 }) {
+  // A Link is on its way to QuickBooks: Cancel and close wait for its answer.
+  const [linking, setLinking] = useState(false);
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(o) => {
+        if (!o && linking) return;
+        onOpenChange(o);
+      }}
+    >
       <SheetContent
         side="right"
         className="flex w-full flex-col gap-0 p-0 sm:max-w-lg"
@@ -50,11 +60,12 @@ export function PickCustomerSheet({
             studentName={studentName}
             initialSearch={initialSearch}
             onLinked={() => onOpenChange(false)}
+            onBusyChange={setLinking}
           />
         </div>
         <SheetFooter className="shrink-0 flex-row justify-end gap-2 border-t border-border bg-background px-6 py-4">
           <SheetClose asChild>
-            <Button type="button" variant="outline">
+            <Button type="button" variant="outline" disabled={linking}>
               Cancel
             </Button>
           </SheetClose>

@@ -244,7 +244,10 @@ export function CreateInvoiceSheet({
         }))
       );
       setSameNote(
-        `Filled from invoice ${d.from ?? 'the last one'}. Check the lines before you create it.`
+        `Filled from invoice ${d.from ?? 'the last one'}. Check the lines before you create it.` +
+          (d.skipped
+            ? " Discounts and other lines without a product weren't copied."
+            : '')
       );
     },
     onError: (e) => setSameNote((e as Error).message),

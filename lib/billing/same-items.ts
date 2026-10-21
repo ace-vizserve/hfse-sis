@@ -20,11 +20,20 @@ export type SameItemLine = {
   unitPrice: number;
 };
 
-export type SameItems = { from: string | null; lines: SameItemLine[] };
+export type SameItems = {
+  from: string | null;
+  lines: SameItemLine[];
+  /** Some lines of that invoice were left out (a discount, a line with no product). */
+  skipped: boolean;
+};
 
-/** One stored line as Create invoice's form takes it; null without a product. */
+/**
+ * One stored line as Create invoice's form takes it; null without a product
+ * or with a negative amount (a discount — Create invoice has no discount line).
+ */
 function formLine(l: InvoiceLine): SameItemLine | null {
   if (!l.itemId) return null;
+  if (Number(l.amount) < 0) return null;
   const qty = l.qty && l.qty > 0 ? l.qty : 1;
   return {
     itemId: l.itemId,
@@ -44,12 +53,11 @@ export function sameItemsFrom(
 ): SameItems | null {
   const tied = rows
     .filter((r) => r.state !== 'voided' && (r.stage_keys ?? []).includes(stage))
-    .map((r) => ({
-      r,
-      lines: (r.lines ?? [])
-        .map(formLine)
-        .filter((l): l is SameItemLine => !!l),
-    }))
+    .map((r) => {
+      const all = r.lines ?? [];
+      const lines = all.map(formLine).filter((l): l is SameItemLine => !!l);
+      return { r, lines, skipped: lines.length < all.length };
+    })
     .filter((x) => x.lines.length > 0)
     .sort((a, b) =>
       latestFirst(
@@ -58,5 +66,7 @@ export function sameItemsFrom(
       )
     );
   const top = tied[0];
-  return top ? { from: top.r.doc_number, lines: top.lines } : null;
+  return top
+    ? { from: top.r.doc_number, lines: top.lines, skipped: top.skipped }
+    : null;
 }

@@ -56,7 +56,13 @@ import type {
 } from '@/lib/sis/class-assignment';
 import type { QboStageData } from '@/lib/qbo/stage-invoices';
 import { classTileState } from '@/lib/sis/class-tile-state';
-import { stageTone, type StageTone } from '@/lib/sis/stage-tone';
+import {
+  BILLING_STAGE_LOOK,
+  billingStageTone,
+  isBillingStage,
+  stageTone,
+  type StageTone,
+} from '@/lib/sis/stage-tone';
 import { isFieldEmpty } from '@/lib/sis/field-helpers';
 import type { ApplicationRow, StatusRow } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
@@ -221,8 +227,18 @@ const STRIPE_BY_TONE: Record<StageTone, string> = {
   empty: 'bg-border',
 };
 
-function statusStripeClass(status: string | null): string {
-  return STRIPE_BY_TONE[stageTone(status)];
+// Registration / Fees wear the one tone table (BILLING_STAGE_LOOK) — the
+// same colours as their chip and the Records checklist.
+function statusStripeClass(status: string | null, key: StageKey): string {
+  return isBillingStage(key)
+    ? BILLING_STAGE_LOOK[billingStageTone(status)].stripe
+    : STRIPE_BY_TONE[stageTone(status)];
+}
+
+function discToneOf(status: string | null, key: StageKey): StageTone {
+  return isBillingStage(key)
+    ? BILLING_STAGE_LOOK[billingStageTone(status)].disc
+    : stageTone(status);
 }
 
 // Per-stage iconography. Used in the stage-tile's top-left gradient tile
@@ -967,7 +983,7 @@ function StageNode({
   nextTone: StageTone | null;
 }) {
   const tone = stageTone(stage.status);
-  const recipe = STAGE_DISC_RECIPE[tone];
+  const recipe = STAGE_DISC_RECIPE[discToneOf(stage.status, stage.key)];
   const Icon = STAGE_ICON[stage.key];
 
   // Connector logic: a segment is "complete" (mint) when BOTH flanking
@@ -1163,7 +1179,7 @@ function StageStatusTile({
   canInvoice?: boolean;
 }) {
   const StageIcon = STAGE_ICON[stage.key];
-  const stripe = statusStripeClass(stage.status);
+  const stripe = statusStripeClass(stage.status, stage.key);
   // The class stage has no edit control in its header. Its actions sit at the
   // bottom of the tile, opening in place. Class assignment is Enrolled-only:
   // before Enrolled the tile only says whether the admissions row already
@@ -1188,11 +1204,14 @@ function StageStatusTile({
   const billingStage =
     stage.key === 'registration' || stage.key === 'fees' ? stage.key : null;
   const billing = billingStage && qbo?.connected ? qbo[billingStage] : null;
-  const shownExtras = billingStage
-    ? (stage.extras ?? []).filter(
-        (e) => e.label !== 'Invoice' && e.label !== 'Payment date'
-      )
-    : stage.extras;
+  // The typed Invoice / Payment date chips repeat the card's line only while
+  // QuickBooks is connected; without it they are all the card has.
+  const shownExtras =
+    billingStage && qbo?.connected
+      ? (stage.extras ?? []).filter(
+          (e) => e.label !== 'Invoice' && e.label !== 'Payment date'
+        )
+      : stage.extras;
 
   return (
     <div
