@@ -197,6 +197,37 @@ export function canCreateFromStage(
   return !billing?.hasLive;
 }
 
+/** Statuses the stage's owner set by hand: QuickBooks did not fill them in. */
+const SET_BY_HAND = new Set([
+  'Ready for invoicing',
+  'Not required',
+  'Cancelled',
+]);
+
+/**
+ * "Filled in from QuickBooks" shows when an invoice is tied to the stage,
+ * unless the status was set by hand (Ready for invoicing — e.g. re-ticked
+ * after the tied invoice was voided — Not required or Cancelled).
+ */
+export function showsQuickBooksNote(
+  status: string | null,
+  billing: StageBilling | null
+): boolean {
+  return !!billing?.lead && !SET_BY_HAND.has((status ?? '').trim());
+}
+
+/**
+ * Open invoice in Billing shows when an invoice is tied to the stage, except
+ * while it is Ready for invoicing: the tied one then is the voided invoice the
+ * stage was re-ticked after, and the card offers Create invoice instead.
+ */
+export function showsOpenInvoice(
+  status: string | null,
+  billing: StageBilling | null
+): boolean {
+  return !!billing?.lead && (status ?? '').trim() !== 'Ready for invoicing';
+}
+
 /** Billing's Create invoice for this stage. */
 export function createFromStageHref(
   studentNumber: string,

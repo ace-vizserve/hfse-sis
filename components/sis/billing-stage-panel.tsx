@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button';
 import {
   canCreateFromStage,
   createFromStageHref,
+  showsOpenInvoice,
+  showsQuickBooksNote,
   stageCardLine,
   stageInvoiceHref,
   type StageBilling,
@@ -58,7 +60,10 @@ export function BillingStagePanel({
   });
   const actions = connected && canOpen;
   const create = actions && canCreateFromStage(status, billing);
-  const lead = billing?.lead ?? null;
+  const lead = showsOpenInvoice(status, billing)
+    ? (billing?.lead ?? null)
+    : null;
+  const note = showsQuickBooksNote(status, billing);
   return (
     <div className="space-y-2.5 pl-1">
       <p
@@ -71,7 +76,7 @@ export function BillingStagePanel({
       >
         {line.text}
       </p>
-      {lead && (
+      {note && (
         <p className="text-[11px] leading-snug text-muted-foreground">
           Filled in from QuickBooks. Changes there show here on their own.
         </p>

@@ -4,6 +4,8 @@ import {
   billingStageTone,
   canCreateFromStage,
   createFromStageHref,
+  showsOpenInvoice,
+  showsQuickBooksNote,
   stageCardLine,
   stageFromParams,
   summarizeStageInvoices,
@@ -279,6 +281,28 @@ describe('Create invoice in Billing', () => {
     expect(canCreateFromStage('Unpaid', null)).toBe(false);
     expect(canCreateFromStage('Cancelled', null)).toBe(false);
     expect(canCreateFromStage('Not required', null)).toBe(false);
+  });
+  it('Ready for invoicing after a void shows no QuickBooks note and no Open link', () => {
+    const voided = summarizeStageInvoices([inv({ state: 'voided' })]);
+    expect(showsQuickBooksNote('Ready for invoicing', voided)).toBe(false);
+    expect(showsOpenInvoice('Ready for invoicing', voided)).toBe(false);
+    expect(canCreateFromStage('Ready for invoicing', voided)).toBe(true);
+  });
+  it('Not required / Cancelled show no QuickBooks note', () => {
+    const tied = summarizeStageInvoices([inv({})]);
+    expect(showsQuickBooksNote('Not required', tied)).toBe(false);
+    expect(showsQuickBooksNote(' Cancelled ', tied)).toBe(false);
+  });
+  it('QuickBooks-filled statuses show the note and the Open link', () => {
+    const tied = summarizeStageInvoices([inv({})]);
+    const voided = summarizeStageInvoices([inv({ state: 'voided' })]);
+    expect(showsQuickBooksNote('Unpaid', tied)).toBe(true);
+    expect(showsOpenInvoice('Unpaid', tied)).toBe(true);
+    expect(showsQuickBooksNote('Voided', voided)).toBe(true);
+    expect(showsOpenInvoice('Voided', voided)).toBe(true);
+    // Nothing tied: nothing to note or open.
+    expect(showsQuickBooksNote('Unpaid', null)).toBe(false);
+    expect(showsOpenInvoice('Unpaid', null)).toBe(false);
   });
   it('links to Billing with the stage and year', () => {
     expect(createFromStageHref('H270134', 'fees', 'AY2027')).toBe(

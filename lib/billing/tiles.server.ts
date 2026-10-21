@@ -29,7 +29,11 @@ export async function syncTilesForStudent(
   service: SupabaseClient,
   studentNumber: string,
   ayCodes?: string[],
-  opts?: { realmId?: string }
+  opts?: {
+    realmId?: string;
+    /** Singapore day "YYYY-MM-DD" the stages are judged on (default: today). */
+    today?: string;
+  }
 ): Promise<{ changed: number; errors: string[] }> {
   const realmId = opts?.realmId ?? (await connectedRealmId(service));
   if (!realmId) return { changed: 0, errors: [] };
@@ -78,7 +82,7 @@ export async function syncTilesForStudent(
 
   let changed = 0;
   const errors: string[] = [];
-  const today = todaySg();
+  const today = opts?.today ?? todaySg();
   const toTile = (r: (typeof rows)[number]): TileInvoice => ({
     docNumber: r.doc_number,
     txnDate: r.txn_date,

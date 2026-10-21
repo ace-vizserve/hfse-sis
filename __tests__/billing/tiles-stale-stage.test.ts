@@ -153,6 +153,40 @@ describe('syncTilesForStudent — stale stage after a relink', () => {
     expect(writes).toEqual([]);
   });
 
+  it('judges Overdue on the day it is given, not the real clock', async () => {
+    snapshots.fees = {
+      status: 'Unpaid',
+      invoice: 'HFSE100',
+      paymentDate: null,
+      startDate: null,
+    };
+    const service = fakeService({
+      ...base,
+      qbo_invoices: [
+        invoice('HFSE100', {
+          student_number: 'S1',
+          qbo_customer_id: 'C2',
+          due_date: '2099-01-01',
+        }),
+      ],
+    });
+    // Due in 2099: not overdue by the real clock…
+    await syncTilesForStudent(service, 'S1', ['AY2027'], {
+      realmId: 'realm-1',
+    });
+    expect(writes).toEqual([]);
+    // …but overdue on the day after it.
+    await syncTilesForStudent(service, 'S1', ['AY2027'], {
+      realmId: 'realm-1',
+      today: '2099-01-02',
+    });
+    expect(writes).toHaveLength(1);
+    expect(writes[0]).toMatchObject({
+      stage: 'fees',
+      patch: { status: 'Overdue' },
+    });
+  });
+
   it('a stage with its tied invoice still follows it', async () => {
     snapshots.fees = {
       status: 'Unpaid',

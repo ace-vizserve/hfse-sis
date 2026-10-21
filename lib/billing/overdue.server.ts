@@ -133,9 +133,8 @@ export async function sweepOverdueStages(
         service,
         t.studentNumber,
         [t.ayCode],
-        {
-          realmId,
-        }
+        // The same day the targets were picked on, not the real clock's.
+        { realmId, today }
       );
       changed += r.changed;
       errors.push(...r.errors.map((e) => `${t.studentNumber}: ${e}`));
