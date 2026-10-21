@@ -2,8 +2,9 @@
 // connected (Mr Ace, 2026-10-14: "one interface"). QuickBooks owns the invoice
 // number, the payment date and the money statuses — they change only through
 // Billing (the tile's QuickBooks actions were removed in Billing Phase 5) and
-// the sync. Staff own the start date, the
-// remarks and Cancelled, which QuickBooks cannot know. Before QuickBooks is
+// the sync. Staff own the start date, the remarks, and the statuses
+// QuickBooks cannot know: Ready for invoicing (only while no live invoice is
+// tied to the stage), Not required and Cancelled (spec 2026-10-21). Before QuickBooks is
 // connected, or after it is disconnected, none of this applies and the stage
 // is edited by hand as before.
 //
@@ -20,16 +21,24 @@ const norm = (v: string | null | undefined) => {
   return t === '' ? null : t;
 };
 
+/** The statuses staff set on Registration / Fees (spec 2026-10-21). */
+export const STAFF_STAGE_STATUSES = [
+  'Ready for invoicing',
+  'Not required',
+  'Cancelled',
+] as const;
+
 /**
  * The statuses staff may pick by hand while QuickBooks owns the stage: the
- * current one (no change), Cancelled, and — to reopen a Cancelled stage —
- * Pending.
+ * current one (no change), then Ready for invoicing, Not required and
+ * Cancelled. Everything else (Unpaid … Voided) follows QuickBooks.
  */
 export function staffStatusOptions(current: string | null): string[] {
   const out: string[] = [];
-  if (norm(current)) out.push(current!.trim());
-  if (!out.includes('Cancelled')) out.push('Cancelled');
-  if (norm(current) === 'Cancelled') out.push('Pending');
+  const now = norm(current);
+  if (now && !(STAFF_STAGE_STATUSES as readonly string[]).includes(now))
+    out.push(now);
+  out.push(...STAFF_STAGE_STATUSES);
   return out;
 }
 
@@ -43,7 +52,9 @@ export function qboLockViolation(
   payload: {
     status: string | null | undefined;
     extras?: Record<string, string | null | undefined>;
-  }
+  },
+  /** A live (not voided) invoice is tied to this stage. */
+  opts?: { hasLiveInvoice?: boolean }
 ): string | null {
   const ex = payload.extras ?? {};
   for (const key of QBO_OWNED_FIELD_KEYS) {
@@ -58,12 +69,13 @@ export function qboLockViolation(
       return 'The invoice number and payment date come from QuickBooks. Open the student’s Billing page to invoice or record a payment.';
     }
   }
-  if (
-    payload.status !== undefined &&
-    norm(payload.status) !== norm(before.status) &&
-    !staffStatusOptions(before.status).includes(norm(payload.status) ?? '')
-  ) {
-    return 'This status follows QuickBooks. Here you can only set Cancelled, or reopen a Cancelled stage as Pending.';
+  const next = norm(payload.status);
+  if (payload.status === undefined || next === norm(before.status)) return null;
+  if (!staffStatusOptions(before.status).includes(next ?? '')) {
+    return 'This status follows QuickBooks. Here you can only set Ready for invoicing, Not required or Cancelled.';
+  }
+  if (next === 'Ready for invoicing' && opts?.hasLiveInvoice) {
+    return 'This stage already has an invoice in QuickBooks, so it can’t go back to Ready for invoicing. Open the student’s Billing page to see it.';
   }
   return null;
 }

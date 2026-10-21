@@ -1,4 +1,4 @@
-// Pure helpers shared by the Billing routes and the reclassify sweep.
+// Pure helpers shared by the Billing routes and the re-tie sweep.
 
 /** True when `s` is a real calendar date written YYYY-MM-DD. */
 export function isRealDate(s: string): boolean {

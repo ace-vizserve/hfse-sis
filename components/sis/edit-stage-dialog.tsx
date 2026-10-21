@@ -55,6 +55,7 @@ import {
   StageUpdateSchema,
   checkStageScoreExtras,
   findStageCompletionBlockers,
+  isStageDone,
   isStageStatusMissing,
   stageCompletionMessage,
   stageStatusMissingMessage,
@@ -185,7 +186,7 @@ export function EditStageDialog({
       ).map((k) => {
         const current = prereqStatuses?.[k] ?? null;
         const expected = STAGE_TERMINAL_STATUS[k] ?? '';
-        return { key: k, current, expected, ok: current === expected };
+        return { key: k, current, expected, ok: isStageDone(k, current) };
       })
     : [];
 

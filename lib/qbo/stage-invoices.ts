@@ -31,8 +31,10 @@ export type QboStageData = {
 type Row = {
   doc_number: string | null;
   txn_date: string | null;
+  due_date: string | null;
   state: 'open' | 'paid' | 'voided';
   payment_date: string | null;
+  total: number;
   balance: number;
   stage_keys: string[] | null;
   qbo_customer_id: string | null;
@@ -73,7 +75,7 @@ async function tileRows(
   const { data, error } = await service
     .from('qbo_invoices')
     .select(
-      'doc_number, txn_date, state, payment_date, balance, stage_keys, qbo_customer_id'
+      'doc_number, txn_date, due_date, state, payment_date, total, balance, stage_keys, qbo_customer_id'
     )
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId)
@@ -96,8 +98,10 @@ const onTile = (rows: Row[], stage: QboStageKey) =>
     .map((r) => ({
       docNumber: r.doc_number,
       txnDate: r.txn_date,
+      dueDate: r.due_date,
       state: r.state,
       paymentDate: r.payment_date,
+      total: Number(r.total),
       balance: Number(r.balance),
     }));
 

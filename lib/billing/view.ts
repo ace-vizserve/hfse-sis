@@ -2,14 +2,7 @@
 // Pure and client-safe: the pages compute on the server, the sheets reuse the
 // same rules in the browser.
 
-import {
-  classifyInvoice,
-  type BillingMaps,
-  type BillingStage,
-  type InvoiceLine,
-  type StageChoice,
-  type StudentApplication,
-} from '@/lib/billing/classify';
+import type { BillingStage, StageTarget } from '@/lib/billing/tie';
 
 export type InvoiceStatus = 'open' | 'part' | 'overdue' | 'paid' | 'voided';
 
@@ -151,38 +144,14 @@ export function studentDisplayName(a: {
   return a.enroleeFullName?.trim() || 'Unnamed student';
 }
 
-/** The maps as the browser gets them: the accounts plus ONE student's
- *  applications (never every student's). */
-export type MapsData = {
-  accounts: Array<[string, StageChoice]>;
-  studentNumber: string;
-  applications: StudentApplication[];
-};
-
-export function mapsToData(m: BillingMaps, studentNumber: string): MapsData {
-  return {
-    accounts: [...m.accounts],
-    studentNumber,
-    applications: m.applications.get(studentNumber) ?? [],
-  };
-}
-
-export function mapsFromData(d: MapsData): BillingMaps {
-  return {
-    accounts: new Map(d.accounts),
-    applications: new Map([[d.studentNumber, d.applications]]),
-  };
-}
-
 /**
- * The amber note on Create invoice: the new invoice would sit on a tile that
- * already has a live invoice for the same year. A warning, never a block.
+ * The amber note on Create invoice from a stage: that stage already has a
+ * live invoice tied to it — "Fees for AY2027 already has HFSE069021 open."
+ * A warning, never a block. No stage (Create invoice on the customer page)
+ * → no note: that invoice is tied to nothing.
  */
 export function duplicateTileWarning(args: {
-  lines: InvoiceLine[];
-  txnDate: string;
-  maps: BillingMaps;
-  studentNumber: string;
+  target: StageTarget | null;
   existing: Array<{
     docNumber: string | null;
     ayCode: string | null;
@@ -190,26 +159,16 @@ export function duplicateTileWarning(args: {
     state: 'open' | 'paid' | 'voided';
   }>;
 }): string | null {
-  const place = classifyInvoice(
-    args.lines,
-    args.txnDate,
-    args.maps,
-    args.studentNumber
+  const t = args.target;
+  if (!t) return null;
+  const live = args.existing.filter(
+    (e) =>
+      e.state !== 'voided' &&
+      e.ayCode === t.ayCode &&
+      e.stageKeys.includes(t.stage)
   );
-  if (!place.ayCode) return null;
-  for (const stage of place.stageKeys) {
-    const same = args.existing.find(
-      (e) =>
-        e.state !== 'voided' &&
-        e.ayCode === place.ayCode &&
-        e.stageKeys.includes(stage)
-    );
-    if (!same) continue;
-    const name = STAGE_LABEL[stage];
-    const doc = same.docNumber ?? 'An invoice';
-    return stage === 'fees'
-      ? `${doc} already bills ${name} for ${place.ayCode}. A second ${name} invoice marks the stage Re-invoiced — carry on only if a new invoice is meant to be sent.`
-      : `${doc} already bills ${name} for ${place.ayCode}. Carry on only if a new invoice is meant to be sent.`;
-  }
-  return null;
+  if (live.length === 0) return null;
+  const same = live.find((e) => e.state === 'open') ?? live[0];
+  const doc = same.docNumber ?? 'an invoice';
+  return `${STAGE_LABEL[t.stage]} for ${t.ayCode} already has ${doc} ${same.state === 'open' ? 'open' : 'paid'}.`;
 }

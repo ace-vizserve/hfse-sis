@@ -686,6 +686,18 @@ export type StageKey = (typeof STAGE_KEYS)[number];
 // revisions (e.g. `Rejected` on contract, `Assigned` on class) are removed;
 // EditStageDialog's "Other…" free-text escape hatch preserves the ability
 // to edit rows holding those legacy values without losing them on save.
+/** Registration and Fees statuses (both stages; blank = not set). */
+export const BILLING_STAGE_STATUSES = [
+  'Ready for invoicing',
+  'Unpaid',
+  'Partially paid',
+  'Overdue',
+  'Paid',
+  'Voided',
+  'Not required',
+  'Cancelled',
+] as const;
+
 export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
   application: [
     'Submitted',
@@ -696,11 +708,14 @@ export const STAGE_STATUS_OPTIONS: Record<StageKey, readonly string[]> = {
     'Cancelled',
     'Withdrawn',
   ],
-  registration: ['Pending', 'Unpaid', 'Finished', 'Cancelled'],
+  // Registration and Fees follow the invoice tied to them (spec 2026-10-21,
+  // migration 195): Ready for invoicing / Not required / Cancelled are set
+  // by staff; Unpaid → Paid / Voided by QuickBooks.
+  registration: BILLING_STAGE_STATUSES,
   documents: ['Pending', 'Verified', 'Incomplete', 'Finished', 'Cancelled'],
   assessment: ['Pending', 'Ongoing Assessment', 'Finished', 'Cancelled'],
   contract: ['Generated', 'Sent', 'Signed'],
-  fees: ['Pending', 'Invoiced', 'Re-invoiced', 'Paid', 'Cancelled'],
+  fees: BILLING_STAGE_STATUSES,
   class: ['Pending', 'Incomplete', 'Finished', 'Cancelled'],
   supplies: ['Pending', 'Claimed', 'Cancelled'],
   orientation: ['Pending', 'Finished', 'Cancelled'],
@@ -764,12 +779,20 @@ export type StageRequiredFieldsByStatus = Readonly<
 export const STAGE_STATUS_REQUIRED_FIELDS: Partial<
   Record<StageKey, StageRequiredFieldsByStatus>
 > = {
+  // The statuses QuickBooks writes (spec 2026-10-21) carry the tied
+  // invoice's number; Paid also its payment date.
   registration: {
-    Finished: ['invoice', 'paymentDate'],
+    Unpaid: ['invoice'],
+    'Partially paid': ['invoice'],
+    Overdue: ['invoice'],
+    Voided: ['invoice'],
+    Paid: ['invoice', 'paymentDate'],
   },
   fees: {
-    Invoiced: ['invoice'],
-    'Re-invoiced': ['invoice'],
+    Unpaid: ['invoice'],
+    'Partially paid': ['invoice'],
+    Overdue: ['invoice'],
+    Voided: ['invoice'],
     // `startDate` added 2026-09-12. Missing on only 2 of the 425 records
     // already at Paid, so this clears a two-record backlog rather than
     // locking the stage for everyone.
@@ -1005,15 +1028,38 @@ export function enrolledPrereqStagesFor(
     : ENROLLED_PREREQ_STAGES;
 }
 
-// Terminal "done" value per prereq stage. Used by the Enrolled-flip gate.
+// The ONE value shown as a prereq stage's "done" (the Enrolled checklist's
+// "expected"). Whether a stage IS done is `isStageDone` below — Registration
+// and Fees have two done values.
 export const STAGE_TERMINAL_STATUS: Partial<Record<StageKey, string>> = {
-  registration: 'Finished',
+  registration: 'Paid',
   documents: 'Finished',
   assessment: 'Finished',
   contract: 'Signed',
   fees: 'Paid',
   // class gets 'Finished' set by the auto-assign algorithm, not a prereq.
 };
+
+// Every status that counts as done, per prereq stage. Registration and Fees
+// are done when Paid or Not required (spec 2026-10-21); the other stages keep
+// their one terminal value. Read through `isStageDone`.
+export const STAGE_DONE_STATUSES: Partial<Record<StageKey, readonly string[]>> =
+  {
+    registration: ['Paid', 'Not required'],
+    documents: ['Finished'],
+    assessment: ['Finished'],
+    contract: ['Signed'],
+    fees: ['Paid', 'Not required'],
+  };
+
+/** Is this stage done at this status? Exact match after trimming. */
+export function isStageDone(
+  stageKey: StageKey,
+  status: string | null | undefined
+): boolean {
+  const s = (status ?? '').trim();
+  return !!s && (STAGE_DONE_STATUSES[stageKey] ?? []).includes(s);
+}
 
 // ⚠ THERE IS NO POST-ENROLMENT FREEZE ANY MORE (removed 2026-09-10). KD #147's
 // module-ownership rule used to live here: once a student was fully 'Enrolled',
@@ -1170,7 +1216,7 @@ export function findOpenPrereqSteps(
   for (const stage of enrolledPrereqStagesFor(category)) {
     const expected = STAGE_TERMINAL_STATUS[stage]!;
     const current = prereqStatuses[stage] ?? null;
-    if (current !== expected) {
+    if (!isStageDone(stage, current)) {
       open.push({ stage: STAGE_LABELS[stage], current, expected });
     }
   }

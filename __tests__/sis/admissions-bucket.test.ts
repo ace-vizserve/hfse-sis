@@ -40,11 +40,25 @@ describe('bucketForAdmissionsStatus', () => {
   });
 
   it('returns done for the ENROLLED_PREREQ_STAGES terminal values', () => {
-    expect(bucketForAdmissionsStatus('registration', 'Finished')).toBe('done');
+    expect(bucketForAdmissionsStatus('registration', 'Paid')).toBe('done');
     expect(bucketForAdmissionsStatus('documents', 'Finished')).toBe('done');
     expect(bucketForAdmissionsStatus('assessment', 'Finished')).toBe('done');
     expect(bucketForAdmissionsStatus('contract', 'Signed')).toBe('done');
     expect(bucketForAdmissionsStatus('fees', 'Paid')).toBe('done');
+  });
+
+  it('Registration and Fees are also done at Not required (spec 2026-10-21)', () => {
+    expect(bucketForAdmissionsStatus('registration', 'Not required')).toBe(
+      'done'
+    );
+    expect(bucketForAdmissionsStatus('fees', 'Not required')).toBe('done');
+    // The old Registration done value is no longer done.
+    expect(bucketForAdmissionsStatus('registration', 'Finished')).toBe(
+      'in_progress'
+    );
+    for (const s of ['Ready for invoicing', 'Unpaid', 'Overdue', 'Voided'])
+      expect(bucketForAdmissionsStatus('fees', s)).toBe('in_progress');
+    expect(bucketForAdmissionsStatus('fees', 'Cancelled')).toBe('blocked');
   });
 
   it('returns done for application Enrolled / Enrolled (Conditional)', () => {
@@ -68,7 +82,7 @@ describe('bucketForAdmissionsStatus', () => {
     expect(bucketForAdmissionsStatus('assessment', 'Ongoing Assessment')).toBe(
       'in_progress'
     );
-    expect(bucketForAdmissionsStatus('fees', 'Invoiced')).toBe('in_progress');
+    expect(bucketForAdmissionsStatus('fees', 'Unpaid')).toBe('in_progress');
     expect(bucketForAdmissionsStatus('application', 'Processing')).toBe(
       'in_progress'
     );

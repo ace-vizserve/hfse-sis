@@ -7,337 +7,215 @@ import {
 } from '@/lib/billing/stage-from-invoices';
 import type { StageSnapshot } from '@/lib/qbo/stage-state';
 
+const TODAY = '2026-10-21';
+
 const snap = (s: Partial<StageSnapshot> = {}): StageSnapshot => ({
-  status: 'Pending',
+  status: 'Ready for invoicing',
   invoice: null,
   paymentDate: null,
   startDate: null,
   ...s,
 });
 const inv = (
-  docNumber: string,
+  docNumber: string | null,
   txnDate: string,
   state: TileInvoice['state'],
-  paymentDate: string | null = null
-): TileInvoice => ({ docNumber, txnDate, state, paymentDate });
+  more: Partial<TileInvoice> = {}
+): TileInvoice => ({
+  docNumber,
+  txnDate,
+  state,
+  dueDate: null,
+  paymentDate: null,
+  total: 100,
+  balance: state === 'open' ? 100 : 0,
+  ...more,
+});
+const run = (
+  stage: 'registration' | 'fees',
+  invoices: TileInvoice[],
+  current: StageSnapshot = snap()
+) => stageFromInvoices(stage, invoices, current, TODAY);
 
-describe('stageFromInvoices — Registration', () => {
-  it('empty invoice list: stage left alone, even when staff set it', () => {
-    expect(stageFromInvoices('registration', [], snap())).toBeNull();
+describe('stageFromInvoices — nothing tied', () => {
+  it('no tied invoice: the stage is left alone, whatever it holds', () => {
+    expect(run('registration', [])).toBeNull();
     expect(
-      stageFromInvoices(
-        'registration',
+      run(
+        'fees',
         [],
-        snap({
-          status: 'Finished',
-          invoice: 'HFSE062301',
-          paymentDate: '2026-07-15',
-        })
+        snap({ status: 'Paid', invoice: 'HFSE1', paymentDate: '2026-07-15' })
       )
     ).toBeNull();
   });
-  it('one open invoice: Unpaid + number', () => {
+  it('Cancelled is never overwritten', () => {
     expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'open')],
-        snap()
-      )
-    ).toEqual({ status: 'Unpaid', invoice: 'HFSE062301' });
-  });
-  it('part paid: no change from Unpaid', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'open')],
-        snap({ status: 'Unpaid', invoice: 'HFSE062301' })
-      )
-    ).toBeNull();
-  });
-  it('fully paid: Finished + payment date', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'paid', '2026-07-15')],
-        snap({ status: 'Unpaid', invoice: 'HFSE062301' })
-      )
-    ).toEqual({ status: 'Finished', paymentDate: '2026-07-15' });
-  });
-  it('voided only: back to Pending, cleared', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'voided')],
-        snap({ status: 'Unpaid', invoice: 'HFSE062301' })
-      )
-    ).toEqual({ status: 'Pending', invoice: null });
-  });
-  it('reopened after Finished: Unpaid, payment date cleared', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'open')],
-        snap({
-          status: 'Finished',
-          invoice: 'HFSE062301',
-          paymentDate: '2026-07-15',
-        })
-      )
-    ).toEqual({ status: 'Unpaid', paymentDate: null });
-  });
-  it('Cancelled is never touched', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'paid', '2026-07-15')],
+      run(
+        'fees',
+        [inv('HFSE1', '2026-09-01', 'open')],
         snap({ status: 'Cancelled' })
       )
     ).toBeNull();
+    expect(
+      run(
+        'registration',
+        [inv('HFSE1', '2026-09-01', 'paid', { paymentDate: '2026-09-02' })],
+        snap({ status: ' Cancelled ' })
+      )
+    ).toBeNull();
   });
 });
 
-describe('stageFromInvoices — Fees', () => {
-  it('first invoice: Invoiced', () => {
+describe('stageFromInvoices — open invoices', () => {
+  it('one open invoice: Unpaid + number, payment date cleared', () => {
     expect(
-      stageFromInvoices(
-        'fees',
-        [inv('HFSE062302', '2026-09-01', 'open')],
-        snap()
+      run(
+        'registration',
+        [inv('HFSE062301', '2026-09-01', 'open')],
+        snap({ paymentDate: '2026-01-01' })
       )
-    ).toEqual({ status: 'Invoiced', invoice: 'HFSE062302' });
+    ).toEqual({ status: 'Unpaid', invoice: 'HFSE062301', paymentDate: null });
   });
-  it('a further invoice: Re-invoiced, latest number', () => {
+  it('part paid: Partially paid', () => {
     expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE062302', '2026-09-01', 'open'),
-          inv('HFSE062310', '2026-09-20', 'open'),
-        ],
-        snap({ status: 'Invoiced', invoice: 'HFSE062302' })
-      )
-    ).toEqual({ status: 'Re-invoiced', invoice: 'HFSE062310' });
+      run('fees', [inv('HFSE1', '2026-09-01', 'open', { balance: 40 })])
+    ).toEqual({ status: 'Partially paid', invoice: 'HFSE1' });
   });
-  it('older paid, newer open: Re-invoiced', () => {
+  it('open past its due date: Overdue (beats part paid)', () => {
     expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE062302', '2026-09-01', 'paid', '2026-09-05'),
-          inv('HFSE062310', '2026-09-20', 'open'),
-        ],
-        snap()
-      )
-    ).toEqual({ status: 'Re-invoiced', invoice: 'HFSE062310' });
+      run('fees', [
+        inv('HFSE1', '2026-09-01', 'open', {
+          balance: 40,
+          dueDate: '2026-10-20',
+        }),
+      ])
+    ).toEqual({ status: 'Overdue', invoice: 'HFSE1' });
   });
-  it('all paid with a start date: Paid + latest payment date', () => {
+  it('due today is not overdue yet', () => {
     expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE062302', '2026-09-01', 'paid', '2026-09-05'),
-          inv('HFSE062310', '2026-09-20', 'paid', '2026-09-25'),
-        ],
-        snap({
-          status: 'Re-invoiced',
-          invoice: 'HFSE062310',
-          startDate: '2027-01-05',
-        })
-      )
-    ).toEqual({ status: 'Paid', paymentDate: '2026-09-25' });
+      run('fees', [inv('HFSE1', '2026-09-01', 'open', { dueDate: TODAY })])
+    ).toEqual({ status: 'Unpaid', invoice: 'HFSE1' });
   });
-  it('all paid, no start date: payment date only, status waits', () => {
-    const current = snap({ status: 'Invoiced', invoice: 'HFSE062302' });
-    const invoices = [inv('HFSE062302', '2026-09-01', 'paid', '2026-09-05')];
-    expect(stageFromInvoices('fees', invoices, current)).toEqual({
-      paymentDate: '2026-09-05',
+  it('a paid invoice past due does not make the stage overdue', () => {
+    expect(
+      run('fees', [
+        inv('HFSE1', '2026-08-01', 'paid', {
+          dueDate: '2026-08-15',
+          paymentDate: '2026-08-10',
+        }),
+        inv('HFSE2', '2026-09-01', 'open', { dueDate: '2026-12-01' }),
+      ])
+    ).toEqual({ status: 'Unpaid', invoice: 'HFSE2' });
+  });
+  it('several tied: the newest live number leads; any open → not Paid', () => {
+    expect(
+      run('registration', [
+        inv('HFSE10', '2026-09-01', 'open'),
+        inv('HFSE9', '2026-09-01', 'paid', { paymentDate: '2026-09-02' }),
+        inv('HFSE20', '2026-10-01', 'voided'),
+      ])
+    ).toEqual({ status: 'Unpaid', invoice: 'HFSE10' });
+  });
+  it('no change from the stage: null', () => {
+    expect(
+      run(
+        'registration',
+        [inv('HFSE1', '2026-09-01', 'open')],
+        snap({ status: 'Unpaid', invoice: ' HFSE1 ' })
+      )
+    ).toBeNull();
+  });
+  it('an invoice with no number is skipped for the number', () => {
+    expect(run('fees', [inv(null, '2026-09-01', 'open')])).toBeNull();
+  });
+});
+
+describe('stageFromInvoices — all paid', () => {
+  it('Registration: Paid + latest payment date', () => {
+    expect(
+      run('registration', [
+        inv('HFSE1', '2026-08-01', 'paid', { paymentDate: '2026-08-03' }),
+        inv('HFSE2', '2026-09-01', 'paid', { paymentDate: '2026-09-05' }),
+      ])
+    ).toEqual({ status: 'Paid', invoice: 'HFSE2', paymentDate: '2026-09-05' });
+  });
+  it('Fees with a start date: Paid', () => {
+    expect(
+      run(
+        'fees',
+        [inv('HFSE1', '2026-08-01', 'paid', { paymentDate: '2026-08-03' })],
+        snap({ status: 'Unpaid', invoice: 'HFSE1', startDate: '2026-08-10' })
+      )
+    ).toEqual({ status: 'Paid', paymentDate: '2026-08-03' });
+  });
+  it('Fees without a start date: number + payment date, status left', () => {
+    const invoices = [
+      inv('HFSE1', '2026-08-01', 'paid', { paymentDate: '2026-08-03' }),
+    ];
+    const current = snap({ status: 'Unpaid', invoice: 'HFSE1' });
+    expect(run('fees', invoices, current)).toEqual({
+      paymentDate: '2026-08-03',
     });
     expect(tileNeedsStartDate('fees', invoices, current)).toBe(true);
   });
-  it('reopened after Paid: Invoiced, payment date cleared', () => {
-    expect(
-      stageFromInvoices(
-        'fees',
-        [inv('HFSE062302', '2026-09-01', 'open')],
-        snap({
-          status: 'Paid',
-          invoice: 'HFSE062302',
-          paymentDate: '2026-09-05',
-          startDate: '2027-01-05',
-        })
-      )
-    ).toEqual({ status: 'Invoiced', paymentDate: null });
-  });
-  it('voided invoice is not counted toward Re-invoiced', () => {
-    expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE062302', '2026-09-01', 'voided'),
-          inv('HFSE062310', '2026-09-20', 'open'),
-        ],
-        snap()
-      )
-    ).toEqual({ status: 'Invoiced', invoice: 'HFSE062310' });
-  });
-  it('same date: the higher number is the latest', () => {
-    expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE062311', '2026-09-20', 'open'),
-          inv('HFSE062310', '2026-09-20', 'open'),
-        ],
-        snap()
-      )?.invoice
-    ).toBe('HFSE062311');
+  it('paid with no payment date recorded: only the number', () => {
+    expect(run('registration', [inv('HFSE1', '2026-08-01', 'paid')])).toEqual({
+      invoice: 'HFSE1',
+    });
   });
 });
 
-const noNumber = (
-  txnDate: string,
-  state: TileInvoice['state'],
-  paymentDate: string | null = null
-): TileInvoice => ({ docNumber: null, txnDate, state, paymentDate });
-
-describe('stageFromInvoices — invoice number and payment date rules', () => {
-  it('latest invoice with no number: the earlier numbered one is used', () => {
+describe('stageFromInvoices — all voided', () => {
+  it('Voided + the latest voided number, payment date cleared', () => {
     expect(
-      stageFromInvoices(
-        'registration',
-        [
-          inv('HFSE062301', '2026-07-10', 'open'),
-          noNumber('2026-07-20', 'open'),
-        ],
-        snap()
-      )
-    ).toEqual({ status: 'Unpaid', invoice: 'HFSE062301' });
-    expect(
-      stageFromInvoices(
+      run(
         'fees',
         [
-          inv('HFSE062302', '2026-09-01', 'open'),
-          noNumber('2026-09-20', 'open'),
+          inv('HFSE1', '2026-08-01', 'voided'),
+          inv('HFSE2', '2026-09-01', 'voided'),
         ],
-        snap()
+        snap({ status: 'Unpaid', invoice: 'HFSE2', paymentDate: '2026-09-01' })
       )
-    ).toEqual({ status: 'Re-invoiced', invoice: 'HFSE062302' });
+    ).toEqual({ status: 'Voided', paymentDate: null });
   });
-  it('no live invoice has a number: status and invoice untouched', () => {
+  it('Ready for invoicing and Not required are kept', () => {
+    for (const status of ['Ready for invoicing', 'Not required'])
+      expect(
+        run(
+          'registration',
+          [inv('HFSE1', '2026-08-01', 'voided')],
+          snap({ status })
+        )
+      ).toBeNull();
+  });
+  it('a blank stage turns Voided', () => {
     expect(
-      stageFromInvoices(
+      run(
         'registration',
-        [noNumber('2026-07-10', 'open')],
-        snap()
+        [inv('HFSE1', '2026-08-01', 'voided')],
+        snap({ status: null })
       )
-    ).toBeNull();
-    expect(
-      stageFromInvoices(
-        'fees',
-        [noNumber('2026-09-01', 'paid', '2026-09-05')],
-        snap({ status: 'Invoiced', invoice: 'HFSE062302' })
-      )
-    ).toBeNull();
-  });
-  it('all paid with no payment dates: status held, number set, date not cleared', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [inv('HFSE062301', '2026-07-10', 'paid', null)],
-        snap({ status: 'Unpaid', invoice: 'OLD000' })
-      )
-    ).toEqual({ invoice: 'HFSE062301' });
-    expect(
-      stageFromInvoices(
-        'fees',
-        [inv('HFSE062302', '2026-09-01', 'paid', null)],
-        snap({
-          status: 'Invoiced',
-          invoice: 'OLD000',
-          paymentDate: '2026-09-05',
-          startDate: '2027-01-05',
-        })
-      )
-    ).toEqual({ invoice: 'HFSE062302' });
-  });
-  it('payment date with a time part: first 10 characters are used', () => {
-    expect(
-      stageFromInvoices(
-        'registration',
-        [
-          inv(
-            'HFSE062301',
-            '2026-07-10T09:00:00',
-            'paid',
-            '2026-07-15T08:30:00Z'
-          ),
-        ],
-        snap({ status: 'Unpaid', invoice: 'HFSE062301' })
-      )
-    ).toEqual({ status: 'Finished', paymentDate: '2026-07-15' });
-  });
-  it('numeric tie-break on the same date: HFSE10 is later than HFSE9', () => {
-    expect(
-      stageFromInvoices(
-        'fees',
-        [
-          inv('HFSE9', '2026-09-20', 'open'),
-          inv('HFSE10', '2026-09-20', 'open'),
-        ],
-        snap()
-      )?.invoice
-    ).toBe('HFSE10');
-  });
-});
-
-describe('stageFromInvoices — voided only', () => {
-  it('voided only still clears to Pending, number and date cleared', () => {
-    expect(
-      stageFromInvoices(
-        'fees',
-        [inv('HFSE062302', '2026-09-01', 'voided')],
-        snap({
-          status: 'Paid',
-          invoice: 'HFSE062302',
-          paymentDate: '2026-09-05',
-          startDate: '2027-01-05',
-        })
-      )
-    ).toEqual({ status: 'Pending', invoice: null, paymentDate: null });
+    ).toEqual({ status: 'Voided', invoice: 'HFSE1' });
   });
 });
 
 describe('tileNeedsStartDate — false branches', () => {
-  const paid = [inv('HFSE062302', '2026-09-01', 'paid', '2026-09-05')];
-  it('stage already Paid: false', () => {
+  const paid = [
+    inv('HFSE1', '2026-08-01', 'paid', { paymentDate: '2026-08-03' }),
+  ];
+  it('already Paid or Cancelled', () => {
     expect(tileNeedsStartDate('fees', paid, snap({ status: 'Paid' }))).toBe(
       false
     );
-  });
-  it('stage Cancelled: false', () => {
     expect(
       tileNeedsStartDate('fees', paid, snap({ status: 'Cancelled' }))
     ).toBe(false);
   });
-  it('start date already set: false', () => {
+  it('has a start date, is Registration, or has nothing live', () => {
     expect(
-      tileNeedsStartDate(
-        'fees',
-        paid,
-        snap({ status: 'Invoiced', startDate: '2027-01-05' })
-      )
+      tileNeedsStartDate('fees', paid, snap({ startDate: '2026-08-10' }))
     ).toBe(false);
-  });
-  it('an open invoice on the tile: false', () => {
-    expect(
-      tileNeedsStartDate(
-        'fees',
-        [...paid, inv('HFSE062310', '2026-09-20', 'open')],
-        snap({ status: 'Re-invoiced' })
-      )
-    ).toBe(false);
-  });
-  it('no invoices: false', () => {
+    expect(tileNeedsStartDate('registration', paid, snap())).toBe(false);
     expect(tileNeedsStartDate('fees', [], snap())).toBe(false);
   });
 });

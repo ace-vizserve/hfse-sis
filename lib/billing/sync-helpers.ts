@@ -15,22 +15,6 @@ export function rowsOfCustomer<T extends { qbo_customer_id: string | null }>(
   );
 }
 
-/**
- * The stored invoice whose number the stage still shows, when that invoice is
- * actually voided (deleted-in-QuickBooks rows are stored as voided). A live
- * invoice that is simply not on this tile (incomplete mapping, outside every
- * year, mapped to none, typed on the wrong stage) returns undefined, so the
- * stage is left alone.
- */
-export function voidedMatch<
-  T extends { doc_number: string | null; state: 'open' | 'paid' | 'voided' },
->(rows: T[], stageNumber: string): T | undefined {
-  const n = stageNumber.trim();
-  const same = rows.filter((r) => r.doc_number?.trim() === n);
-  if (same.some((r) => r.state !== 'voided')) return undefined;
-  return same[0];
-}
-
 /** Stored ids QuickBooks no longer returned. */
 export function missingIds(stored: string[], returned: string[]): string[] {
   const back = new Set(returned);

@@ -18,7 +18,7 @@ import {
 
 import {
   STAGE_COLUMN_MAP,
-  STAGE_TERMINAL_STATUS,
+  isStageDone,
   ENROLLED_PREREQ_STAGES,
   enrolledPrereqStagesFor,
 } from '@/lib/schemas/sis';
@@ -2109,7 +2109,10 @@ export async function buildLifecycleDrillRows(
 
     switch (target) {
       case 'awaiting-fee-payment': {
-        if (status.feeStatus !== 'Paid' && ACTIVE_FUNNEL.has(appStatus)) {
+        if (
+          !isStageDone('fees', status.feeStatus) &&
+          ACTIVE_FUNNEL.has(appStatus)
+        ) {
           out.push({
             ...baseRow(enroleeNumber, app, status, resolveLevel),
             feeStatus: status.feeStatus ?? null,
@@ -2247,11 +2250,12 @@ export async function buildLifecycleDrillRows(
             enroleeType: status.enroleeType,
           })
         );
-        const allPrereqsTerminal = stages.every((s) => {
-          const col = STAGE_COLUMN_MAP[s].statusCol;
-          const terminal = STAGE_TERMINAL_STATUS[s];
-          return terminal && (status[col] ?? '').toString().trim() === terminal;
-        });
+        const allPrereqsTerminal = stages.every((s) =>
+          isStageDone(
+            s,
+            (status[STAGE_COLUMN_MAP[s].statusCol] ?? '').toString()
+          )
+        );
         if (
           allPrereqsTerminal &&
           appStatus !== 'Enrolled' &&

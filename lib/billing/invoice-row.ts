@@ -1,4 +1,4 @@
-import type { InvoiceLine } from '@/lib/billing/classify';
+import type { InvoiceLine } from '@/lib/billing/tie';
 import type { QbInvoice } from '@/lib/qbo/invoice-snapshot';
 
 export type QbInvoiceFull = QbInvoice & {

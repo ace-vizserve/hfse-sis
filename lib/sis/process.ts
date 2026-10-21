@@ -5,7 +5,7 @@ import {
   STAGE_KEYS,
   STAGE_LABELS,
   STAGE_COLUMN_MAP,
-  STAGE_TERMINAL_STATUS,
+  isStageDone,
   type StageKey,
 } from '@/lib/schemas/sis';
 import {
@@ -237,8 +237,7 @@ export function bucketForAdmissionsStatus(
     trimmed === 'Rejected'
   )
     return 'blocked';
-  const terminal = STAGE_TERMINAL_STATUS[stageKey];
-  if (terminal && trimmed === terminal) return 'done';
+  if (isStageDone(stageKey, trimmed)) return 'done';
   // Application stage has its own terminal set (Enrolled / Enrolled (Conditional)).
   if (
     stageKey === 'application' &&

@@ -6,10 +6,11 @@ import {
   stageFromInvoices,
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
-import { rowsOfCustomer, voidedMatch } from '@/lib/billing/sync-helpers';
+import { rowsOfCustomer } from '@/lib/billing/sync-helpers';
+import { todaySg } from '@/lib/billing/view';
 import { connectedRealmId } from '@/lib/qbo/client';
 import { fetchAllPages } from '@/lib/supabase/paginate';
-import { blank, QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
+import { QBO_STAGE_KEYS } from '@/lib/qbo/stage-state';
 import {
   QBO_SYNC_LABEL,
   QBO_SYSTEM_ACTOR,
@@ -41,11 +42,12 @@ export async function syncTilesForStudent(
     throw new Error(`Linked customer lookup failed: ${linkErr.message}`);
   // Not linked: no invoice is this student's, so nothing is changed.
   if (!link) return { changed: 0, errors: [] };
-  // Voided invoices are kept: a tile whose only invoice was voided must reset.
+  // Voided invoices are kept: a stage whose tied invoices were all voided
+  // reads Voided.
   const { data, error } = await service
     .from('qbo_invoices')
     .select(
-      'doc_number, txn_date, state, payment_date, ay_code, stage_keys, qbo_customer_id'
+      'doc_number, txn_date, due_date, state, payment_date, total, balance, ay_code, stage_keys, qbo_customer_id'
     )
     .eq('student_number', studentNumber)
     .eq('realm_id', realmId);
@@ -54,8 +56,11 @@ export async function syncTilesForStudent(
     (data ?? []) as Array<{
       doc_number: string | null;
       txn_date: string | null;
+      due_date: string | null;
       state: TileInvoice['state'];
       payment_date: string | null;
+      total: number | string;
+      balance: number | string;
       ay_code: string | null;
       stage_keys: string[] | null;
       qbo_customer_id: string | null;
@@ -72,6 +77,16 @@ export async function syncTilesForStudent(
 
   let changed = 0;
   const errors: string[] = [];
+  const today = todaySg();
+  const toTile = (r: (typeof rows)[number]): TileInvoice => ({
+    docNumber: r.doc_number,
+    txnDate: r.txn_date,
+    dueDate: r.due_date,
+    state: r.state,
+    paymentDate: r.payment_date,
+    total: Number(r.total),
+    balance: Number(r.balance),
+  });
   for (const ayCode of years) {
     const { data: app, error: appErr } = await service
       .from(`ay${ayCode.slice(2)}_enrolment_applications`)
@@ -98,26 +113,13 @@ export async function syncTilesForStudent(
           stage
         );
         if (!current) continue;
-        const toTile = (r: (typeof rows)[number]): TileInvoice => ({
-          docNumber: r.doc_number,
-          txnDate: r.txn_date,
-          state: r.state,
-          paymentDate: r.payment_date,
-        });
-        let tile: TileInvoice[] = rows
+        // Only the invoices tied to this stage count (spec 2026-10-21).
+        const tied: TileInvoice[] = rows
           .filter(
             (r) => r.ay_code === ayCode && (r.stage_keys ?? []).includes(stage)
           )
           .map(toTile);
-        if (tile.length === 0 && !blank(current.invoice)) {
-          // Nothing is on this tile now. The stage resets only when the number
-          // it shows is a stored invoice that was actually voided (or deleted
-          // in QuickBooks). A live invoice that is just not on this tile, or a
-          // hand-typed number, is left alone.
-          const stale = voidedMatch(rows, current.invoice!);
-          if (stale) tile = [toTile(stale)];
-        }
-        const patch = stageFromInvoices(stage, tile, current);
+        const patch = stageFromInvoices(stage, tied, current, today);
         if (!patch) continue;
         const res = await writeStageFromQbo(service, {
           ayCode,

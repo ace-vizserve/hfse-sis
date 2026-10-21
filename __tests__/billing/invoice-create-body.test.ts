@@ -16,6 +16,35 @@ const base = {
   requestId: '6f1c1a52-6a43-4b8e-9d55-0a4a3f0f2b11',
 };
 
+describe('CreateInvoiceBody — stage', () => {
+  it('is optional', () => {
+    const r = CreateInvoiceBody.safeParse(base);
+    expect(r.success).toBe(true);
+    expect(r.data?.stage).toBeUndefined();
+  });
+  it('accepts Registration or Fees with an AY code', () => {
+    for (const stage of ['registration', 'fees'] as const) {
+      const r = CreateInvoiceBody.safeParse({
+        ...base,
+        stage: { stage, ayCode: 'AY2027' },
+      });
+      expect(r.success).toBe(true);
+      expect(r.data?.stage).toEqual({ stage, ayCode: 'AY2027' });
+    }
+  });
+  it('refuses another stage or a malformed year', () => {
+    for (const stage of [
+      { stage: 'documents', ayCode: 'AY2027' },
+      { stage: 'fees', ayCode: '2027' },
+      { stage: 'fees', ayCode: 'AY27' },
+      { stage: 'fees' },
+    ])
+      expect(CreateInvoiceBody.safeParse({ ...base, stage }).success).toBe(
+        false
+      );
+  });
+});
+
 describe('CreateInvoiceBody — statementMemo', () => {
   it('accepts and trims a memo', () => {
     const r = CreateInvoiceBody.safeParse({

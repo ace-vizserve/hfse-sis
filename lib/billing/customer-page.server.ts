@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { InvoiceLine } from '@/lib/billing/classify';
+import type { InvoiceLine } from '@/lib/billing/tie';
 import { pickBalances, type Balances } from '@/lib/billing/balances';
 import {
   loadDepositChoices,
@@ -18,7 +18,6 @@ import {
 } from '@/lib/billing/live.server';
 import type { CreditSource, PayableInvoice } from '@/lib/billing/payment-plan';
 import { STAGE_NOT_UPDATED } from '@/lib/billing/messages';
-import { loadBillingMaps } from '@/lib/billing/maps.server';
 import {
   loadStudentInfo,
   type StudentInfo,
@@ -27,12 +26,10 @@ import {
   createdByLabel,
   invoiceStatus,
   itemsSummary,
-  mapsToData,
   round2,
   tileTag,
   todaySg,
   type InvoiceStatus,
-  type MapsData,
 } from '@/lib/billing/view';
 import { connectedRealmId, qboReasonOnly } from '@/lib/qbo/client';
 import { readStageSnapshot } from '@/lib/qbo/stage-write';
@@ -93,7 +90,6 @@ export type CustomerPage = {
   credits: Array<CreditSource & { reference: string | null }>;
   depositAccounts: Array<{ id: string; label: string }>;
   paymentMethods: PaymentMethodChoice[];
-  maps: MapsData;
   stages: {
     ayCode: string;
     registration: string | null;
@@ -251,7 +247,6 @@ export async function loadCustomerPage(
     credits: [],
     depositAccounts: [],
     paymentMethods: [],
-    maps: { accounts: [], studentNumber, applications: [] },
     stages: null,
     overdueOldest: null,
   };
@@ -305,7 +300,7 @@ export async function loadCustomerPage(
       .catch(() => null),
   ]);
 
-  const [inv, pay, dep, maps, methods] = await Promise.all([
+  const [inv, pay, dep, methods] = await Promise.all([
     service
       .from('qbo_invoices')
       .select(INVOICE_COLS)
@@ -326,7 +321,6 @@ export async function loadCustomerPage(
       console.error('[billing] customer page, bank accounts:', e);
       return [] as DepositChoice[];
     }),
-    loadBillingMaps(service, { studentNumbers: [studentNumber] }),
     // Receive Payment's methods, live; unreadable → no choices (optional).
     loadPaymentMethods(service).catch((e: unknown) => {
       console.error('[billing] customer page, payment methods:', e);
@@ -402,7 +396,6 @@ export async function loadCustomerPage(
     credits: toCreditSources(payments),
     depositAccounts: dep,
     paymentMethods: methods,
-    maps: mapsToData(maps, studentNumber),
     stages,
     overdueOldest: oldest
       ? { docNumber: oldest.docNumber, dueDate: oldest.dueDate }

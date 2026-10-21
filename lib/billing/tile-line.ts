@@ -1,12 +1,15 @@
 // The one read-only line on the Registration and Fees tiles (spec "Screens"):
-// "Paid · HFSE062240 · 12 Oct". Worked out from the invoices the mapping puts
-// on the tile; the stage itself is filled by the sync. Pure.
+// "Paid · HFSE062240 · 12 Oct". Worked out from the invoices TIED to the
+// stage, with the same statuses the sync writes (spec 2026-10-21); the stage
+// itself is filled by the sync. Pure.
 
 import {
+  latestFirst,
+  openStatus,
   tileNeedsStartDate,
   type TileInvoice,
 } from '@/lib/billing/stage-from-invoices';
-import { formatShortDay } from '@/lib/billing/view';
+import { formatShortDay, todaySg } from '@/lib/billing/view';
 import { formatSgd } from '@/lib/qbo/format';
 
 export type TileLine = {
@@ -24,20 +27,20 @@ export function tileInvoiceState(
 
 export function tileLine(
   stage: 'registration' | 'fees',
-  invoices: Array<TileInvoice & { balance: number }>,
-  current: { status: string | null; startDate: string | null }
+  invoices: TileInvoice[],
+  current: { status: string | null; startDate: string | null },
+  today: string = todaySg()
 ): TileLine {
-  const live = invoices
-    .filter((i) => i.state !== 'voided')
-    .sort(
-      (a, b) =>
-        (b.txnDate ?? '').localeCompare(a.txnDate ?? '') ||
-        (b.docNumber ?? '').localeCompare(a.docNumber ?? '', undefined, {
-          numeric: true,
-        })
-    );
-  if (live.length === 0)
+  if (invoices.length === 0)
     return { text: 'Not billed in QuickBooks yet', tone: 'none' };
+  const live = invoices.filter((i) => i.state !== 'voided').sort(latestFirst);
+  if (live.length === 0) {
+    const voided = [...invoices].sort(latestFirst)[0];
+    return {
+      text: ['Voided', voided.docNumber].filter(Boolean).join(' · '),
+      tone: 'none',
+    };
+  }
   const latest = live[0].docNumber ?? 'Invoice';
   if (live.every((i) => i.state === 'paid')) {
     if (
@@ -66,14 +69,9 @@ export function tileLine(
     };
   }
   const owed = live.reduce((s, i) => s + Math.max(0, i.balance), 0);
-  const label =
-    stage === 'registration'
-      ? 'Unpaid'
-      : live.length > 1
-        ? 'Re-invoiced'
-        : 'Invoiced';
+  const label = openStatus(live, today);
   return {
     text: `${label} · ${latest} · ${formatSgd(owed)} owed`,
-    tone: 'open',
+    tone: label === 'Overdue' ? 'attention' : 'open',
   };
 }

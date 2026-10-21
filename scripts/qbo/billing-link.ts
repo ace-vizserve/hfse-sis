@@ -6,10 +6,10 @@
  * (typed invoice number, sibling, same name); misses go to To review, and
  * each newly linked student's invoices and payments are loaded.
  *
- * --reclassify: instead, re-read QuickBooks' items, re-place every stored
- * invoice on its Registration / Fees tile and school year by the rules in
- * lib/billing/classify.ts, then recompute the tiles. Needed once after the
- * rules change (migration 193).
+ * --reclassify: instead, re-tie every stored invoice (lib/billing/tie.ts —
+ * an invoice keeps the tie it has; one with none is tied to the Registration
+ * / Fees stage whose typed invoice number is its number), then recompute the
+ * stages. Needed once after the switch to ties (migration 195).
  *
  * Dry run by default; --apply saves. --actor names the staff account written
  * to the audit log (required).
@@ -24,10 +24,7 @@
  * RESEND_API_KEY, so the run sends no SIS email.
  */
 import { runLink } from '@/lib/billing/link-run.server';
-import {
-  reclassifyAndSyncTiles,
-  refreshItems,
-} from '@/lib/billing/maps.server';
+import { retieAndSyncTiles } from '@/lib/billing/maps.server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { listAllAuthUsers } from '@/lib/supabase/paginate';
 
@@ -74,18 +71,18 @@ async function main() {
   );
 
   if (flag('reclassify')) {
-    // Items first, so every income account the invoices use is known.
-    if (apply)
-      console.log('Items read from QuickBooks:', await refreshItems(service));
-    const r = await reclassifyAndSyncTiles(service, { dryRun: !apply });
+    const r = await retieAndSyncTiles(service, { dryRun: !apply });
     const label = (ay: string | null, stages: string[]) =>
-      ay && stages.length ? `${stages.join('+')} ${ay}` : '(no tile)';
+      ay && stages.length ? `${stages.join('+')} ${ay}` : '(no stage)';
     console.log(
-      `Invoices that ${apply ? 'moved' : 'would move'}: ${r.moves.length} (${r.studentsAffected} students)`
+      `Re-tie — stored invoices by reason: already tied ${r.reasons.kept} · typed number ${r.reasons.typed} · no tie ${r.reasons.none}`
+    );
+    console.log(
+      `Invoices whose tie ${apply ? 'changed' : 'would change'}: ${r.moves.length} (${r.studentsAffected} students)`
     );
     for (const m of r.moves)
       console.log(
-        `  ${(m.docNumber ?? m.id).padEnd(14)} ${m.studentNumber.padEnd(10)} ${label(m.fromAy, m.fromStages)} → ${label(m.toAy, m.toStages)}`
+        `  ${(m.docNumber ?? m.id).padEnd(14)} ${m.studentNumber.padEnd(10)} ${label(m.fromAy, m.fromStages)} → ${label(m.toAy, m.toStages)} (${m.reason})`
       );
     if (r.tileErrors.length) {
       console.log('\nTile problems:');

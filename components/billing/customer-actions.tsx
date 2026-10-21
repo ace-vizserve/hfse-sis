@@ -13,7 +13,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { CreditSource, OpenInvoice } from '@/lib/billing/payment-plan';
-import type { MapsData } from '@/lib/billing/view';
 
 // The customer page's New transaction menu, as QuickBooks has it: Invoice or
 // Payment. Each sheet mounts fresh on every open.
@@ -21,7 +20,6 @@ export function CustomerActions(props: {
   studentNumber: string;
   studentName: string;
   customerEmail: string | null;
-  maps: MapsData;
   existing: Array<{
     docNumber: string | null;
     ayCode: string | null;
@@ -89,7 +87,6 @@ export function CustomerActions(props: {
           studentNumber={props.studentNumber}
           studentName={props.studentName}
           customerEmail={props.customerEmail}
-          maps={props.maps}
           existing={props.existing}
         />
       )}

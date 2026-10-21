@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 
-import type { BillingMaps, InvoiceLine } from '@/lib/billing/classify';
 import {
   createdByLabel,
   duplicateTileWarning,
@@ -8,38 +7,10 @@ import {
   formatShortDay,
   invoiceStatus,
   itemsSummary,
-  mapsFromData,
-  mapsToData,
   studentDisplayName,
   tileTag,
   todaySg,
 } from '@/lib/billing/view';
-
-const maps: BillingMaps = {
-  accounts: new Map([
-    ['A-REG', 'registration'],
-    ['A-FEES', 'fees'],
-    ['A-ADV', 'none'],
-  ]),
-  applications: new Map([
-    [
-      'S1',
-      [
-        { ayCode: 'AY2026', createdOn: '2025-02-10' },
-        { ayCode: 'AY2027', createdOn: '2026-05-20' },
-      ],
-    ],
-    ['S2', [{ ayCode: 'AY2027', createdOn: '2026-06-01' }]],
-  ]),
-};
-const line = (accountId: string): InvoiceLine => ({
-  itemId: 'I1',
-  itemName: 'AY2025 Books',
-  accountId,
-  description: null,
-  qty: 1,
-  amount: 300,
-});
 
 describe('invoiceStatus', () => {
   const base = { state: 'open' as const, total: 100, dueDate: '2026-10-01' };
@@ -159,21 +130,6 @@ describe('dates and labels', () => {
   });
 });
 
-describe('maps survive a trip to the client', () => {
-  it('round trips', () => {
-    const data = JSON.parse(JSON.stringify(mapsToData(maps, 'S1')));
-    const back = mapsFromData(data);
-    expect(back.accounts.get('A-FEES')).toBe('fees');
-    expect(back.applications.get('S1')).toEqual(maps.applications.get('S1'));
-  });
-  it("ships only the one student's applications", () => {
-    const data = mapsToData(maps, 'S1');
-    expect(data.applications).toHaveLength(2);
-    expect(JSON.stringify(data)).not.toContain('2026-06-01');
-    expect(mapsFromData(data).applications.has('S2')).toBe(false);
-  });
-});
-
 describe('duplicateTileWarning', () => {
   const existing = [
     {
@@ -183,55 +139,48 @@ describe('duplicateTileWarning', () => {
       state: 'open' as const,
     },
   ];
-  it('warns for the same tile in the same year', () =>
-    expect(
-      duplicateTileWarning({
-        lines: [line('A-FEES')],
-        txnDate: '2026-10-15',
-        maps,
-        studentNumber: 'S1',
-        existing,
-      })
-    ).toBe(
-      'HFSE061904 already bills Fees for AY2027. A second Fees invoice marks the stage Re-invoiced — carry on only if a new invoice is meant to be sent.'
+  const fees27 = { stage: 'fees' as const, ayCode: 'AY2027' };
+  it('warns when the stage already has a live tied invoice', () =>
+    expect(duplicateTileWarning({ target: fees27, existing })).toBe(
+      'Fees for AY2027 already has HFSE061904 open.'
     ));
-  it('previous year: no warning', () =>
+  it('another year: no warning', () =>
     expect(
       duplicateTileWarning({
-        lines: [line('A-FEES')],
-        txnDate: '2026-10-15',
-        maps,
-        studentNumber: 'S1',
+        target: fees27,
         existing: [{ ...existing[0], ayCode: 'AY2026' }],
       })
     ).toBeNull());
   it('a voided invoice does not count', () =>
     expect(
       duplicateTileWarning({
-        lines: [line('A-FEES')],
-        txnDate: '2026-10-15',
-        maps,
-        studentNumber: 'S1',
+        target: fees27,
         existing: [{ ...existing[0], state: 'voided' }],
       })
     ).toBeNull());
-  it('items on no tile: no warning', () =>
+  it('an untied invoice does not count', () =>
     expect(
       duplicateTileWarning({
-        lines: [line('A-ADV')],
-        txnDate: '2026-10-15',
-        maps,
-        studentNumber: 'S1',
-        existing,
+        target: fees27,
+        existing: [{ ...existing[0], ayCode: null, stageKeys: [] }],
       })
     ).toBeNull());
+  it('no stage (customer page): no warning', () =>
+    expect(duplicateTileWarning({ target: null, existing })).toBeNull());
+  it('an open one is named before a paid one', () =>
+    expect(
+      duplicateTileWarning({
+        target: fees27,
+        existing: [
+          { ...existing[0], docNumber: 'HFSE1', state: 'paid' },
+          { ...existing[0], docNumber: 'HFSE2' },
+        ],
+      })
+    ).toBe('Fees for AY2027 already has HFSE2 open.'));
   it('registration names its own stage', () =>
     expect(
       duplicateTileWarning({
-        lines: [line('A-REG')],
-        txnDate: '2026-10-15',
-        maps,
-        studentNumber: 'S1',
+        target: { stage: 'registration', ayCode: 'AY2027' },
         existing: [
           {
             docNumber: 'HFSE061210',
@@ -241,7 +190,5 @@ describe('duplicateTileWarning', () => {
           },
         ],
       })
-    ).toBe(
-      'HFSE061210 already bills Registration for AY2027. Carry on only if a new invoice is meant to be sent.'
-    ));
+    ).toBe('Registration for AY2027 already has HFSE061210 paid.'));
 });

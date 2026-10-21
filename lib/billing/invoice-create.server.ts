@@ -9,6 +9,7 @@ import { sendInvoice } from '@/lib/billing/invoice-send.server';
 import { SIS_READ_FAILED, STAGE_NOT_UPDATED } from '@/lib/billing/messages';
 import { loadBillingMaps } from '@/lib/billing/maps.server';
 import { upsertInvoice } from '@/lib/billing/store.server';
+import type { StageTarget } from '@/lib/billing/tie';
 import { syncTilesForStudent } from '@/lib/billing/tiles.server';
 import {
   connectedRealmId,
@@ -41,6 +42,8 @@ export type CreateInvoiceInput = {
   /** Memo on statement (PrivateNote), as typed. */
   statementMemo?: string;
   docNumber?: string;
+  /** Created from a Registration / Fees stage: the invoice is tied to it. */
+  stage?: StageTarget;
   send: boolean;
   /** One id per submit; QuickBooks de-duplicates retries on it. */
   requestId: string;
@@ -62,10 +65,46 @@ export type CreateInvoiceResult =
       keepRequestId?: true;
     };
 
+const STAGE_NAME = { registration: 'Registration', fees: 'Fees' } as const;
+
 /**
- * Create Invoice from the customer page (spec "Drawers"). QuickBooks FIRST;
- * the SIS stores the invoice and recomputes the student's tiles only once
- * QuickBooks has it. The customer is always the student's linked one.
+ * Does the student have an application row (status row) in that AY? An
+ * invoice created for a stage must have that stage to tie to. A year with no
+ * admissions tables counts as no.
+ */
+async function hasStageRow(
+  service: SupabaseClient,
+  studentNumber: string,
+  ayCode: string
+): Promise<boolean> {
+  const slug = ayCode.slice(2).toLowerCase();
+  const { data: apps, error } = await service
+    .from(`ay${slug}_enrolment_applications`)
+    .select('"enroleeNumber"')
+    .eq('studentNumber', studentNumber);
+  if (error) {
+    if (/PGRST205|42P01|Could not find the table/i.test(error.message))
+      return false;
+    throw new Error(`Application lookup failed: ${error.message}`);
+  }
+  const enrolees = ((apps ?? []) as Array<{ enroleeNumber: string }>)
+    .map((a) => a.enroleeNumber)
+    .filter(Boolean);
+  if (enrolees.length === 0) return false;
+  const { data: rows, error: rowErr } = await service
+    .from(`ay${slug}_enrolment_status`)
+    .select('"enroleeNumber"')
+    .in('enroleeNumber', enrolees)
+    .limit(1);
+  if (rowErr) throw new Error(`Stage lookup failed: ${rowErr.message}`);
+  return (rows ?? []).length > 0;
+}
+
+/**
+ * Create Invoice from the customer page (spec "Drawers"), or from a
+ * Registration / Fees stage (`input.stage`, tied to that stage). QuickBooks
+ * FIRST; the SIS stores the invoice and recomputes the student's stages only
+ * once QuickBooks has it. The customer is always the student's linked one.
  */
 export async function createInvoiceForStudent(
   service: SupabaseClient,
@@ -80,6 +119,21 @@ export async function createInvoiceForStudent(
   let customer: { id: string; name: string; email: string | null };
   let invoice: QbInvoiceFull;
   let writing = false;
+  if (input.stage) {
+    let ok: boolean;
+    try {
+      ok = await hasStageRow(service, studentNumber, input.stage.ayCode);
+    } catch (e) {
+      console.error('[billing] create invoice, stage lookup:', e);
+      return { ok: false, status: 500, error: SIS_READ_FAILED };
+    }
+    if (!ok)
+      return {
+        ok: false,
+        status: 422,
+        error: `This student has no ${input.stage.ayCode} application, so there is no ${STAGE_NAME[input.stage.stage]} stage to invoice for.`,
+      };
+  }
   try {
     const r = await connectedRealmId(service);
     if (!r) throw new QboNotConnectedError();
@@ -205,6 +259,7 @@ export async function createInvoiceForStudent(
       studentNumber,
       realmId,
       maps,
+      tie: input.stage ?? null,
       source: 'created',
       createdBy: { id: actor.id, email: actor.email },
     });

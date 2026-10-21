@@ -41,6 +41,13 @@ export const CreateInvoiceBody = z.object({
     .trim()
     .max(21, 'An invoice number is at most 21 characters in QuickBooks.')
     .optional(),
+  /** Created from a Registration / Fees stage: the invoice is tied to it. */
+  stage: z
+    .object({
+      stage: z.enum(['registration', 'fees']),
+      ayCode: z.string().regex(/^AY\d{4}$/, 'That is not a school year.'),
+    })
+    .optional(),
   send: z.boolean(),
   requestId: z.string().uuid(),
 });

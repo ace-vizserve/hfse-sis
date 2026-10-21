@@ -305,7 +305,7 @@ describe('Enrolled (Conditional) — unchanged, skips the gate', () => {
 });
 
 describe('evaluateEnrolledFlip — the acknowledgement', () => {
-  const open = { registration: 'Finished', documents: null };
+  const open = { registration: 'Paid', documents: null };
 
   it('returns openSteps only when steps were open and acknowledged', () => {
     const r = evaluateEnrolledFlip({

@@ -35,17 +35,17 @@ function blockedKeys(
 }
 
 describe('findStageCompletionBlockers', () => {
-  describe('registration — Finished needs the invoice and the payment date', () => {
+  describe('registration — Paid needs the invoice and the payment date', () => {
     const ok = { invoice: 'INV-001', paymentDate: '2026-08-01' };
 
     it('passes when both are filled in', () => {
-      expect(
-        findStageCompletionBlockers('registration', 'Finished', ok)
-      ).toEqual([]);
+      expect(findStageCompletionBlockers('registration', 'Paid', ok)).toEqual(
+        []
+      );
     });
 
     it('blocks on a blank invoice, naming it', () => {
-      const result = findStageCompletionBlockers('registration', 'Finished', {
+      const result = findStageCompletionBlockers('registration', 'Paid', {
         ...ok,
         invoice: '',
       });
@@ -53,7 +53,7 @@ describe('findStageCompletionBlockers', () => {
     });
 
     it('blocks on a blank payment date, naming it', () => {
-      const result = findStageCompletionBlockers('registration', 'Finished', {
+      const result = findStageCompletionBlockers('registration', 'Paid', {
         ...ok,
         paymentDate: null,
       });
@@ -63,36 +63,39 @@ describe('findStageCompletionBlockers', () => {
     });
 
     it('lists both, in the order the rule declares them', () => {
-      expect(blockedKeys('registration', 'Finished', {})).toEqual([
+      expect(blockedKeys('registration', 'Paid', {})).toEqual([
         'invoice',
         'paymentDate',
       ]);
     });
   });
 
-  describe('fees — Invoiced/Re-invoiced need only the invoice, Paid needs both', () => {
-    it('Invoiced does not ask for a payment date', () => {
-      expect(
-        findStageCompletionBlockers('fees', 'Invoiced', { invoice: 'INV-9' })
-      ).toEqual([]);
+  // The statuses QuickBooks writes carry the tied invoice's number (spec
+  // 2026-10-21); the ones staff set carry nothing.
+  describe('the QuickBooks statuses need the invoice number, on both stages', () => {
+    for (const stage of ['registration', 'fees'] as const)
+      for (const status of ['Unpaid', 'Partially paid', 'Overdue', 'Voided']) {
+        it(`${stage} ${status} blocks on a blank invoice only`, () => {
+          expect(
+            blockedKeys(stage, status, { paymentDate: '2026-08-01' })
+          ).toEqual(['invoice']);
+          expect(
+            findStageCompletionBlockers(stage, status, { invoice: 'INV-9' })
+          ).toEqual([]);
+        });
+      }
+    it('Ready for invoicing, Not required and Cancelled need nothing', () => {
+      for (const stage of ['registration', 'fees'] as const)
+        for (const status of [
+          'Ready for invoicing',
+          'Not required',
+          'Cancelled',
+        ])
+          expect(findStageCompletionBlockers(stage, status, {})).toEqual([]);
     });
+  });
 
-    it('Re-invoiced does not ask for a payment date either', () => {
-      expect(
-        findStageCompletionBlockers('fees', 'Re-invoiced', { invoice: 'INV-9' })
-      ).toEqual([]);
-    });
-
-    it('Invoiced blocks on a blank invoice', () => {
-      expect(
-        blockedKeys('fees', 'Invoiced', { paymentDate: '2026-08-01' })
-      ).toEqual(['invoice']);
-    });
-
-    it('Re-invoiced blocks on a blank invoice', () => {
-      expect(blockedKeys('fees', 'Re-invoiced', {})).toEqual(['invoice']);
-    });
-
+  describe('fees — Paid needs all three', () => {
     it('Paid needs all three', () => {
       expect(
         blockedKeys('fees', 'Paid', {
@@ -230,7 +233,7 @@ describe('findStageCompletionBlockers', () => {
   describe('what is NOT gated', () => {
     it('treats a whitespace-only value as missing', () => {
       expect(
-        blockedKeys('registration', 'Finished', {
+        blockedKeys('registration', 'Paid', {
           invoice: '   ',
           paymentDate: '\t\n ',
         })
@@ -239,7 +242,7 @@ describe('findStageCompletionBlockers', () => {
 
     it('lets a status with no rule through', () => {
       expect(
-        findStageCompletionBlockers('registration', 'Pending', {})
+        findStageCompletionBlockers('registration', 'Ready for invoicing', {})
       ).toEqual([]);
       expect(findStageCompletionBlockers('supplies', 'Pending', {})).toEqual(
         []
@@ -341,7 +344,7 @@ describe('findStageCompletionBlockers', () => {
   // record).
   it('reads effectiveExtras only — a stored value already satisfies the rule', () => {
     expect(
-      findStageCompletionBlockers('registration', 'Finished', {
+      findStageCompletionBlockers('registration', 'Paid', {
         invoice: 'INV-001',
         paymentDate: '2026-08-01',
       })
@@ -370,13 +373,9 @@ describe('stageCompletionMessage', () => {
   });
 
   it('words two missing fields', () => {
-    const blockers = findStageCompletionBlockers(
-      'registration',
-      'Finished',
-      {}
-    );
-    expect(stageCompletionMessage('registration', 'Finished', blockers)).toBe(
-      'Registration is set to Finished, so Invoice and Payment date have to be filled in first.'
+    const blockers = findStageCompletionBlockers('registration', 'Paid', {});
+    expect(stageCompletionMessage('registration', 'Paid', blockers)).toBe(
+      'Registration is set to Paid, so Invoice and Payment date have to be filled in first.'
     );
   });
 

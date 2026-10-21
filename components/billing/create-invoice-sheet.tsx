@@ -41,15 +41,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { stageForAccount, type InvoiceLine } from '@/lib/billing/classify';
 import { clearInvoiceCopy, readInvoiceCopy } from '@/lib/billing/invoice-copy';
 import { INVOICE_NOTE_MAX } from '@/lib/billing/invoice-create-body';
-import {
-  duplicateTileWarning,
-  mapsFromData,
-  todaySg,
-  type MapsData,
-} from '@/lib/billing/view';
+import type { StageTarget } from '@/lib/billing/tie';
+import { duplicateTileWarning, todaySg } from '@/lib/billing/view';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { formatSgd } from '@/lib/qbo/format';
@@ -98,7 +93,7 @@ export function CreateInvoiceSheet({
   studentNumber,
   studentName,
   customerEmail,
-  maps,
+  stage = null,
   existing,
 }: {
   open: boolean;
@@ -107,8 +102,9 @@ export function CreateInvoiceSheet({
   studentName: string;
   /** The QuickBooks customer's email, if it has one. */
   customerEmail: string | null;
-  maps: MapsData;
-  /** The customer's invoices as stored, for the duplicate-tile note. */
+  /** Created from a Registration / Fees stage: the invoice is tied to it. */
+  stage?: StageTarget | null;
+  /** The customer's invoices as stored, for the duplicate-stage note. */
   existing: Array<{
     docNumber: string | null;
     ayCode: string | null;
@@ -174,34 +170,11 @@ export function CreateInvoiceSheet({
   );
   const valid = linesValid && /^\d{4}-\d{2}-\d{2}$/.test(txnDate);
 
-  // Which tile (and year) the chosen items would put this invoice on, and
-  // whether that tile already has a live invoice for the year.
-  const warning = useMemo(() => {
-    const byId = new Map((items.data?.items ?? []).map((i) => [i.id, i]));
-    const asLines: InvoiceLine[] = lines
-      .filter((l) => l.itemId)
-      .map((l) => ({
-        itemId: l.itemId,
-        itemName: byId.get(l.itemId)?.name ?? null,
-        accountId: byId.get(l.itemId)?.accountId ?? null,
-        description: null,
-        qty: Number(l.qty) || null,
-        amount: 0,
-      }));
-    if (asLines.length === 0) return null;
-    // An item the SIS hasn't cached yet is placed by its account's name.
-    const m = mapsFromData(maps);
-    for (const i of byId.values())
-      if (i.accountId && !m.accounts.has(i.accountId))
-        m.accounts.set(i.accountId, stageForAccount(i.accountName));
-    return duplicateTileWarning({
-      lines: asLines,
-      txnDate,
-      maps: m,
-      studentNumber,
-      existing,
-    });
-  }, [items.data, lines, txnDate, maps, studentNumber, existing]);
+  // Created from a stage that already has a live invoice tied to it.
+  const warning = useMemo(
+    () => duplicateTileWarning({ target: stage, existing }),
+    [stage, existing]
+  );
 
   const save = useMutation({
     mutationFn: async (send: boolean) => {
@@ -224,6 +197,7 @@ export function CreateInvoiceSheet({
               ? { statementMemo: statementMemo.trim() }
               : {}),
             ...(docNumber.trim() ? { docNumber: docNumber.trim() } : {}),
+            ...(stage ? { stage } : {}),
             send,
             requestId,
           })

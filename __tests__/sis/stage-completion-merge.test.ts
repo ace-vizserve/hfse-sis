@@ -183,7 +183,7 @@ describe('the merged row is what the gate judges', () => {
         registration,
         'registration',
         storedRegistration(),
-        'Finished',
+        'Paid',
         undefined
       )
     ).toEqual([]);
@@ -196,12 +196,12 @@ describe('the merged row is what the gate judges', () => {
       registration,
       'registration',
       storedRegistration({ registrationInvoice: null }),
-      'Finished',
+      'Paid',
       undefined
     );
     expect(blockers).toEqual([{ fieldKey: 'invoice', label: 'Invoice' }]);
-    expect(stageCompletionMessage('registration', 'Finished', blockers)).toBe(
-      'Registration is set to Finished, so Invoice has to be filled in first.'
+    expect(stageCompletionMessage('registration', 'Paid', blockers)).toBe(
+      'Registration is set to Paid, so Invoice has to be filled in first.'
     );
   });
 
@@ -210,7 +210,7 @@ describe('the merged row is what the gate judges', () => {
       registration,
       'registration',
       storedRegistration(),
-      'Finished',
+      'Paid',
       { invoice: '' }
     );
     expect(blockers).toEqual([{ fieldKey: 'invoice', label: 'Invoice' }]);
@@ -222,7 +222,7 @@ describe('the merged row is what the gate judges', () => {
         registration,
         'registration',
         storedRegistration({ registrationInvoice: null }),
-        'Finished',
+        'Paid',
         { invoice: 'INV-002' }
       )
     ).toEqual([]);

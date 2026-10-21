@@ -914,7 +914,8 @@ export async function PATCH(
   // Mr Ace 2026-10-14: "one interface"). The invoice number, payment date and
   // money statuses change only through Billing (KD #232) and the sync; a
   // hand edit of them is refused here, not just hidden in the dialog.
-  // Staff keep the start date, remarks and Cancelled. Not connected (before
+  // Staff keep the start date, remarks, Ready for invoicing (only while no
+  // live invoice is tied), Not required and Cancelled. Not connected (before
   // go-live, or disconnected) → nothing here applies.
   let qboLocked = false;
   if (stageKey === 'registration' || stageKey === 'fees') {
@@ -935,7 +936,8 @@ export async function PATCH(
           invoice: (pre[col('invoice')] as string | null) ?? null,
           paymentDate: (pre[col('paymentDate')] as string | null) ?? null,
         },
-        { status, extras }
+        { status, extras },
+        { hasLiveInvoice: lock.invoiceState !== null }
       );
       if (violation) {
         return NextResponse.json(

@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { BillingMaps } from '@/lib/billing/classify';
+import type { BillingMaps } from '@/lib/billing/tie';
 import {
   latestPaymentDates,
   type QbInvoiceFull,
@@ -66,7 +66,7 @@ async function fetchInvoice(
 export type RefreshHint = {
   /** The QuickBooks customer of the changed invoice / payment, when known. */
   customerId?: string;
-  /** The tile and year rules' data for EVERY student, loaded once per run. */
+  /** The typed-number ties' data for EVERY student, loaded once per run. */
   maps?: BillingMaps;
 };
 

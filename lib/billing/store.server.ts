@@ -3,32 +3,30 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  classifyInvoice,
-  stageForAccount,
-  type BillingMaps,
-} from '@/lib/billing/classify';
-import {
   invoiceLines,
   paymentApplied,
   type QbInvoiceFull,
   type QbPayment,
 } from '@/lib/billing/invoice-row';
+import {
+  tieFor,
+  type BillingMaps,
+  type Place,
+  type StageTarget,
+  type TieReason,
+} from '@/lib/billing/tie';
 import { qboRequest } from '@/lib/qbo/client';
 import { invoiceState } from '@/lib/qbo/invoice-snapshot';
 import { paymentDateFor } from '@/lib/qbo/sync';
 
-type Place = { ayCode: string | null; stageKeys: string[] };
-
 /**
- * Item → income account, reading QuickBooks for any item not cached yet. A
- * newly read item's account joins `maps.accounts` (by the tile rule) when the
- * maps didn't know it, so this invoice and later ones in the run are placed.
+ * Item → income account (shown on the invoice lines), reading QuickBooks for
+ * any item not cached yet. The account no longer decides any stage.
  */
 async function itemAccounts(
   service: SupabaseClient,
   inv: QbInvoiceFull,
-  realmId: string,
-  maps: BillingMaps
+  realmId: string
 ): Promise<Map<string, string | null>> {
   const ids = [
     ...new Set(
@@ -55,9 +53,6 @@ async function itemAccounts(
       };
     }>(service, 'GET', `/item/${id}`);
     map.set(id, Item.IncomeAccountRef?.value ?? null);
-    const acct = Item.IncomeAccountRef;
-    if (acct?.value && !maps.accounts.has(acct.value))
-      maps.accounts.set(acct.value, stageForAccount(acct.name ?? null));
     const up = await service.from('qbo_items').upsert({
       qbo_item_id: Item.Id,
       name: Item.Name,
@@ -78,7 +73,10 @@ export async function upsertInvoice(
     qboInvoiceId: string;
     studentNumber: string;
     realmId: string;
+    /** The numbers typed on the student's stages (typed-number ties). */
     maps: BillingMaps;
+    /** Created from a stage: the invoice is tied to it (when not tied yet). */
+    tie?: StageTarget | null;
     source?: 'created' | 'synced';
     createdBy?: { id: string; email: string | null };
     /** invoice id → latest payment date, when the caller has the payments. */
@@ -87,6 +85,8 @@ export async function upsertInvoice(
 ): Promise<{
   before: Place | null;
   after: Place;
+  /** How the invoice got its stage (or that it has none). */
+  reason: TieReason;
   /** The student the invoice belonged to before, when it moved to another. */
   previousStudent: string | null;
 }> {
@@ -97,7 +97,10 @@ export async function upsertInvoice(
     .maybeSingle();
   if (prevErr) throw new Error(`Invoice lookup failed: ${prevErr.message}`);
   const before: Place | null = prev
-    ? { ayCode: prev.ay_code, stageKeys: prev.stage_keys ?? [] }
+    ? {
+        ayCode: prev.ay_code,
+        stageKeys: (prev.stage_keys ?? []) as Place['stageKeys'],
+      }
     : null;
   const previousStudent =
     prev && prev.student_number !== args.studentNumber
@@ -122,6 +125,7 @@ export async function upsertInvoice(
     return {
       before,
       after: before ?? { ayCode: null, stageKeys: [] },
+      reason: before && before.ayCode ? 'kept' : 'none',
       previousStudent: null,
     };
   }
@@ -129,14 +133,23 @@ export async function upsertInvoice(
   const inv = args.inv;
   const lines = invoiceLines(
     inv,
-    await itemAccounts(service, inv, args.realmId, args.maps)
+    await itemAccounts(service, inv, args.realmId)
   );
-  const place = classifyInvoice(
-    lines,
-    inv.TxnDate ?? null,
-    args.maps,
-    args.studentNumber
-  );
+  // Ties only (spec 2026-10-21): the tie it has, else the stage it was
+  // created from, else the stage whose typed number is its number.
+  const { place, reason } = tieFor({
+    existing: prev
+      ? {
+          ayCode: prev.ay_code,
+          stageKeys: prev.stage_keys,
+          studentNumber: prev.student_number,
+        }
+      : null,
+    explicit: args.tie ?? null,
+    studentNumber: args.studentNumber,
+    docNumber: inv.DocNumber ?? null,
+    maps: args.maps,
+  });
   const state = invoiceState(inv);
   const row = {
     qbo_invoice_id: inv.Id,
@@ -180,6 +193,7 @@ export async function upsertInvoice(
       ayCode: row.ay_code,
       stageKeys: place.stageKeys,
     },
+    reason,
     previousStudent,
   };
 }

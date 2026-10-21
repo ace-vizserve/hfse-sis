@@ -2,7 +2,7 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import type { BillingMaps } from '@/lib/billing/classify';
+import type { BillingMaps } from '@/lib/billing/tie';
 import {
   latestPaymentDates,
   paymentApplied,

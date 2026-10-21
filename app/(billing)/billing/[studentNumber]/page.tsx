@@ -139,7 +139,6 @@ export default async function BillingCustomerPage({
                 studentNumber={page.studentNumber}
                 studentName={name}
                 customerEmail={p?.email ?? null}
-                maps={page.maps}
                 existing={page.invoices.map((i) => ({
                   docNumber: i.docNumber,
                   ayCode: i.ayCode,

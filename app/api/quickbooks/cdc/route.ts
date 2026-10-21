@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
+import { sweepOverdueStages } from '@/lib/billing/overdue.server';
 import {
   QboNotConnectedError,
   qboErrorMessage,
@@ -84,14 +85,28 @@ export async function GET(request: NextRequest) {
       throw new Error(
         `Saving the last-check time failed: ${cursorErr.message}`
       );
+    // An invoice turns overdue by the date, not by a QuickBooks change:
+    // a database-only pass moves those stages to Overdue (spec 2026-10-21).
+    const errors = [...r.errors];
+    let overdueStudents = 0;
+    try {
+      const o = await sweepOverdueStages(service);
+      overdueStudents = o.students;
+      errors.push(...o.errors.map((e) => `Overdue check: ${e}`));
+    } catch (e) {
+      errors.push(
+        `Overdue check: ${e instanceof Error ? e.message : String(e)}`
+      );
+    }
     await finishRun(service, runId, {
       invoicesUpdated: r.updated,
-      error: r.errors.length ? r.errors.slice(0, 5).join(' · ') : null,
+      error: errors.length ? errors.slice(0, 5).join(' · ') : null,
     });
     return NextResponse.json({
       ok: true,
       invoicesUpdated: r.updated,
-      problems: r.errors.length,
+      overdueStudents,
+      problems: errors.length,
     });
   } catch (e) {
     // Anything unexpected after the fetch is still recorded on the run.

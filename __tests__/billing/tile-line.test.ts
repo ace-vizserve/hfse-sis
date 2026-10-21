@@ -1,52 +1,51 @@
 import { describe, expect, it } from 'vitest';
 
+import type { TileInvoice } from '@/lib/billing/stage-from-invoices';
 import { tileInvoiceState, tileLine } from '@/lib/billing/tile-line';
 
-const inv = (
-  o: Partial<{
-    docNumber: string;
-    txnDate: string;
-    state: 'open' | 'paid' | 'voided';
-    paymentDate: string | null;
-    balance: number;
-  }>
-) => ({
+const TODAY = '2026-10-21';
+const inv = (o: Partial<TileInvoice>): TileInvoice => ({
   docNumber: 'HFSE062240',
   txnDate: '2026-09-01',
-  state: 'open' as const,
+  dueDate: null,
+  state: 'open',
   paymentDate: null,
+  total: 100,
   balance: 100,
   ...o,
 });
-const cur = { status: 'Invoiced', startDate: null };
+const cur = { status: 'Unpaid', startDate: null };
 
 describe('tileLine', () => {
-  it('nothing billed', () =>
-    expect(tileLine('fees', [], cur)).toEqual({
+  it('nothing tied', () =>
+    expect(tileLine('fees', [], cur, TODAY)).toEqual({
       text: 'Not billed in QuickBooks yet',
       tone: 'none',
     }));
-  it('voided only counts as nothing billed', () =>
+  it('voided only reads Voided with the number', () =>
     expect(
-      tileLine('fees', [inv({ state: 'voided', balance: 0 })], cur).tone
-    ).toBe('none'));
+      tileLine('fees', [inv({ state: 'voided', balance: 0 })], cur, TODAY)
+    ).toEqual({ text: 'Voided · HFSE062240', tone: 'none' }));
   it('registration paid', () =>
     expect(
       tileLine(
         'registration',
         [inv({ state: 'paid', balance: 0, paymentDate: '2026-10-12' })],
-        { status: 'Finished', startDate: null }
+        { status: 'Paid', startDate: null },
+        TODAY
       )
     ).toEqual({
       text: 'Paid · HFSE062240 · 12 Oct',
       tone: 'paid',
     }));
-  it('fees open shows what is owed', () =>
-    expect(tileLine('fees', [inv({ balance: 1340 })], cur)).toEqual({
-      text: 'Invoiced · HFSE062240 · S$1,340.00 owed',
+  it('open shows Unpaid and what is owed', () =>
+    expect(
+      tileLine('fees', [inv({ total: 1340, balance: 1340 })], cur, TODAY)
+    ).toEqual({
+      text: 'Unpaid · HFSE062240 · S$1,340.00 owed',
       tone: 'open',
     }));
-  it('fees with two live invoices is Re-invoiced, latest number, total owed', () =>
+  it('part paid, two live invoices: latest number, total owed', () =>
     expect(
       tileLine(
         'fees',
@@ -54,23 +53,27 @@ describe('tileLine', () => {
           inv({ docNumber: 'HFSE061904', txnDate: '2026-08-01', balance: 40 }),
           inv({ docNumber: 'HFSE062240', balance: 100 }),
         ],
-        cur
+        cur,
+        TODAY
       )
     ).toEqual({
-      text: 'Re-invoiced · HFSE062240 · S$140.00 owed',
+      text: 'Partially paid · HFSE062240 · S$140.00 owed',
       tone: 'open',
     }));
-  it('registration open says Unpaid', () =>
+  it('past due reads Overdue, as attention', () =>
     expect(
-      tileLine('registration', [inv({})], { status: 'Unpaid', startDate: null })
-        .text
-    ).toBe('Unpaid · HFSE062240 · S$100.00 owed'));
+      tileLine('registration', [inv({ dueDate: '2026-10-01' })], cur, TODAY)
+    ).toEqual({
+      text: 'Overdue · HFSE062240 · S$100.00 owed',
+      tone: 'attention',
+    }));
   it('paid, no start date: asks for the start date', () =>
     expect(
       tileLine(
         'fees',
         [inv({ state: 'paid', balance: 0, paymentDate: '2026-10-12' })],
-        { status: 'Invoiced', startDate: null }
+        { status: 'Unpaid', startDate: null },
+        TODAY
       )
     ).toEqual({
       text: 'Paid in QuickBooks — add the start date',
@@ -81,7 +84,8 @@ describe('tileLine', () => {
       tileLine(
         'fees',
         [inv({ state: 'paid', balance: 0, paymentDate: '2026-10-12' })],
-        { status: 'Paid', startDate: '2026-08-01' }
+        { status: 'Paid', startDate: '2026-08-01' },
+        TODAY
       ).text
     ).toBe('Paid · HFSE062240 · 12 Oct'));
 });
