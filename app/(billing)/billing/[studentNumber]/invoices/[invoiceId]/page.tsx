@@ -13,6 +13,7 @@ import { notFound, redirect } from 'next/navigation';
 import type { ReactNode } from 'react';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
+import type { InvoiceEdit } from '@/components/billing/create-invoice-sheet';
 import { InvoiceActivity } from '@/components/billing/invoice-activity';
 import { InvoicePayButton } from '@/components/billing/invoice-pay-button';
 import { InvoiceScreenActions } from '@/components/billing/invoice-screen-actions';
@@ -70,8 +71,8 @@ function Detail({ label, children }: { label: string; children: ReactNode }) {
 // One invoice. QuickBooks decides what is here (its actions and menus, the
 // invoice's own fields, each line's GST code, Invoice activity); the SIS
 // decides how it looks — a detail page inside Billing with the hero, stat
-// tiles, Invoice / PDF view tabs and cards. The lines are read-only here —
-// they are edited in QuickBooks.
+// tiles, Invoice / PDF view tabs and cards. Edit invoice (open invoices)
+// changes the lines, dates and notes in QuickBooks, as QuickBooks' own does.
 export default async function BillingInvoicePage({
   params,
   searchParams,
@@ -142,6 +143,36 @@ export default async function BillingInvoicePage({
         }
       : null;
 
+  // Edit invoice, as in QuickBooks: an open invoice (not voided, not fully
+  // paid), read live, whose every line has its product.
+  const edit: InvoiceEdit | null =
+    d && copy && d.state === 'open' && d.txnDate
+      ? {
+          invoiceId: page.row.id,
+          docNumber: docNo,
+          syncToken: d.syncToken,
+          txnDate: d.txnDate,
+          dueDate: d.dueDate,
+          memo: d.customerMemo ?? '',
+          statementMemo: d.privateNote ?? '',
+          lines: d.lines.map((l, i) => ({
+            lineId: l.lineId,
+            itemName: l.itemName,
+            ...copy.lines[i],
+          })),
+        }
+      : null;
+  // The Registration / Fees stage the invoice is tied to.
+  const tiedStage =
+    page.row.ayCode &&
+    (['registration', 'fees'] as const).find((s) =>
+      page.row.stageKeys.includes(s)
+    );
+  const stage =
+    page.row.ayCode && tiedStage
+      ? { stage: tiedStage, ayCode: page.row.ayCode }
+      : null;
+
   return (
     <PageShell>
       <Link
@@ -156,7 +187,11 @@ export default async function BillingInvoicePage({
         crumbs={[{ label: 'Invoice' }]}
         stackActions
         title={`Invoice ${docNo ?? 'without a number'}`}
-        description={`An invoice of ${page.customerName}, read live from QuickBooks. Its lines are changed in QuickBooks.`}
+        description={
+          edit
+            ? `An invoice of ${page.customerName}, read live from QuickBooks. Edit invoice changes it in QuickBooks.`
+            : `An invoice of ${page.customerName}, read live from QuickBooks.`
+        }
         actions={
           <>
             <RefreshButton label="Refresh" />
@@ -178,6 +213,10 @@ export default async function BillingInvoicePage({
               invoiceId={page.row.id}
               docNumber={docNo}
               studentNumber={studentNumber}
+              edit={edit}
+              studentName={page.studentName}
+              customerEmail={email}
+              stage={stage}
               qbUrl={page.qbUrl}
               qbCreditMemoUrl={qboAppUrl(page.environment, '/app/creditmemo')}
               qbSettingsUrl={qboAppUrl(

@@ -61,6 +61,8 @@ type Item = {
 };
 type Line = {
   key: number;
+  /** QuickBooks' line Id, for a line the invoice already has (Edit). */
+  lineId?: string;
   itemId: string;
   description: string;
   qty: string;
@@ -71,6 +73,27 @@ type Result = {
   docNumber: string | null;
   sentTo: string | null;
   warnings: string[];
+};
+type EditResult = { docNumber: string | null; warnings: string[] };
+
+/** Edit invoice: the invoice as QuickBooks has it when the sheet opens. */
+export type InvoiceEdit = {
+  invoiceId: string;
+  docNumber: string | null;
+  /** QuickBooks' version of it; a save against an older one is refused. */
+  syncToken: string;
+  txnDate: string;
+  dueDate: string | null;
+  memo: string;
+  statementMemo: string;
+  lines: Array<{
+    lineId: string | null;
+    itemId: string;
+    itemName: string | null;
+    description: string;
+    qty: number;
+    unitPrice: number;
+  }>;
 };
 
 const STAGE_NAME: Record<BillingStage, string> = {
@@ -93,6 +116,9 @@ const emptyLine = (key: number): Line => ({
 // totals; Cancel, Save and
 // send, Create invoice. The customer is always the student's linked
 // QuickBooks customer.
+//
+// With `edit`, the same sheet is QuickBooks' Edit invoice: the invoice's own
+// lines, dates and notes to change, Save changes, and no Send.
 export function CreateInvoiceSheet({
   open,
   onOpenChange,
@@ -101,6 +127,7 @@ export function CreateInvoiceSheet({
   customerEmail,
   stage = null,
   existing,
+  edit = null,
 }: {
   open: boolean;
   onOpenChange: (o: boolean) => void;
@@ -117,6 +144,8 @@ export function CreateInvoiceSheet({
     stageKeys: string[];
     state: 'open' | 'paid' | 'voided';
   }>;
+  /** Edit invoice: this invoice, prefilled; null for Create invoice. */
+  edit?: InvoiceEdit | null;
 }) {
   const run = useWriteAction();
   const router = useRouter();
@@ -124,28 +153,53 @@ export function CreateInvoiceSheet({
     queryKey: ['qbo-items'],
     queryFn: () => apiFetch<{ items: Item[] }>('/api/quickbooks/items'),
     staleTime: 5 * 60 * 1000,
+    enabled: open,
   });
   // Make a copy (the invoice page's More actions): its lines and note start
-  // the form, once — the stored copy is cleared after the form has it.
-  const [copy] = useState(() => readInvoiceCopy(studentNumber));
-  useEffect(() => clearInvoiceCopy(studentNumber), [studentNumber]);
+  // the form, once — the stored copy is cleared after the form has it. Edit
+  // invoice starts from the invoice itself and leaves a stored copy alone.
+  const [copy] = useState(() => (edit ? null : readInvoiceCopy(studentNumber)));
+  useEffect(() => {
+    if (!edit) clearInvoiceCopy(studentNumber);
+  }, [studentNumber, edit]);
   const [lines, setLines] = useState<Line[]>(() =>
-    copy
-      ? copy.lines.map((l, i) => ({
+    edit
+      ? edit.lines.map((l, i) => ({
           key: i + 1,
+          ...(l.lineId ? { lineId: l.lineId } : {}),
           itemId: l.itemId,
           description: l.description,
           qty: String(l.qty),
           unitPrice: String(l.unitPrice),
         }))
-      : [emptyLine(1)]
+      : copy
+        ? copy.lines.map((l, i) => ({
+            key: i + 1,
+            itemId: l.itemId,
+            description: l.description,
+            qty: String(l.qty),
+            unitPrice: String(l.unitPrice),
+          }))
+        : [emptyLine(1)]
   );
-  const [txnDate, setTxnDate] = useState(() => todaySg());
-  const [dueDate, setDueDate] = useState('');
-  const [memo, setMemo] = useState(copy?.memo ?? '');
-  const [statementMemo, setStatementMemo] = useState(copy?.statementMemo ?? '');
-  const [docNumber, setDocNumber] = useState('');
+  const [txnDate, setTxnDate] = useState(() => edit?.txnDate ?? todaySg());
+  const [dueDate, setDueDate] = useState(edit?.dueDate ?? '');
+  const [memo, setMemo] = useState(edit?.memo ?? copy?.memo ?? '');
+  const [statementMemo, setStatementMemo] = useState(
+    edit?.statementMemo ?? copy?.statementMemo ?? ''
+  );
+  const [docNumber, setDocNumber] = useState(edit?.docNumber ?? '');
   const copiedFrom = copy ? (copy.from ?? 'an invoice') : null;
+  // Edit: the names of the invoice's own products, as QuickBooks has them.
+  const editNames = useMemo(
+    () =>
+      new Map(
+        (edit?.lines ?? []).flatMap((l) =>
+          l.itemName ? [[l.itemId, l.itemName] as const] : []
+        )
+      ),
+    [edit]
+  );
   // One id per open: a retry of the same submit can't create it twice.
   const [requestId, setRequestId] = useState(() => crypto.randomUUID());
   // Kept once an attempt was unclear: see shouldRenewAfter.
@@ -177,10 +231,45 @@ export function CreateInvoiceSheet({
   const valid = linesValid && /^\d{4}-\d{2}-\d{2}$/.test(txnDate);
 
   // Created from a stage that already has a live invoice tied to it.
+  // Not when editing: the stage's live invoice is this one.
   const warning = useMemo(
-    () => duplicateTileWarning({ target: stage, existing }),
-    [stage, existing]
+    () => (edit ? null : duplicateTileWarning({ target: stage, existing })),
+    [edit, stage, existing]
   );
+
+  // Edit invoice → Save changes: every line goes, QuickBooks replaces them.
+  const update = useMutation({
+    mutationFn: async () => {
+      try {
+        return await apiFetch<EditResult>(
+          `/api/billing/students/${encodeURIComponent(studentNumber)}/invoices/${encodeURIComponent(edit!.invoiceId)}`,
+          jsonInit('PATCH', {
+            lines: parsed.map((l) => ({
+              ...(l.lineId ? { lineId: l.lineId } : {}),
+              itemId: l.itemId,
+              ...(l.description.trim()
+                ? { description: l.description.trim() }
+                : {}),
+              qty: l.q,
+              unitPrice: l.p,
+            })),
+            txnDate,
+            dueDate: dueDate || null,
+            memo: memo.trim(),
+            // Exactly as typed; blank clears it.
+            statementMemo,
+            syncToken: edit!.syncToken,
+            requestId,
+          })
+        );
+      } catch (err) {
+        // Same rule as Create: renew only when nothing was written.
+        if (shouldRenewAfter(err, unclearRef))
+          setRequestId(crypto.randomUUID());
+        throw err;
+      }
+    },
+  });
 
   const save = useMutation({
     mutationFn: async (send: boolean) => {
@@ -262,6 +351,21 @@ export function CreateInvoiceSheet({
       return;
     }
     setSaving(send ? 'send' : 'close');
+    if (edit) {
+      await run(() => update.mutateAsync(), {
+        pending: 'Saving the changes in QuickBooks…',
+        success: (d) => {
+          for (const w of d.warnings) toast.warning(w);
+          return d.docNumber
+            ? `Invoice ${d.docNumber} saved in QuickBooks`
+            : 'Invoice saved in QuickBooks';
+        },
+        // The page reads QuickBooks fresh on refresh.
+        onResolved: () => onOpenChange(false),
+      });
+      setSaving(null);
+      return;
+    }
     await run(() => save.mutateAsync(send), {
       pending: send
         ? 'Creating the invoice in QuickBooks and emailing it…'
@@ -311,12 +415,16 @@ export function CreateInvoiceSheet({
               {studentName}
             </p>
             <SheetTitle className="font-serif text-[22px] leading-tight tracking-tight">
-              Create invoice
+              {edit
+                ? `Edit invoice ${edit.docNumber ?? ''}`.trim()
+                : 'Create invoice'}
             </SheetTitle>
             <SheetDescription>
-              {copiedFrom
-                ? `A new invoice for ${studentName}, copied from invoice ${copiedFrom} and created in QuickBooks.`
-                : `A new invoice for ${studentName}, created in QuickBooks.`}
+              {edit
+                ? `${studentName}’s invoice as QuickBooks has it. Your changes are saved in QuickBooks.`
+                : copiedFrom
+                  ? `A new invoice for ${studentName}, copied from invoice ${copiedFrom} and created in QuickBooks.`
+                  : `A new invoice for ${studentName}, created in QuickBooks.`}
             </SheetDescription>
           </SheetHeader>
 
@@ -355,7 +463,9 @@ export function CreateInvoiceSheet({
                     value={docNumber}
                     maxLength={21}
                     onChange={(e) => setDocNumber(e.target.value)}
-                    placeholder="QuickBooks’ next number"
+                    placeholder={edit ? 'No number' : 'QuickBooks’ next number'}
+                    readOnly={!!edit}
+                    disabled={!!edit}
                     className="font-mono tabular-nums"
                   />
                 </Field>
@@ -377,6 +487,8 @@ export function CreateInvoiceSheet({
                     value={dueDate}
                     onChange={setDueDate}
                     placeholder="The customer’s terms"
+                    // Edit: a blank due date would only keep QuickBooks' own.
+                    allowClear={!edit?.dueDate}
                   />
                 </Field>
               </SheetFields>
@@ -477,6 +589,18 @@ export function CreateInvoiceSheet({
                                     {it.name}
                                   </SelectItem>
                                 ))}
+                                {/* Edit: the invoice's own product, named
+                                    while the list loads or once it is
+                                    inactive in QuickBooks. */}
+                                {l.itemId &&
+                                  editNames.get(l.itemId) &&
+                                  !items.data?.items.some(
+                                    (x) => x.id === l.itemId
+                                  ) && (
+                                    <SelectItem value={l.itemId}>
+                                      {editNames.get(l.itemId)}
+                                    </SelectItem>
+                                  )}
                               </SelectContent>
                             </Select>
                             <Input
@@ -536,7 +660,7 @@ export function CreateInvoiceSheet({
                   </Table>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 border-t border-border px-4 py-3">
-                  {stage && (
+                  {stage && !edit && (
                     <Button
                       type="button"
                       size="sm"
@@ -642,28 +766,32 @@ export function CreateInvoiceSheet({
                 Cancel
               </Button>
             </SheetClose>
-            <Button
-              type="button"
-              variant="outline"
-              loading={saving === 'send'}
-              loadingText="Saving and sending…"
-              disabled={!!saving || !customerEmail}
-              title={
-                customerEmail
-                  ? `Creates it and emails it to ${customerEmail}`
-                  : 'The QuickBooks customer has no email to send to.'
-              }
-              onClick={() => void submit(true)}
-            >
-              Save and send
-            </Button>
+            {!edit && (
+              <Button
+                type="button"
+                variant="outline"
+                loading={saving === 'send'}
+                loadingText="Saving and sending…"
+                disabled={!!saving || !customerEmail}
+                title={
+                  customerEmail
+                    ? `Creates it and emails it to ${customerEmail}`
+                    : 'The QuickBooks customer has no email to send to.'
+                }
+                onClick={() => void submit(true)}
+              >
+                Save and send
+              </Button>
+            )}
             <Button
               type="submit"
               loading={saving === 'close'}
-              loadingText="Creating in QuickBooks…"
+              loadingText={
+                edit ? 'Saving in QuickBooks…' : 'Creating in QuickBooks…'
+              }
               disabled={!!saving}
             >
-              Create invoice
+              {edit ? 'Save changes' : 'Create invoice'}
             </Button>
           </SheetFooter>
         </form>

@@ -90,6 +90,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'Makes the item inactive in QuickBooks; the only SIS write is the qbo.item.update audit_log row, which no cached surface reads.',
   'app/api/billing/students/[studentNumber]/invoices/route.ts':
     'Stores the new invoice in qbo_invoices (read uncached by the Billing loaders); the stage move goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
+  'app/api/billing/students/[studentNumber]/invoices/[invoiceId]/route.ts':
+    'Stores the edited invoice in qbo_invoices (read uncached by the Billing loaders); the stage update goes syncTilesForStudent → writeStageFromQbo, which busts the tags.',
   'app/api/billing/students/[studentNumber]/payments/route.ts':
     'Stores the payment in qbo_payments (read uncached by the Billing loaders); the stage move goes through loadCustomerHistory → writeStageFromQbo, which busts the tags.',
   // ── writes no database row at all ──────────────────────────────────────

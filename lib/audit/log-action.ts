@@ -106,6 +106,8 @@ export const ALL_AUDIT_ACTIONS = [
   'qbo.invoice.send',
   // More actions → Void on the invoice page (unpaid invoices only).
   'qbo.invoice.void',
+  // Edit invoice on the invoice page (open invoices only).
+  'qbo.invoice.update',
   'qbo.customer.create',
   'qbo.customer.update',
   'qbo.connection.connect',

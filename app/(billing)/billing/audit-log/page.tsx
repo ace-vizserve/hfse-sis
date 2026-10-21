@@ -31,6 +31,7 @@ const BILLING_AUDIT_ALLOWLIST = [
   'qbo.invoice.create',
   'qbo.invoice.send',
   'qbo.invoice.void',
+  'qbo.invoice.update',
   'qbo.invoice.link',
   'qbo.payment.create',
   'qbo.payment.apply_credit',
@@ -53,6 +54,7 @@ const INVOICE_ACTIONS = new Set([
   'qbo.invoice.create',
   'qbo.invoice.send',
   'qbo.invoice.void',
+  'qbo.invoice.update',
 ]);
 const PAYMENT_ACTIONS = new Set([
   'qbo.payment.create',

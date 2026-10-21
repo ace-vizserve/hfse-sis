@@ -204,6 +204,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'qbo.invoice.link': 'QuickBooks invoice linked',
   'qbo.invoice.send': 'QuickBooks invoice emailed',
   'qbo.invoice.void': 'QuickBooks invoice voided',
+  'qbo.invoice.update': 'QuickBooks invoice edited',
   'qbo.customer.create': 'QuickBooks customer added',
   'qbo.customer.update': 'QuickBooks customer edited',
   'qbo.connection.connect': 'QuickBooks connected',
@@ -1930,6 +1931,21 @@ function templateSummary(
       }
       const customer = str(ctx.customer);
       if (customer) parts.push(customer);
+      return joinParts(parts);
+    }
+    case 'qbo.invoice.update': {
+      const parts: string[] = [];
+      const doc = str(ctx.doc_number);
+      if (doc) parts.push(`invoice ${doc}`);
+      const total = Number(ctx.total);
+      if (
+        ctx.total !== undefined &&
+        ctx.total !== null &&
+        Number.isFinite(total)
+      )
+        parts.push(
+          `now S$${total.toLocaleString('en-SG', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+        );
       return joinParts(parts);
     }
     case 'qbo.invoice.void':

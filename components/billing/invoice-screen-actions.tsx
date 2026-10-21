@@ -1,11 +1,15 @@
 'use client';
 
 import { useMutation } from '@tanstack/react-query';
-import { ChevronDown, ExternalLink, Printer } from 'lucide-react';
+import { ChevronDown, ExternalLink, Pencil, Printer } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import {
+  CreateInvoiceSheet,
+  type InvoiceEdit,
+} from '@/components/billing/create-invoice-sheet';
 import {
   downloadInvoicePdfs,
   invoicePdfHref,
@@ -36,15 +40,16 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { stashInvoiceCopy, type InvoiceCopy } from '@/lib/billing/invoice-copy';
 import { shouldRenewAfter } from '@/lib/billing/request-id';
+import type { StageTarget } from '@/lib/billing/tie';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
-// The invoice page's actions, with QuickBooks' menus item for item: Print ▾,
-// More actions ▾ and Send ▾. What the SIS can do for a linked student's
-// invoice runs here (Print / Download PDF, Make a copy, Void an unpaid
-// invoice, Send); the rest opens the invoice in QuickBooks, where QuickBooks
-// does it (editing the lines, Delete, recurring, credit memos, the invoice
-// form's setup).
+// The invoice page's actions, with QuickBooks' menus item for item: Edit
+// invoice, Print ▾, More actions ▾ and Send ▾. What the SIS can do for a
+// linked student's invoice runs here (Edit an open invoice, Print / Download
+// PDF, Make a copy, Void an unpaid invoice, Send); the rest opens the invoice
+// in QuickBooks, where QuickBooks does it (Delete, recurring, credit memos,
+// the invoice form's setup).
 
 const QbLink = ({ href, children }: { href: string; children: string }) => (
   <DropdownMenuItem asChild>
@@ -68,10 +73,20 @@ export function InvoiceScreenActions({
   voidBlocked,
   sendLabel,
   sendBlocked,
+  edit,
+  studentName,
+  customerEmail,
+  stage,
 }: {
   invoiceId: string;
   docNumber: string | null;
   studentNumber: string;
+  /** Edit invoice's starting point; null when it can't be edited here. */
+  edit: InvoiceEdit | null;
+  studentName: string;
+  customerEmail: string | null;
+  /** The Registration / Fees stage this invoice fills, if any. */
+  stage: StageTarget | null;
   qbUrl: string;
   qbCreditMemoUrl: string;
   /** QuickBooks' Sales settings (the invoice form's defaults). */
@@ -114,9 +129,39 @@ export function InvoiceScreenActions({
     },
   });
   const name = docNumber ? `invoice ${docNumber}` : 'this invoice';
+  // Each open starts from the invoice as the page last read it (a new key);
+  // the sheet stays mounted when it closes, so its save can finish the
+  // page refresh it started.
+  const [editKey, setEditKey] = useState(0);
+  const [editing, setEditing] = useState(false);
 
   return (
     <>
+      {edit && (
+        <Button
+          variant="outline"
+          onClick={() => {
+            setEditKey((k) => k + 1);
+            setEditing(true);
+          }}
+        >
+          <Pencil className="size-4" />
+          Edit invoice
+        </Button>
+      )}
+      {edit && editKey > 0 && (
+        <CreateInvoiceSheet
+          key={`e${editKey}-${edit.syncToken}`}
+          open={editing}
+          onOpenChange={setEditing}
+          studentNumber={studentNumber}
+          studentName={studentName}
+          customerEmail={customerEmail}
+          stage={stage}
+          existing={[]}
+          edit={edit}
+        />
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button variant="outline">

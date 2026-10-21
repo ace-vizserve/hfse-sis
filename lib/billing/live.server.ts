@@ -195,6 +195,8 @@ export async function readAging(
 }
 
 export type InvoiceDetailLine = {
+  /** QuickBooks' Id for the line (Edit invoice keeps it). */
+  lineId: string | null;
   itemId: string | null;
   itemName: string | null;
   description: string | null;
@@ -207,6 +209,8 @@ export type InvoiceDetailLine = {
 
 export type InvoiceDetail = {
   id: string;
+  /** The version QuickBooks has; Edit invoice refuses a stale one. */
+  syncToken: string;
   docNumber: string | null;
   txnDate: string | null;
   dueDate: string | null;
@@ -247,6 +251,7 @@ export async function readInvoiceDetail(
   const { Invoice: inv } = await qboRequest<{
     Invoice: QbInvoice & {
       Line?: Array<{
+        Id?: string;
         Amount?: number;
         Description?: string;
         DetailType?: string;
@@ -299,6 +304,7 @@ export async function readInvoiceDetail(
   const lines: InvoiceDetailLine[] = sales.map((l) => {
     const code = l.SalesItemLineDetail?.TaxCodeRef?.value ?? null;
     return {
+      lineId: l.Id ?? null,
       itemId: l.SalesItemLineDetail?.ItemRef?.value ?? null,
       itemName: l.SalesItemLineDetail?.ItemRef?.name ?? null,
       description: l.Description?.trim() || null,
@@ -312,6 +318,7 @@ export async function readInvoiceDetail(
   });
   return {
     id: inv.Id,
+    syncToken: String(inv.SyncToken),
     docNumber: inv.DocNumber ?? null,
     txnDate: inv.TxnDate ?? null,
     dueDate: inv.DueDate ?? null,

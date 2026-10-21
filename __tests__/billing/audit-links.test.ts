@@ -29,6 +29,13 @@ const cases: Array<[string, AuditLinkRow, AuditRowLink | null]> = [
     { href: '/billing/H210001/invoices/406', label: 'Open invoice' },
   ],
   [
+    'invoice edited → the invoice',
+    row('qbo_invoice', 'qbo.invoice.update', '423', {
+      studentNumber: 'H260162',
+    }),
+    { href: '/billing/H260162/invoices/423', label: 'Open invoice' },
+  ],
+  [
     'payment → the customer',
     row('qbo_payment', 'qbo.payment.create', '414', {
       studentNumber: 'H220003',
