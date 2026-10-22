@@ -1,5 +1,6 @@
 import { unstable_cache } from 'next/cache';
 
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 /**
@@ -19,10 +20,11 @@ import { createServiceClient } from '@/lib/supabase/service';
  */
 async function loadTeacherEmailMapUncached(): Promise<Array<[string, string]>> {
   try {
-    const service = createServiceClient();
-    const { data } = await service.auth.admin.listUsers({ perPage: 1000 });
+    // Every page, not page 1: parents share the project (KD #1) and the
+    // account count is past 1,000, so a teacher past the first page had no email.
+    const users = await listAllAuthUsers(createServiceClient());
     const out: Array<[string, string]> = [];
-    for (const u of data?.users ?? []) {
+    for (const u of users) {
       if (u.email) out.push([u.id, u.email]);
     }
     return out;

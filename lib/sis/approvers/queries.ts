@@ -1,6 +1,7 @@
 import 'server-only';
 import { cache } from 'react';
 
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getRoleCapabilities } from '@/lib/auth/permission-map';
 import {
@@ -20,14 +21,18 @@ export type ApproverUser = {
   assigned_at: string;
 };
 
-// Request-scoped user list. `auth.admin.listUsers` doesn't accept an id filter
-// and HFSE's user count is small (<30), so we fetch all and filter in memory.
+// Request-scoped user list. `auth.admin.listUsers` doesn't accept an id filter,
+// so we fetch all and filter in memory — every page: parents share the project
+// (KD #1), 1,123 accounts on 2026-10-22, and the old single `perPage: 200` read
+// left most staff out of the approver picker.
 // React.cache dedupes within a single render — both listApproversForFlow and
 // listEligibleApproverCandidates can fan out across flows without refetching.
 const getAllUsers = cache(async () => {
-  const service = createServiceClient();
-  const { data } = await service.auth.admin.listUsers({ perPage: 200 });
-  return data?.users ?? [];
+  try {
+    return await listAllAuthUsers(createServiceClient());
+  } catch {
+    return [];
+  }
 });
 
 /**
