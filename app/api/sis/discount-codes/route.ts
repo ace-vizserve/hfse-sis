@@ -2,9 +2,30 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
+import { STUDENT_RECORD_WRITERS } from '@/lib/auth/student-record';
 import { logAction } from '@/lib/audit/log-action';
+import { listDiscountCodes } from '@/lib/sis/queries';
 import { DiscountCodeSchema } from '@/lib/schemas/sis';
 import { createServiceClient } from '@/lib/supabase/service';
+
+// GET /api/sis/discount-codes?ay=AY2026
+//
+// The year's codes, for the Edit profile sheet's discount slots — the same
+// list the parent portal picks from.
+export async function GET(request: Request) {
+  const auth = await requireRole([...STUDENT_RECORD_WRITERS]);
+  if ('error' in auth) return auth.error;
+
+  const ayCode = (new URL(request.url).searchParams.get('ay') ?? '').trim();
+  if (!/^AY\d{4}$/i.test(ayCode)) {
+    return NextResponse.json(
+      { error: 'Invalid or missing ay query param' },
+      { status: 400 }
+    );
+  }
+  const codes = await listDiscountCodes(ayCode);
+  return NextResponse.json({ codes });
+}
 
 // POST /api/sis/discount-codes?ay=AY2026
 //
