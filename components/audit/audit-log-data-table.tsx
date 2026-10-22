@@ -109,6 +109,9 @@ type Props = {
   /** Server-side date window, same reason as the two above. ISO yyyy-mm-dd. */
   currentFrom?: string | null;
   currentTo?: string | null;
+  /** Server-side search (`?q=`), same reason again: a search over one loaded
+   *  page missed every match on the others. */
+  currentSearch?: string | null;
   canExport?: boolean;
   pagination?: PaginationInfo;
 };
@@ -232,6 +235,7 @@ export function AuditLogDataTable({
   actorOptions = [],
   currentFrom = null,
   currentTo = null,
+  currentSearch = null,
   canExport = false,
   pagination,
 }: Props) {
@@ -243,7 +247,10 @@ export function AuditLogDataTable({
   // the rest of the match. Each control writes a URL param and resets to page
   // 1; the page RSC re-queries.
   const setServerParam = React.useCallback(
-    (key: 'action' | 'actor' | 'from' | 'to' | 'sheet_id', value: string) => {
+    (
+      key: 'action' | 'actor' | 'from' | 'to' | 'sheet_id' | 'q',
+      value: string
+    ) => {
       const params = new URLSearchParams(window.location.search);
       if (value && value !== 'all') params.set(key, value);
       else params.delete(key);
@@ -271,11 +278,12 @@ export function AuditLogDataTable({
     currentActor ||
     currentFrom ||
     currentTo ||
+    currentSearch ||
     initialSheetIdFilter
   );
   const clearAllFilters = React.useCallback(() => {
     const params = new URLSearchParams(window.location.search);
-    for (const k of ['action', 'actor', 'from', 'to', 'sheet_id', 'page'])
+    for (const k of ['action', 'actor', 'from', 'to', 'sheet_id', 'q', 'page'])
       params.delete(k);
     router.push(params.toString() ? `?${params.toString()}` : '?');
   }, [router]);
@@ -588,6 +596,14 @@ export function AuditLogDataTable({
       toolbarLeading={toolbarLeading}
       toolbarTrailing={toolbarTrailing}
       pagination={pagination}
+      serverSearch={
+        pagination
+          ? {
+              value: currentSearch ?? '',
+              onChange: (q) => setServerParam('q', q),
+            }
+          : undefined
+      }
     />
   );
 }
@@ -599,11 +615,13 @@ function AuditLogTableInner({
   toolbarLeading,
   toolbarTrailing,
   pagination,
+  serverSearch,
 }: {
   filteredRows: MergedRow[];
   toolbarLeading: React.ReactNode;
   toolbarTrailing: React.ReactNode;
   pagination?: PaginationInfo;
+  serverSearch?: { value: string; onChange: (search: string) => void };
 }) {
   const router = useRouter();
 
@@ -623,7 +641,10 @@ function AuditLogTableInner({
         columns={COLUMNS}
         getRowId={(row) => row.id}
         searchKeys={['actor', 'action', 'entity_type']}
-        searchPlaceholder="Search actor, action, details…"
+        // A server-paged log searches the database (`?q=`); without paging the
+        // table holds every row and searches them itself.
+        serverSearch={serverSearch}
+        searchPlaceholder="Search who or action…"
         toolbarLeading={toolbarLeading}
         toolbarTrailing={toolbarTrailing}
         initialSort={[{ id: 'at', desc: true }]}

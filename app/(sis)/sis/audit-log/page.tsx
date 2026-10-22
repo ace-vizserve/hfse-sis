@@ -131,6 +131,7 @@ type SisAuditLogSearchParams = DashboardSearchParams & {
   actor?: string;
   from?: string;
   to?: string;
+  q?: string;
 };
 
 // The Log cut — the paginated, allowlisted table. Session and role are guarded
@@ -286,6 +287,7 @@ export default async function SisAuditLogPage({
         currentActor={logView.filters.actor}
         currentFrom={logView.filters.from}
         currentTo={logView.filters.to}
+        currentSearch={logView.filters.search}
         actionOptions={[...SIS_AUDIT_ALLOWLIST]}
         actorOptions={logView.actorOptions}
         canExport={sessionUser.role === 'superadmin'}

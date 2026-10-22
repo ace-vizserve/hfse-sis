@@ -64,6 +64,7 @@ export default async function AttendanceAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -256,6 +257,7 @@ export default async function AttendanceAuditLogPage({
         currentActor={actorFilter}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
       />
     </PageShell>
   );

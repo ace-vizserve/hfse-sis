@@ -55,6 +55,7 @@ export default async function EvaluationAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -232,6 +233,7 @@ export default async function EvaluationAuditLogPage({
         currentActor={currentActor}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...EVALUATION_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         pagination={{

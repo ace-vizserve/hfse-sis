@@ -39,6 +39,7 @@ export default async function ClassroomAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -200,6 +201,7 @@ export default async function ClassroomAuditLogPage({
         currentActor={filters.actor}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...CLASSROOM_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         canExport={canExport}

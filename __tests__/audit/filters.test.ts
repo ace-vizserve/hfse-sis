@@ -27,6 +27,10 @@ function recordingQuery() {
       calls.push(['lt', column, value]);
       return q;
     },
+    or(filters: string) {
+      calls.push(['or', '', filters]);
+      return q;
+    },
   };
   return { q, calls };
 }
@@ -112,6 +116,41 @@ describe('applyAuditFilters', () => {
       'created_at',
       '2026-10-01T00:00:00+08:00',
     ]);
+  });
+
+  // The log is one page of 50 out of thousands: a search over the loaded rows
+  // missed every match on the other pages. The search goes to the database.
+  it('searches the whole log in the database: who, the action and the record type', () => {
+    const { q, calls } = recordingQuery();
+    applyAuditFilters(q, parseAuditFilters({ q: 'ana' }, ALLOWLIST));
+    expect(calls).toEqual([
+      [
+        'or',
+        '',
+        'actor_email.ilike."%ana%",action.ilike."%ana%",entity_type.ilike."%ana%"',
+      ],
+    ]);
+  });
+
+  // The table shows "Sheet locked", never `sheet.lock` — so a search for the
+  // words on screen must find the actions that carry them.
+  it('finds actions by the words the table shows for them', () => {
+    const f = parseAuditFilters({ q: 'Locked' }, ALLOWLIST);
+    expect(f.searchActions).toContain('sheet.lock');
+    const { q, calls } = recordingQuery();
+    applyAuditFilters(q, f);
+    expect(calls[0][2]).toContain('action.in.("sheet.lock")');
+  });
+
+  // The text lands inside a PostgREST `or=(…)` list, where a comma, bracket
+  // or quote would end the value early and become filter syntax.
+  it('strips what would break out of the filter list', () => {
+    const f = parseAuditFilters({ q: ' a,b)"c\\d(e ' }, []);
+    expect(f.search).toBe('abcde');
+  });
+
+  it('treats a blank search as no filter', () => {
+    expect(parseAuditFilters({ q: '  ' }, ALLOWLIST).search).toBeNull();
   });
 
   it('adds nothing when no filter is set', () => {

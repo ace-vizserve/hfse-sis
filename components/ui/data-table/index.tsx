@@ -134,6 +134,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     searchPlaceholder = 'Search…',
     initialSearch,
     initialSearchParam,
+    serverSearch,
     facets = [],
     facetGroups = [],
     statusTabs,
@@ -196,8 +197,38 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     Boolean(initial.mine && meScopeEnabled)
   );
   const [search, setSearch] = useState<string>(
-    initial.search ?? initialSearch ?? ''
+    serverSearch?.value ?? initial.search ?? initialSearch ?? ''
   );
+  // With `serverSearch` the box only TYPES here; the database does the
+  // matching. `clientSearch` is what this table filters `data` on, so it is
+  // empty in that mode — `data` already matches — and every client filter,
+  // count, URL write and export seed below reads it instead of `search`.
+  const clientSearch = serverSearch ? '' : search;
+  const serverSearchValue = serverSearch?.value;
+  const onServerSearchRef = useRef(serverSearch?.onChange);
+  useEffect(() => {
+    onServerSearchRef.current = serverSearch?.onChange;
+  });
+  // The page's search changed from outside (a link, Back): show it. Not when
+  // it is only our own last send arriving — the reader may have typed on
+  // while the page re-queried, and that would wipe the newer letters.
+  const [lastSentSearch, setLastSentSearch] = useState(serverSearchValue);
+  const [seenServerSearch, setSeenServerSearch] = useState(serverSearchValue);
+  if (serverSearchValue !== seenServerSearch) {
+    setSeenServerSearch(serverSearchValue);
+    if (serverSearchValue !== lastSentSearch)
+      setSearch(serverSearchValue ?? '');
+  }
+  useEffect(() => {
+    if (serverSearchValue === undefined) return;
+    const next = search.trim();
+    if (next === serverSearchValue) return;
+    const t = setTimeout(() => {
+      setLastSentSearch(next);
+      onServerSearchRef.current?.(next);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [search, serverSearchValue]);
   // A search seeded from a page param (`initialSearchParam`) follows that
   // param: a later visit with a new value re-seeds it (the page stays mounted
   // under `cacheComponents`, so useState alone would keep the first value),
@@ -274,7 +305,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
         id: f.id,
         values: (Array.isArray(f.value) ? f.value : []).map(String),
       })),
-      search,
+      search: clientSearch,
       searchKeys,
     });
   }, [
@@ -284,7 +315,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     meScopeEnabled,
     columnFilters,
     columns,
-    search,
+    clientSearch,
     searchKeys,
   ]);
 
@@ -328,7 +359,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       columnFilters,
       columnVisibility,
       rowSelection,
-      globalFilter: search,
+      globalFilter: clientSearch,
     },
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
@@ -399,7 +430,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       const next = urlState.read();
       setStatusTab(knownStatus(next.status));
       setMineActive(Boolean(next.mine && meScopeEnabled));
-      setSearch(next.search ?? '');
+      if (!serverSearch) setSearch(next.search ?? '');
       setColumnFilters(
         Object.entries(next.facets).map(([id, value]) => ({ id, value }))
       );
@@ -422,7 +453,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
   // that second run as a filter change — so ?page=2 on arrival or a refresh
   // always snapped back to page 1 and the URL lost it.
   const filterKey = JSON.stringify([
-    search,
+    clientSearch,
     statusTab ?? null,
     mineActive,
     columnFilters,
@@ -454,7 +485,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     }
     urlState.write(
       {
-        search: search || undefined,
+        search: clientSearch || undefined,
         status: statusTab !== defaultStatus ? statusTab : undefined,
         mine: mineActive || undefined,
         facets: facetsSnapshot,
@@ -488,7 +519,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
     // this write reflects the post-reset page, never a stale one.
     urlState.write(
       () => ({
-        search: search || undefined,
+        search: clientSearch || undefined,
         status: statusTab !== defaultStatus ? statusTab : undefined,
         mine: mineActive || undefined,
         facets: Object.fromEntries(
@@ -508,7 +539,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
       { debounce: true }
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [clientSearch]);
 
   const totalRows = table.getFilteredRowModel().rows.length;
 
@@ -1095,7 +1126,7 @@ export function DataTable<TRow>(props: DataTableProps<TRow>) {
           selectionEnabled={Boolean(selection?.enabled)}
           selectedRows={selectedRows}
           seed={{
-            search,
+            search: clientSearch,
             mine: mineActive,
             facets: columnFilters.map((f) => ({
               id: f.id,
