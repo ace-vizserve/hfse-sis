@@ -2,10 +2,9 @@
 
 // CalendarSidebar — the "add + navigate + filter" rail that sits beside the
 // active view. Composes:
-//   1. "+ New event" — a DropdownMenu (not a plain Button) so the optional
-//      Copy-from-prior-AY entry point (currently disconnected — see
-//      app/(sis)/sis/calendar/page.tsx) has somewhere to live, same contract
-//      as the old CalendarToolbar's "+ Add" dropdown.
+//   1. "+ New event" — opens the add dialog directly. It becomes a
+//      DropdownMenu only when the optional Copy-from-prior-AY entry point is
+//      passed (currently disconnected — see app/(sis)/sis/calendar/page.tsx).
 //   2. Filters — a Popover over CalendarFilterBar (event categories, date
 //      range, status). Audience/level and Day types are deliberately NOT in
 //      here (see #3/#5).
@@ -92,22 +91,30 @@ export function CalendarSidebar({
 
   return (
     <div className="flex w-[272px] shrink-0 flex-col gap-4">
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button type="button" className="w-full gap-1.5">
-            <CalendarPlus className="size-3.5" />
-            New event
-            <ChevronDown className="size-3 opacity-70" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-[272px]">
-          <DropdownMenuItem onSelect={onAddEvent}>
-            <CalendarPlus className="size-4" />
-            Add event
-          </DropdownMenuItem>
-          {copyFromPriorAy}
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {copyFromPriorAy ? (
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" className="w-full gap-1.5">
+              <CalendarPlus className="size-3.5" />
+              New event
+              <ChevronDown className="size-3 opacity-70" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[272px]">
+            <DropdownMenuItem onSelect={onAddEvent}>
+              <CalendarPlus className="size-4" />
+              Add event
+            </DropdownMenuItem>
+            {copyFromPriorAy}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      ) : (
+        // Nothing else to offer — the button opens the dialog directly.
+        <Button type="button" className="w-full gap-1.5" onClick={onAddEvent}>
+          <CalendarPlus className="size-3.5" />
+          New event
+        </Button>
+      )}
 
       <Popover>
         <PopoverTrigger asChild>
