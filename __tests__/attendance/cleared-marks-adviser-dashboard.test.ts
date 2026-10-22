@@ -103,11 +103,22 @@ vi.mock('@/lib/classroom/scope', () => ({
   canReadAttendance: () => true,
 }));
 
+// Spies, so the tests can check the readers get the section's level CODE —
+// a P1-only closure (migration 196) is invisible to a reader given the band.
+const { encodableSpy, dedupedSpy } = vi.hoisted(() => ({
+  encodableSpy: vi.fn(),
+  dedupedSpy: vi.fn(),
+}));
 vi.mock('@/lib/attendance/calendar', () => ({
   // Three encodable days: the marked past day, the slipped one, and today.
-  getEncodableDatesForTerm: () =>
-    Promise.resolve([MARKED_PAST, SLIPPED, TODAY]),
-  getDedupedSchoolCalendarForTerm: () => Promise.resolve([]),
+  getEncodableDatesForTerm: (...args: unknown[]) => {
+    encodableSpy(...args);
+    return Promise.resolve([MARKED_PAST, SLIPPED, TODAY]);
+  },
+  getDedupedSchoolCalendarForTerm: (...args: unknown[]) => {
+    dedupedSpy(...args);
+    return Promise.resolve([]);
+  },
 }));
 
 // ⚠ PARTIAL MOCK. `isMarked` stays REAL — it is the rule under test, and the
@@ -215,6 +226,16 @@ describe('loadAdviserAttendanceDashboard — a cleared mark is not a mark', () =
     // Today is never listed as slipped — it is the job at the top of the page,
     // not a day that got away. Guards against the filter widening the set.
     expect(section.unmarked).not.toContain(TODAY);
+  });
+
+  it('asks the calendar about the section by its level code, not its band', async () => {
+    encodableSpy.mockClear();
+    dedupedSpy.mockClear();
+    await load();
+    expect(encodableSpy).toHaveBeenCalledWith(TERM, 'P1');
+    for (const call of [...encodableSpy.mock.calls, ...dedupedSpy.mock.calls]) {
+      expect(call[1]).toBe('P1');
+    }
   });
 
   it('reports the class as unmarked when every mark today was cleared', async () => {

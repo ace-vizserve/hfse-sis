@@ -511,6 +511,16 @@ describe('budget: loadAdviserAttendanceDashboard (2 sections)', () => {
     // hoist. Sized here so that decision has a number behind it.
     expect(roundTrips).toBe(48);
     expect(waves).toBe(11);
+
+    // Each section's calendar is read by its level CODE, not its band: a
+    // P1-only closure (migration 196) is invisible to a reader given
+    // 'primary'.
+    const calendar = await import('@/lib/attendance/calendar');
+    const levelArgs = vi
+      .mocked(calendar.getEncodableDatesForTerm)
+      .mock.calls.map((c) => c[1]);
+    expect(levelArgs).toEqual(expect.arrayContaining(['P1', 'P2']));
+    expect(levelArgs).not.toContain('primary');
   });
 });
 

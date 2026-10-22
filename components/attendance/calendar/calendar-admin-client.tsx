@@ -58,7 +58,11 @@ import type {
   CalendarEventRow,
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
-import type { Audience } from '@/lib/schemas/attendance';
+import {
+  DAY_AUDIENCE_VALUES,
+  type Audience,
+  type DayAudience,
+} from '@/lib/schemas/attendance';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 
@@ -247,21 +251,23 @@ export function CalendarAdminClient({
   // Day-sheet data is resolved by the clicked DATE from the full AY arrays
   // (unfiltered) so the sheet shows the real rows + every event on that day,
   // regardless of the active filters or which term is "jumped" to. Per-audience
-  // rows let the sheet show/edit each level (All / Primary / Secondary).
-  const daySheetRowsByAudience: Record<Audience, SchoolCalendarRow | null> =
-    useMemo(() => {
-      const find = (aud: Audience) =>
-        daySheetIso
-          ? (calendar.find(
-              (c) => c.date === daySheetIso && c.audience === aud
-            ) ?? null)
-          : null;
-      return {
-        all: find('all'),
-        primary: find('primary'),
-        secondary: find('secondary'),
-      };
-    }, [calendar, daySheetIso]);
+  // rows let the sheet show/edit each audience — whole school, a half, or one
+  // level (migration 196).
+  const daySheetRowsByAudience: Record<DayAudience, SchoolCalendarRow | null> =
+    useMemo(
+      () =>
+        Object.fromEntries(
+          DAY_AUDIENCE_VALUES.map((aud) => [
+            aud,
+            daySheetIso
+              ? (calendar.find(
+                  (c) => c.date === daySheetIso && c.audience === aud
+                ) ?? null)
+              : null,
+          ])
+        ) as Record<DayAudience, SchoolCalendarRow | null>,
+      [calendar, daySheetIso]
+    );
   const daySheetEvents = daySheetIso
     ? events.filter(
         (e) => daySheetIso >= e.startDate && daySheetIso <= e.endDate

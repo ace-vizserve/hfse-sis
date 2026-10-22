@@ -1,9 +1,14 @@
 'use client';
 
-// EventEditorDialog — one unified "add to the calendar" flow. Pick a TYPE and a
-// LEVEL; the type decides where it's stored:
+// EventEditorDialog — one unified "add to the calendar" flow. Pick a TYPE and
+// WHO IT IS FOR; the type decides where it's stored:
 //   • Day-affecting types (HBL / closures) → school_calendar (POST /attendance/calendar)
 //   • Informational types (exam, PTC, …)   → calendar_events (POST/PATCH .../events)
+// "Who is it for?" is one dropdown for every type: Whole school / Primary /
+// Secondary / Specific levels… (reveals the level chips) / Specific classes…
+// (informational events only — no closure has ever been per-class). A closure
+// for one level writes a level-code row (migration 196); several levels write
+// one row each in a single request (`audiences`).
 // Edit mode handles informational events only (day-status overrides are removed
 // from the day sheet and re-added).
 //
@@ -46,14 +51,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { CalendarEventRow } from '@/lib/attendance/calendar';
-import type { LevelCode } from '@/lib/sis/levels';
-import { EventScopeField } from './event-scope-field';
 import {
-  AUDIENCE_LABELS,
-  AUDIENCE_VALUES,
-  type Audience,
-  type DayType,
-  type EventCategory,
+  SCOPE_CHOICE_LABELS,
+  scopeChoiceForEvent,
+  sortLevels,
+  type ScopeChoice,
+} from '@/lib/attendance/event-scope';
+import type { LevelCode } from '@/lib/sis/levels';
+import { ClassPicker, LevelPicker } from './event-scope-field';
+import type {
+  Audience,
+  DayAudience,
+  DayType,
+  EventCategory,
 } from '@/lib/schemas/attendance';
 
 // ─── Entry types (day-affecting + informational, one flat list) ────────────────
@@ -206,10 +216,10 @@ export function EventEditorDialog({
   const [end, setEnd] = useState(seedEnd);
   const [label, setLabel] = useState('');
   const [typeKey, setTypeKey] = useState<string>('public_holiday');
-  const [eventAudience, setEventAudience] = useState<Audience>(defaultAudience);
-  // Level / class scope (migration 158). Informational events only — a closure
-  // is still whole-school-or-band, because school_calendar has no level column
-  // and nothing in two years of HFSE's calendar closes school for one level.
+  // "Who is it for?" — one choice for every type. The levels / classes behind
+  // "Specific levels…" / "Specific classes…" are kept while the choice
+  // changes, but only the chosen one is ever sent.
+  const [scope, setScope] = useState<ScopeChoice>(defaultAudience);
   const [levels, setLevels] = useState<LevelCode[]>([]);
   const [sectionIds, setSectionIds] = useState<string[]>([]);
   // Past-date warning confirm (future/today saves directly; a passed date warns).
@@ -233,20 +243,64 @@ export function EventEditorDialog({
       setEnd(editing.endDate);
       setLabel(editing.label);
       setTypeKey(entryKeyForEvent(editing.category));
-      setEventAudience(editing.audience);
-      setLevels(editing.levels ?? []);
-      setSectionIds(editing.sectionIds ?? []);
+      const loaded = scopeChoiceForEvent(editing);
+      setScope(loaded.choice);
+      setLevels(loaded.levels);
+      setSectionIds(loaded.sectionIds);
     } else {
       setStart(seedStart);
       setEnd(seedEnd);
       setLabel('');
       setTypeKey('public_holiday');
-      setEventAudience(defaultAudience);
+      setScope(defaultAudience);
       setLevels([]);
       setSectionIds([]);
     }
   }
   if (!open && initKey !== null) setInitKey(null);
+
+  // "Specific classes…" is offered for informational events only.
+  const scopeOptions: ScopeChoice[] =
+    selected.target === 'event'
+      ? ['all', 'primary', 'secondary', 'levels', 'classes']
+      : ['all', 'primary', 'secondary', 'levels'];
+
+  function changeType(next: string) {
+    setTypeKey(next);
+    const nextType = ENTRY_TYPES.find((t) => t.key === next);
+    // A closure is never per-class — fall back to the whole school.
+    if (nextType?.target === 'day' && scope === 'classes') setScope('all');
+  }
+
+  /** The audiences a day-type save writes (one row each per date). */
+  function dayAudiences(): DayAudience[] {
+    // Exactly the codes picked — never collapsed to a half or the whole
+    // school, which would also take in Youngstarters (see event-scope.ts).
+    if (scope === 'levels') return sortLevels(levels);
+    if (scope === 'primary' || scope === 'secondary') return [scope];
+    return ['all'];
+  }
+
+  /** An informational event's stored scope. */
+  function eventScope(): {
+    audience: Audience;
+    levels: LevelCode[] | null;
+    sectionIds: string[] | null;
+  } {
+    if (scope === 'classes') {
+      return { audience: 'all', levels: null, sectionIds };
+    }
+    if (scope === 'levels') {
+      // The calendar_events_derive_audience trigger sets `audience` from the
+      // levels, so the 'all' sent here is only a placeholder.
+      return { audience: 'all', levels: sortLevels(levels), sectionIds: null };
+    }
+    // Whole school / a half: `levels: null` keeps the audience as sent (the
+    // calendar_events_derive_audience trigger only derives from levels or
+    // classes). Explicit nulls CLEAR any earlier scope on an edit — the route
+    // forwards only what is sent, so an omitted key would leave it untouched.
+    return { audience: scope, levels: null, sectionIds: null };
+  }
 
   // `onCreated` closes the dialog and nothing more — the refresh it used to
   // also fire now belongs to this write, so the toast can wait for it. The
@@ -264,9 +318,10 @@ export function EventEditorDialog({
         }));
         return apiFetch(
           '/api/attendance/calendar',
-          jsonInit('POST', { termId, audience: eventAudience, entries })
+          jsonInit('POST', { termId, audiences: dayAudiences(), entries })
         );
       }
+      const scoped = eventScope();
       return apiFetch(
         '/api/attendance/calendar/events',
         jsonInit(
@@ -278,11 +333,7 @@ export function EventEditorDialog({
                 endDate: end,
                 label: label.trim(),
                 category: selected.category,
-                audience: eventAudience,
-                // Explicit [] -> null CLEARS the scope; the route forwards only
-                // what is sent, so an omitted key would leave it untouched.
-                levels: levels.length > 0 ? levels : null,
-                sectionIds: sectionIds.length > 0 ? sectionIds : null,
+                ...scoped,
                 pastDateOverride: end < sgToday(),
               }
             : {
@@ -291,9 +342,7 @@ export function EventEditorDialog({
                 endDate: end,
                 label: label.trim(),
                 category: selected.category,
-                audience: eventAudience,
-                levels: levels.length > 0 ? levels : null,
-                sectionIds: sectionIds.length > 0 ? sectionIds : null,
+                ...scoped,
                 pastDateOverride: end < sgToday(),
               }
         )
@@ -325,6 +374,14 @@ export function EventEditorDialog({
       toast.error('Label is required');
       return;
     }
+    if (scope === 'levels' && levels.length === 0) {
+      toast.error('Pick at least one level');
+      return;
+    }
+    if (scope === 'classes' && sectionIds.length === 0) {
+      toast.error('Pick at least one class');
+      return;
+    }
     // A date that has already passed is editable, but warn first (the change
     // still goes through on confirm, flagged in the audit trail). Today/future
     // saves directly. "Passed" = the entry's end date is before today, so an
@@ -350,8 +407,8 @@ export function EventEditorDialog({
             </DialogTitle>
             <DialogDescription>
               {isEdit
-                ? "Update the event's dates, label, type, or level."
-                : 'Pick a type and the level it applies to. Holidays / HBL change whether attendance is taken; everything else is just a labelled note.'}
+                ? "Update the event's dates, label, type, or who it is for."
+                : 'Pick a type and who it is for. Holidays / HBL change whether attendance is taken; everything else is just a labelled note.'}
             </DialogDescription>
           </DialogHeader>
 
@@ -359,7 +416,7 @@ export function EventEditorDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Type</Label>
-                <Select value={typeKey} onValueChange={setTypeKey}>
+                <Select value={typeKey} onValueChange={changeType}>
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Pick a type" />
                   </SelectTrigger>
@@ -372,41 +429,35 @@ export function EventEditorDialog({
                   </SelectContent>
                 </Select>
               </div>
-              {/* A closure is whole-school or one half of it — school_calendar
-                  has no level column, and nothing in two years of HFSE's
-                  calendar closes school for a single level. Informational
-                  events get the real scope picker below instead. */}
-              {selected.target === 'day' ? (
-                <div className="space-y-1.5">
-                  <Label>Who is it for?</Label>
-                  <Select
-                    value={eventAudience}
-                    onValueChange={(v) => setEventAudience(v as Audience)}
-                  >
-                    <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Pick a level" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {AUDIENCE_VALUES.map((a) => (
-                        <SelectItem key={a} value={a}>
-                          {a === 'all' ? 'Whole school' : AUDIENCE_LABELS[a]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : null}
+              <div className="space-y-1.5">
+                <Label>Who is it for?</Label>
+                <Select
+                  value={scope}
+                  onValueChange={(v) => setScope(v as ScopeChoice)}
+                >
+                  <SelectTrigger className="h-9" aria-label="Who is it for?">
+                    <SelectValue placeholder="Pick who it is for" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {scopeOptions.map((s) => (
+                      <SelectItem key={s} value={s}>
+                        {SCOPE_CHOICE_LABELS[s]}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
-            {selected.target === 'event' ? (
-              <EventScopeField
+            {scope === 'levels' ? (
+              <LevelPicker
                 levels={levels}
-                sectionIds={sectionIds}
-                onChange={(next) => {
-                  setLevels(next.levels);
-                  setSectionIds(next.sectionIds);
-                }}
+                onChange={setLevels}
+                mixedNote={selected.target === 'event'}
               />
+            ) : null}
+            {scope === 'classes' && selected.target === 'event' ? (
+              <ClassPicker sectionIds={sectionIds} onChange={setSectionIds} />
             ) : null}
 
             <div className="grid grid-cols-2 gap-3">

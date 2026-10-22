@@ -5,9 +5,45 @@ import {
   eventAppliesToSection,
   describeLevelScope,
   isContiguousRun,
+  scopeChoiceForEvent,
   sortLevels,
   spansBothBands,
 } from '@/lib/attendance/event-scope';
+
+describe('scopeChoiceForEvent', () => {
+  const base = { audience: 'all' as const, levels: null, sectionIds: null };
+
+  it('an event with no levels opens on its audience', () => {
+    expect(scopeChoiceForEvent(base).choice).toBe('all');
+    expect(scopeChoiceForEvent({ ...base, audience: 'secondary' }).choice).toBe(
+      'secondary'
+    );
+  });
+
+  it('saved levels always open as Specific levels, even a whole half', () => {
+    // Never "Primary": that option takes in Youngstarters, and saving the
+    // event untouched must write back exactly the levels it had.
+    expect(
+      scopeChoiceForEvent({
+        ...base,
+        audience: 'primary',
+        levels: ['P6', 'P1', 'P2', 'P3', 'P4', 'P5'],
+      })
+    ).toEqual({
+      choice: 'levels',
+      levels: ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'],
+      sectionIds: [],
+    });
+  });
+
+  it('saved classes open as Specific classes', () => {
+    expect(scopeChoiceForEvent({ ...base, sectionIds: ['s1'] })).toEqual({
+      choice: 'classes',
+      levels: [],
+      sectionIds: ['s1'],
+    });
+  });
+});
 
 describe('sortLevels', () => {
   it('returns the canonical P1→S4 order, not click order', () => {
@@ -192,5 +228,39 @@ describe('eventAppliesToSection', () => {
         unknown
       )
     ).toBe(false);
+  });
+
+  it('counts Youngstarters as primary, not secondary', () => {
+    const ys = { levelCode: 'YS', sectionId: 'sec-ys' };
+    const band = (audience: 'primary' | 'secondary') => ({
+      audience,
+      levels: null,
+      sectionIds: null,
+    });
+    expect(eventAppliesToSection(band('primary'), ys)).toBe(true);
+    expect(eventAppliesToSection(band('secondary'), ys)).toBe(false);
+    // A level-scoped event never names YS, so it never reaches YS.
+    expect(
+      eventAppliesToSection(
+        { audience: 'primary', levels: ['P1', 'P2'], sectionIds: null },
+        ys
+      )
+    ).toBe(false);
+  });
+
+  it('an unknown level code sees only whole-school events', () => {
+    const odd = { levelCode: 'K9', sectionId: 'sec-k9' };
+    expect(
+      eventAppliesToSection(
+        { audience: 'secondary', levels: null, sectionIds: null },
+        odd
+      )
+    ).toBe(false);
+    expect(
+      eventAppliesToSection(
+        { audience: 'all', levels: null, sectionIds: null },
+        odd
+      )
+    ).toBe(true);
   });
 });

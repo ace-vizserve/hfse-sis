@@ -38,7 +38,7 @@ import {
 } from '@/lib/attendance/calendar-operational';
 import {
   DAY_AUDIENCE_LABELS,
-  type Audience,
+  DAY_AUDIENCE_VALUES,
   type DayAudience,
 } from '@/lib/schemas/attendance';
 
@@ -48,7 +48,7 @@ interface DayActionSheetProps {
   iso: string | null;
   termId: string;
   /** The clicked date's school_calendar row per audience (null = none). */
-  rowsByAudience: Record<Audience, SchoolCalendarRow | null>;
+  rowsByAudience: Partial<Record<DayAudience, SchoolCalendarRow | null>>;
   events: CalendarEventRow[];
   editable: boolean;
   onClose: () => void;
@@ -70,7 +70,9 @@ function formatIso(iso: string): string {
   });
 }
 
-const AUDS: Audience[] = ['all', 'primary', 'secondary'];
+// Whole school, then each half, then each level (migration 196) — the order
+// the rows read in the sheet.
+const AUDS: readonly DayAudience[] = DAY_AUDIENCE_VALUES;
 
 function isWeekend(iso: string): boolean {
   const [y, m, d] = iso.split('-').map(Number);
@@ -112,8 +114,8 @@ export function DayActionSheet({
   const isEmpty = overrides.length === 0 && events.length === 0;
 
   // Revert a school-status override back to a regular school day. Whole-school
-  // ('all') is set explicitly to school_day; a level override is dropped so it
-  // follows the school-wide day again. `busyKey` still gates the specific row's
+  // ('all') is set explicitly to school_day; a band or level override (e.g.
+  // `?audience=P1`) is dropped so it follows the school-wide day again. `busyKey` still gates the specific row's
   // button. Route-specific error copy is preserved — ApiError.message resolves
   // the body's `error`/`message`.
   //
@@ -221,7 +223,7 @@ export function DayActionSheet({
                       >
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="icon"
                           className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
                           aria-label="Revert to a regular school day"
@@ -247,7 +249,7 @@ export function DayActionSheet({
                       <div className="flex shrink-0 items-center gap-1">
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="icon"
                           className="size-7"
                           aria-label={`Edit ${e.label}`}
@@ -257,7 +259,7 @@ export function DayActionSheet({
                         </Button>
                         <Button
                           type="button"
-                          variant="ghost"
+                          variant="outline"
                           size="icon"
                           className="size-7 text-destructive hover:bg-destructive/10 hover:text-destructive"
                           aria-label={`Delete ${e.label}`}

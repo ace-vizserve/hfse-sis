@@ -14,7 +14,13 @@ import {
   dayStatusLabel,
   sameStatus,
   storageToDayStatus,
+  type DayStatus,
 } from '@/lib/attendance/calendar-operational';
+import {
+  LEVEL_CODES,
+  LEVEL_TYPE_BY_CODE,
+  type LevelCode,
+} from '@/lib/sis/levels';
 import {
   AUDIENCE_LABELS,
   type Audience,
@@ -108,6 +114,47 @@ export function useCalendarIndex(
           color: DAY_TYPE_LEGEND_COLOR[allRow.dayType],
         });
       }
+      // Level rows (migration 196, e.g. "No class — P1"). A level differs from
+      // the rest of its half only when its own row says something else, so a
+      // chip is shown only then, labelled with the code the way the band chips
+      // carry "Primary:". Neighbouring levels with the same status share one
+      // chip ("P1, P2: No class") so a three-level closure fits the cell.
+      const groups: Array<{
+        codes: LevelCode[];
+        lastIdx: number;
+        status: DayStatus;
+        row: SchoolCalendarRow;
+      }> = [];
+      LEVEL_CODES.forEach((code, idx) => {
+        const row = aud[code];
+        if (!row) return;
+        const parent =
+          (LEVEL_TYPE_BY_CODE[code] === 'primary' ? pRow : sRow) ?? allRow;
+        const parentStatus: DayStatus = parent
+          ? statusOf(parent)
+          : { kind: 'open', hbl: false };
+        const status = statusOf(row);
+        if (sameStatus(status, parentStatus)) return;
+        const last = groups[groups.length - 1];
+        if (
+          last &&
+          last.lastIdx === idx - 1 &&
+          sameStatus(last.status, status)
+        ) {
+          last.codes.push(code);
+          last.lastIdx = idx;
+        } else {
+          groups.push({ codes: [code], lastIdx: idx, status, row });
+        }
+      });
+      for (const g of groups) {
+        chips.push({
+          key: `${iso}:${g.codes.join('-')}`,
+          label: `${g.codes.join(', ')}: ${dayStatusLabel(g.status)}`,
+          color: DAY_TYPE_LEGEND_COLOR[g.row.dayType],
+        });
+      }
+
       if (chips.length) entriesByIso.set(iso, chips);
     }
 
