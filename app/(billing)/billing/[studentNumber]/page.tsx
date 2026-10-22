@@ -13,7 +13,6 @@ import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 
 import { BillingPageHeader } from '@/components/billing/billing-page-header';
-import { CreditPanel } from '@/components/billing/credit-panel';
 import { CustomerActions } from '@/components/billing/customer-actions';
 import { CustomerTabs } from '@/components/billing/customer-tabs';
 import { EditCustomerButton } from '@/components/billing/edit-customer-button';
@@ -304,7 +303,7 @@ export default async function BillingCustomerPage({
                 }
                 subtext={
                   b.credit > 0
-                    ? 'Use it on an invoice below'
+                    ? 'Credit notes and payments not used yet'
                     : 'No unused credit'
                 }
               />
@@ -326,21 +325,6 @@ export default async function BillingCustomerPage({
               />
             </div>
           </div>
-
-          {b.credit > 0 && (
-            <CreditPanel
-              studentNumber={page.studentNumber}
-              studentName={name}
-              credit={b.credit}
-              openInvoices={page.openInvoices}
-              credits={page.credits}
-              charges={page.openCharges}
-              creditNotes={page.openCredits}
-              depositAccounts={page.depositAccounts}
-              paymentMethods={page.paymentMethods}
-              customerBalance={b.openBalance}
-            />
-          )}
 
           <CustomerTabs
             studentNumber={page.studentNumber}
