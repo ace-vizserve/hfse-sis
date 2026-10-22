@@ -217,4 +217,18 @@ Mr Ace: _"i have seen events named P6 Fieldtrip and its assigned to whole school
 
 ⚠ **A MULTI-DAY EVENT IS NOT NECESSARILY ONE ROW.** The original T3 import wrote one row per tagged date, so Leadership Camp is three rows that all read "Leadership Camp". The first backfill matched on `start_date` and scoped the 14th while leaving the 15th and 16th whole-school — **with the count still reading 40, which looked right**. Match the whole span.
 
-⚠ **Closures are deliberately NOT level-scoped.** `school_calendar` has no level column, and all 28 labelled day rows are whole-school. The event dialog keeps the old three-value control for day-affecting entries.
+⚠ **Closures are deliberately NOT level-scoped.** `school_calendar` has no level column, and all 28 labelled day rows are whole-school. The event dialog keeps the old three-value control for day-affecting entries. **Superseded by KD #233 (2026-10-22): closures can now be set for one level.**
+
+### KD #233
+
+**A closure (or any day type) can be set for one level, and the add dialog has one "Who is it for?" for every type — migration 196, 2026-10-22, local stack only.**
+
+Mr Ace, adding a P1-only event: _"i need to select others to specifically select that this is event is for P1 only. why not just allow that for every event?"_ then _"I can select grade level specific and whole level or whole school, like combine the idea"_ and _"in the select there is the option for only specific levels then the pick levels component will show"_.
+
+`school_calendar.audience` now also holds the ten codes P1–P6 / S1–S4, one row per level (the unique key `(term_id, audience, date)` already fits). **For a section on a date the row that applies is its level code, then its band, then `'all'`.** Written twice and kept in step: `lib/attendance/school-days.ts` (`dayAudiencesFor` / `pickDayRow` / `pickDayRowPerDate`, the one TS copy every reader uses) and `attendance_write_blocked` in SQL (196). Readers pass the section's level CODE, never the band. Youngstarters (YS) gets no level option and reads its band, `'primary'` — 196 also made the SQL agree with the TS here; before, the SQL read YS as `'all'` only.
+
+`calendar_events.audience` stays three-valued — events scope by `levels` / `section_ids` (KD #215). The two vocabularies are separate types: `Audience` (events) and `DayAudience` (days).
+
+The dialog: one Select — Whole school / Primary / Secondary / Specific levels… / Specific classes… (classes for informational events only). "Specific levels…" saves exactly the codes picked — never collapsed to a band or `'all'`, because Youngstarters reads `'primary'` and `'all'`, so collapsing P1–P6 would quietly close YS too. The POST route takes `audiences` and writes one row per audience per date in one upsert; DELETE `?audience=P1` removes only that row, and an unknown audience is a 400 (it used to fall back to `'all'` and would have removed the whole-school row).
+
+Deliberately unchanged — still `'all'` only: the attendance dashboard's day-type donut and "is today a school day", the drill calendar, `loadTermTripContext`.
