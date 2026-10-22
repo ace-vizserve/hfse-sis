@@ -44,9 +44,10 @@ import {
 } from '@/lib/attendance/calendar-operational';
 import {
   AUDIENCE_LABELS,
+  DAY_AUDIENCE_LABELS,
   EVENT_CATEGORY_LABELS,
   isEncodableDayType,
-  type Audience,
+  type DayAudience,
 } from '@/lib/schemas/attendance';
 
 // ─── Unified row model ────────────────────────────────────────────────────────
@@ -62,8 +63,8 @@ type ListRow = {
   typeColor: ChartLegendChipColor;
   /** Closure label (null → '—') or event.label. */
   label: string;
-  /** Audience value for the Level column. */
-  level: Audience;
+  /** Audience value for the Level column (a closure may name one level). */
+  level: DayAudience;
 };
 
 // ─── Row key helper ───────────────────────────────────────────────────────────
@@ -189,7 +190,7 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     // AUDIENCE_LABELS) compares like-for-like — a raw 'primary' accessor would
     // never match the 'Primary' facet option.
     id: 'level',
-    accessorFn: (row) => AUDIENCE_LABELS[row.level],
+    accessorFn: (row) => DAY_AUDIENCE_LABELS[row.level],
     header: 'Level',
     // Audience chip — plain neutral Badge (§9.3 "informational/neutral"
     // recipe), pairing with the Type column's colored ChartLegendChip so a
@@ -197,7 +198,7 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
     // plain text.
     cell: ({ row }) => (
       <Badge variant="secondary" className="h-5 px-1.5 text-[10px]">
-        {AUDIENCE_LABELS[row.original.level]}
+        {DAY_AUDIENCE_LABELS[row.original.level]}
       </Badge>
     ),
   },

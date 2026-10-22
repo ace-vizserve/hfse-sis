@@ -18,7 +18,6 @@ import { loadClassroomAccess } from '@/lib/classroom/queries';
 import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
 type LevelLite = { code: string; label: string };
@@ -121,10 +120,8 @@ export default async function TermSheetSummaryPage({
   };
   const enrolmentList = (enrolmentsRaw ?? []) as EnrolmentRow[];
 
-  const sectionLevelType = levelTypeForAudienceLookup(level?.code ?? null);
-
   const [calendar, daily] = await Promise.all([
-    getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
+    getDedupedSchoolCalendarForTerm(selectedTermId, level?.code ?? null),
     getDailyForSection(sectionId, selectedTermId),
   ]);
 

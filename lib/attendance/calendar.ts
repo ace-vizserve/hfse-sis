@@ -1,22 +1,34 @@
 import { createServiceClient } from '@/lib/supabase/service';
 import {
+  DAY_AUDIENCE_VALUES,
   isEncodableDayType,
   type Audience,
+  type DayAudience,
   type DayType,
   type EventCategory,
 } from '@/lib/schemas/attendance';
 import { eventAppliesToSection } from '@/lib/attendance/event-scope';
-import type { LevelCode } from '@/lib/sis/levels';
+import {
+  dayAudiencesFor,
+  pickDayRowPerDate,
+} from '@/lib/attendance/school-days';
+import {
+  LEVEL_CODES,
+  LEVEL_TYPE_BY_CODE,
+  type LevelCode,
+} from '@/lib/sis/levels';
 
 // Attendance module — school-calendar helpers. Server-only reads.
 //
 // Writes go through /api/attendance/calendar (service-role). RLS blocks
 // direct cookie-client writes.
 //
-// Audience scope (migration 037): every row carries `audience IN
-// ('all','primary','secondary')`. The default 'all' matches every section.
-// Primary / secondary rows take precedence over the matching 'all' row for
-// the same date, scoped to the section's level type.
+// Audience scope (migration 037, widened by 196): every `school_calendar` row
+// carries `audience IN ('all','primary','secondary', P1–P6, S1–S4)`. For one
+// section on a date the row that applies is its level code's, else its band's,
+// else the 'all' row — `pickDayRow` in ./school-days is that rule.
+// `calendar_events.audience` stays three-valued (events scope to levels
+// through `levels` / `section_ids`, migration 158).
 
 export type SchoolCalendarRow = {
   id: string;
@@ -28,7 +40,8 @@ export type SchoolCalendarRow = {
    *  New code should branch on `dayType`. */
   isHoliday: boolean;
   label: string | null;
-  audience: Audience;
+  /** 'all', a band, or one level code (migration 196). */
+  audience: DayAudience;
   /** When true, a school_holiday row is also encodable as HBL (migration 051). */
   hblOverlay: boolean;
 };
@@ -61,7 +74,7 @@ type RawSchoolCalendarRow = {
   day_type: DayType;
   is_holiday: boolean;
   label: string | null;
-  audience: Audience;
+  audience: DayAudience;
   hbl_overlay: boolean;
 };
 
@@ -78,10 +91,22 @@ type RawCalendarEventRow = {
   tentative: boolean;
 };
 
-// Filter helper — given the active audience filter, returns the audience
-// values that should be visible. 'all' returns everything; 'primary' /
-// 'secondary' returns rows for that audience plus the 'all' rows.
-function audienceFilterValues(filter: Audience): Audience[] {
+// Filter helper for the admin calendar's view — given the active audience
+// filter, returns the `school_calendar` audience values that should be
+// visible. 'all' returns every value (all thirteen); 'primary' / 'secondary'
+// returns that band's rows, its levels' rows (a P1 row belongs in the Primary
+// view) and the 'all' rows.
+function audienceFilterValues(filter: Audience): DayAudience[] {
+  if (filter === 'all') return [...DAY_AUDIENCE_VALUES];
+  return [
+    'all',
+    filter,
+    ...LEVEL_CODES.filter((c) => LEVEL_TYPE_BY_CODE[c] === filter),
+  ];
+}
+
+// Same question for `calendar_events`, whose audience is still three-valued.
+function eventAudienceFilterValues(filter: Audience): Audience[] {
   if (filter === 'all') return ['all', 'primary', 'secondary'];
   return ['all', filter];
 }
@@ -95,6 +120,13 @@ export async function getSchoolCalendarForTerm(
   termId: string,
   audience: Audience = 'all'
 ): Promise<SchoolCalendarRow[]> {
+  return readSchoolCalendarRows(termId, audienceFilterValues(audience));
+}
+
+async function readSchoolCalendarRows(
+  termId: string,
+  audiences: DayAudience[]
+): Promise<SchoolCalendarRow[]> {
   const service = createServiceClient();
   const { data, error } = await service
     .from('school_calendar')
@@ -102,7 +134,7 @@ export async function getSchoolCalendarForTerm(
       'id, term_id, date, day_type, is_holiday, label, audience, hbl_overlay'
     )
     .eq('term_id', termId)
-    .in('audience', audienceFilterValues(audience))
+    .in('audience', audiences)
     .order('date', { ascending: true });
   if (error) {
     console.error(
@@ -134,7 +166,7 @@ export async function getCalendarEventsForTerm(
       'id, term_id, start_date, end_date, label, category, audience, levels, section_ids, tentative'
     )
     .eq('term_id', termId)
-    .in('audience', audienceFilterValues(audience))
+    .in('audience', eventAudienceFilterValues(audience))
     .order('start_date', { ascending: true });
   if (error) {
     console.error(
@@ -185,36 +217,21 @@ export async function getCalendarEventsForSection(
 }
 
 // Returns the term's `school_calendar` rows with audience precedence
-// applied — exactly one row per date, preferring the level-specific
-// override over the `'all'` baseline when both exist (KD #50 + KD #76).
+// applied — exactly one row per date: the section's level-code row, else its
+// band's, else the `'all'` baseline (KD #50 + KD #76, migration 196).
 //
-// `levelType` is the section's level type ('primary' | 'secondary' | null).
-// null = unmatched/unresolved level — falls through to audience='all' rows.
+// `levelCode` is the section's level code (e.g. 'P1'). The band is derived
+// from it; null, or a level with no band, reads only audience='all' rows.
 //
 // Use this helper anywhere the UI iterates one column / row per date
 // (the attendance grid, calendar admin, anything that mustn't double up
 // on dates that have both a baseline and an override).
 export async function getDedupedSchoolCalendarForTerm(
   termId: string,
-  levelType: 'primary' | 'secondary' | null = null
+  levelCode: string | null
 ): Promise<SchoolCalendarRow[]> {
-  const audience: Audience = levelType ?? 'all';
-  const rows = await getSchoolCalendarForTerm(termId, audience);
-  const byDate = new Map<string, SchoolCalendarRow>();
-  for (const r of rows) {
-    const cur = byDate.get(r.date);
-    if (!cur) {
-      byDate.set(r.date, r);
-      continue;
-    }
-    // Prefer the row whose audience matches `levelType` (specific wins).
-    if (cur.audience === 'all' && r.audience !== 'all') {
-      byDate.set(r.date, r);
-    }
-  }
-  return Array.from(byDate.values()).sort((a, b) =>
-    a.date < b.date ? -1 : a.date > b.date ? 1 : 0
-  );
+  const rows = await readSchoolCalendarRows(termId, dayAudiencesFor(levelCode));
+  return pickDayRowPerDate(rows, levelCode);
 }
 
 // Convenience: returns the list of encodable dates for a term in
@@ -223,56 +240,12 @@ export async function getDedupedSchoolCalendarForTerm(
 // Same audience-precedence semantics as `getDedupedSchoolCalendarForTerm`.
 export async function getEncodableDatesForTerm(
   termId: string,
-  levelType: 'primary' | 'secondary' | null = null
+  levelCode: string | null
 ): Promise<string[]> {
-  const rows = await getDedupedSchoolCalendarForTerm(termId, levelType);
+  const rows = await getDedupedSchoolCalendarForTerm(termId, levelCode);
   return rows
     .filter((r) => isEncodableDayType(r.dayType, r.hblOverlay))
     .map((r) => r.date);
-}
-
-// Fast lookup: is a given date a holiday in this term? Returns null when
-// the term has no calendar rows (legacy mode). "Holiday" here means
-// "not encodable" — public_holiday / school_holiday / no_class all return
-// true. school_day + hbl return false.
-//
-// `levelType` enforces the audience-precedence rule (specific row wins
-// over 'all'). null = unmatched/unresolved level (only 'all' rows considered).
-// fallow-ignore-next-line unused-export
-export async function isHoliday(
-  termId: string,
-  date: string,
-  levelType: 'primary' | 'secondary' | null = null
-): Promise<boolean | null> {
-  const service = createServiceClient();
-
-  // Count all rows first (to distinguish "no calendar" from "not listed").
-  const { count: termRowCount } = await service
-    .from('school_calendar')
-    .select('*', { count: 'exact', head: true })
-    .eq('term_id', termId);
-  if ((termRowCount ?? 0) === 0) return null;
-
-  const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
-  const { data } = await service
-    .from('school_calendar')
-    .select('day_type, audience, hbl_overlay')
-    .eq('term_id', termId)
-    .eq('date', date)
-    .in('audience', audiences);
-  if (!data || data.length === 0) {
-    // Not listed → treat as "not a school day" (grid shouldn't render it).
-    return true;
-  }
-  // Audience precedence: prefer the level-specific row over 'all'.
-  const rows = data as Array<{
-    day_type: DayType;
-    audience: Audience;
-    hbl_overlay: boolean;
-  }>;
-  const specific = rows.find((r) => r.audience === levelType);
-  const chosen = specific ?? rows[0];
-  return !isEncodableDayType(chosen.day_type, chosen.hbl_overlay ?? false);
 }
 
 // Find the most recent prior AY that has a term with the given term_number,
@@ -328,6 +301,8 @@ export async function listPriorAyEntriesForCopy(
       .maybeSingle();
     if (!term) continue;
     const termId = (term as { id: string }).id;
+    // 'all' reads every audience, level-code rows (migration 196) included —
+    // a "No class — P1" closure is an override like any other.
     const allRows = await getSchoolCalendarForTerm(termId, 'all');
     // Copy-forward focuses on overrides — school_day rows are the auto-seed
     // default and don't need to be re-copied.

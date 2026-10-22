@@ -64,14 +64,61 @@ function calendarCode(levelCode: string | null): LevelCode | null {
     : null;
 }
 
-/** The audiences a section with this level code sees: 'all', band, code. */
-function audiencesFor(levelCode: string | null): DayAudience[] {
+/**
+ * The audiences a section with this level code sees: 'all', band, code.
+ *
+ * Shared by every reader of `school_calendar` that answers for ONE section
+ * (the register, the summary card, the report card, the monthly breakdown) —
+ * the `.in('audience', …)` list and `pickDayRow` below are the whole rule.
+ */
+export function dayAudiencesFor(levelCode: string | null): DayAudience[] {
   const band = levelTypeForAudienceLookup(levelCode);
   const code = calendarCode(levelCode);
   const audiences: DayAudience[] = ['all'];
   if (band) audiences.push(band);
   if (code) audiences.push(code);
   return audiences;
+}
+
+/**
+ * Of one date's rows, the one that applies to this section: its level code's
+ * row, else its band's, else the 'all' row. Undefined when none of the rows
+ * is aimed at an audience the section sees — callers read that as "date not
+ * listed", the same as no rows at all.
+ */
+export function pickDayRow<T extends { audience: DayAudience }>(
+  rowsForDate: readonly T[],
+  levelCode: string | null
+): T | undefined {
+  const band = levelTypeForAudienceLookup(levelCode);
+  const code = calendarCode(levelCode);
+  return (
+    (code ? rowsForDate.find((r) => r.audience === code) : undefined) ??
+    (band ? rowsForDate.find((r) => r.audience === band) : undefined) ??
+    rowsForDate.find((r) => r.audience === 'all')
+  );
+}
+
+/**
+ * `pickDayRow` over a whole span: exactly one row per date (a date carrying
+ * an 'all' row AND a band or level row must count once), in date order. A
+ * date whose rows are all aimed at other audiences is dropped.
+ */
+export function pickDayRowPerDate<
+  T extends { date: string; audience: DayAudience },
+>(rows: readonly T[], levelCode: string | null): T[] {
+  const byDate = new Map<string, T[]>();
+  for (const r of rows) {
+    const bucket = byDate.get(r.date);
+    if (bucket) bucket.push(r);
+    else byDate.set(r.date, [r]);
+  }
+  const out: T[] = [];
+  for (const bucket of byDate.values()) {
+    const chosen = pickDayRow(bucket, levelCode);
+    if (chosen) out.push(chosen);
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 }
 
 /**
@@ -90,19 +137,14 @@ export function decideNonSchoolDay(
   levelCode: string | null,
   termHasAnyRows: boolean
 ): boolean {
-  if (rowsForDate.length === 0) {
-    // Date not listed for any audience this section sees. If the term has any
-    // rows at all, treat as non-school (implicit holiday); otherwise legacy
-    // mode — no block.
+  const chosen = pickDayRow(rowsForDate, levelCode);
+  if (!chosen) {
+    // Date not listed for any audience this section sees (no rows, or only
+    // rows aimed at someone else). If the term has any rows at all, treat as
+    // non-school (implicit holiday); otherwise legacy mode — no block. Same
+    // as the SQL gate's "no hit → blocked".
     return termHasAnyRows;
   }
-  const band = levelTypeForAudienceLookup(levelCode);
-  const code = calendarCode(levelCode);
-  const chosen =
-    (code ? rowsForDate.find((r) => r.audience === code) : undefined) ??
-    (band ? rowsForDate.find((r) => r.audience === band) : undefined) ??
-    rowsForDate.find((r) => r.audience === 'all') ??
-    rowsForDate[0];
   // school_holiday + hbl_overlay=true IS encodable — teachers deliver HBL
   // while the day is a school closure for students (migration 051).
   return !isEncodableDayType(chosen.day_type, chosen.hbl_overlay ?? false);
@@ -126,7 +168,7 @@ export function createNonSchoolDayChecker(
     const cached = blockCache.get(key);
     if (cached !== undefined) return cached;
 
-    const audiences = audiencesFor(levelCode);
+    const audiences = dayAudiencesFor(levelCode);
     const { data } = await service
       .from('school_calendar')
       .select('day_type, audience, hbl_overlay')
@@ -234,7 +276,7 @@ export async function expandSchoolDays(
   if (dated.length === 0) return [];
 
   const termIds = [...new Set(dated.map((d) => d.termId))];
-  const audiences = audiencesFor(levelCode);
+  const audiences = dayAudiencesFor(levelCode);
 
   // One query for the whole window rather than one per day. The shipped
   // per-date checker is fine for a class-sized submit; a declaration range is

@@ -4,7 +4,11 @@ import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
-import { expandSchoolDays } from '@/lib/attendance/school-days';
+import {
+  dayAudiencesFor,
+  expandSchoolDays,
+  pickDayRowPerDate,
+} from '@/lib/attendance/school-days';
 import {
   computeSectionAttendanceSummary,
   type SectionAttendanceSummary,
@@ -17,12 +21,11 @@ import {
   noteMemoryKey,
   statusTakesNote,
   type AttendanceStatus,
-  type Audience,
+  type DayAudience,
   type NoteMemory,
   type DayType,
   type ExReason,
 } from '@/lib/schemas/attendance';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 
 // Attendance module — server-side read helpers.
@@ -411,9 +414,9 @@ export type { SectionAttendanceSummary } from './section-summary';
  * ── QUERY SHAPE — 4 round trips added, still TWO WAVES ─────────────────────
  *
  * Wave 1 issues the two reads that depend on nothing: the section (joined to
- * its level, so the level type costs no second trip) and the roster with its
+ * its level, so the level code costs no second trip) and the roster with its
  * enrolment windows. Wave 2 issues the three that depend on them — the term
- * calendar needs the level type; the rollups and the marked dates need the
+ * calendar needs the level code; the rollups and the marked dates need the
  * enrolment ids.
  *
  * ⚠ THE ROSTER IS READ TWICE AND THAT IS DELIBERATE. `getRollupForSection` is
@@ -433,7 +436,7 @@ export async function getSectionAttendanceSummary(
   // ⚠ STARTED HERE, AWAITED LATER, AND THE ORDER IS LOAD-BEARING.
   // `getRollupForSection` is itself two waves deep (roster, then rollup rows).
   // Awaiting it below alongside the calendar — which cannot start until the
-  // level type arrives — would stack its two waves after this one and take the
+  // level code arrives — would stack its two waves after this one and take the
   // classroom page from 2 waves to 3. Kicked off in the first wave, its second
   // trip overlaps the calendar's first and the depth is unchanged.
   const rollupsPromise = getRollupForSection(sectionId, termId);
@@ -441,7 +444,7 @@ export async function getSectionAttendanceSummary(
   const [sectionRes, enrolmentRes] = await Promise.all([
     service
       .from('sections')
-      .select('id, level:levels(level_type)')
+      .select('id, level:levels(code)')
       .eq('id', sectionId)
       .maybeSingle(),
     service
@@ -452,17 +455,13 @@ export async function getSectionAttendanceSummary(
 
   const levelRaw = (
     sectionRes.data as {
-      level?: { level_type?: string }[] | { level_type?: string } | null;
+      level?: { code?: string }[] | { code?: string } | null;
     } | null
   )?.level;
   const level = Array.isArray(levelRaw) ? levelRaw[0] : levelRaw;
-  // Only primary and secondary carry audience overrides (KD #50/#76).
-  // Preschool and an unresolved level both fall through to the 'all' baseline,
-  // which is what `null` means to the calendar helper.
-  const levelType =
-    level?.level_type === 'primary' || level?.level_type === 'secondary'
-      ? level.level_type
-      : null;
+  // The calendar helper ranks the code's row → its band's → 'all' (KD #50/#76,
+  // migration 196). An unresolved level is `null` and reads only 'all'.
+  const levelCode = level?.code ?? null;
 
   const enrolments: SummaryEnrolmentInput[] = (
     (enrolmentRes.data ?? []) as Array<{
@@ -480,7 +479,7 @@ export async function getSectionAttendanceSummary(
   const enrolmentIds = enrolments.map((e) => e.sectionStudentId);
 
   const [encodableDates, rollups, markedDates] = await Promise.all([
-    getEncodableDatesForTerm(termId, levelType),
+    getEncodableDatesForTerm(termId, levelCode),
     rollupsPromise,
     listMarkedDatesForSection(termId, enrolmentIds),
   ]);
@@ -555,39 +554,30 @@ export type MonthlyBreakdownRow = {
 
 // Pure seam (exported for unit tests): count encodable school days per month
 // (yyyy-MM) from raw `school_calendar` rows, applying the KD #50/#76
-// audience-precedence rule — exactly ONE row per date, the level-specific
-// override beating the `'all'` baseline. Without the dedupe, a date carrying
-// BOTH an `'all'` row and an audience-specific row (unique key is
-// `(term_id, audience, date)`, migration 037) counted twice and deflated the
-// monthly %. Encodable = `isEncodableDayType` (school_day / hbl / HBL-overlaid
-// school_holiday, KD #98).
+// audience-precedence rule — exactly ONE row per date, the student's level
+// code row beating its band's, beating the `'all'` baseline (migration 196).
+// Without the dedupe, a date carrying BOTH an `'all'` row and an
+// audience-specific row (unique key is `(term_id, audience, date)`, migration
+// 037) counted twice and deflated the monthly %. Encodable =
+// `isEncodableDayType` (school_day / hbl / HBL-overlaid school_holiday, KD #98).
 //
-// Callers must pre-filter the rows to `audience IN ('all', <levelType>)` —
-// any non-'all' row seen here is assumed to be the student's own audience.
+// Rows aimed at an audience the student does not see are ignored here, but
+// callers should still read only `dayAudiencesFor(levelCode)`.
 export type CalendarDayLite = {
   date: string; // yyyy-MM-dd
-  audience: Audience;
+  audience: DayAudience;
   day_type: DayType;
   hbl_overlay: boolean | null;
 };
 
 export function countSchoolDaysByMonth(
-  rows: CalendarDayLite[]
+  rows: CalendarDayLite[],
+  levelCode: string | null
 ): Map<string, number> {
-  const byDate = new Map<string, CalendarDayLite>();
-  for (const r of rows) {
-    const cur = byDate.get(r.date);
-    if (!cur) {
-      byDate.set(r.date, r);
-      continue;
-    }
-    // Specific audience wins over the 'all' baseline (KD #50 read rule).
-    if (cur.audience === 'all' && r.audience !== 'all') byDate.set(r.date, r);
-  }
   const out = new Map<string, number>();
-  for (const [date, r] of byDate.entries()) {
+  for (const r of pickDayRowPerDate(rows, levelCode)) {
     if (!isEncodableDayType(r.day_type, r.hbl_overlay ?? false)) continue;
-    const month = date.slice(0, 7);
+    const month = r.date.slice(0, 7);
     out.set(month, (out.get(month) ?? 0) + 1);
   }
   return out;
@@ -602,7 +592,7 @@ export function countSchoolDaysByMonth(
 // enrollee, ungraded days, etc.). The calendar is the source of truth for
 // "how many school days were there this month"; entries tell us "how many
 // of those the student attended". Audience precedence (KD #50/#76) is
-// applied via `countSchoolDaysByMonth`, with the student's level type
+// applied via `countSchoolDaysByMonth`, with the student's level code
 // resolved from their section; rows are scoped to the section's AY terms
 // so an overlapping test-AY calendar can't double-count dates.
 //
@@ -650,10 +640,10 @@ export async function getMonthlyBreakdown(
 
   const service = createServiceClient();
 
-  // Resolve the student's section → level type (for audience precedence) and
+  // Resolve the student's section → level code (for audience precedence) and
   // the section's AY term ids (so we never count another AY's calendar rows
   // for the same dates — test AYs share the current calendar year).
-  let levelType: 'primary' | 'secondary' | null = null;
+  let levelCode: string | null = null;
   let ayTermIds: string[] | null = null;
   {
     const { data: enr } = await service
@@ -675,9 +665,7 @@ export async function getMonthlyBreakdown(
         .select('code')
         .eq('id', sec.level_id)
         .maybeSingle();
-      levelType = levelTypeForAudienceLookup(
-        (levelRow?.code as string | undefined) ?? null
-      );
+      levelCode = (levelRow?.code as string | undefined) ?? null;
     }
     if (sec?.academic_year_id && !termId) {
       const { data: termRows } = await service
@@ -688,8 +676,8 @@ export async function getMonthlyBreakdown(
     }
   }
 
-  // Preschool (levelType null) reads only 'all' rows per KD #50.
-  const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
+  // 'all', the band, the code — preschool / no level reads only 'all' (KD #50).
+  const audiences = dayAudiencesFor(levelCode);
   let calQuery = service
     .from('school_calendar')
     .select('date, audience, day_type, hbl_overlay')
@@ -702,7 +690,8 @@ export async function getMonthlyBreakdown(
   const { data: calRows } = await calQuery;
 
   const calByMonth = countSchoolDaysByMonth(
-    (calRows ?? []) as CalendarDayLite[]
+    (calRows ?? []) as CalendarDayLite[],
+    levelCode
   );
 
   const rows: MonthlyBreakdownRow[] = [];

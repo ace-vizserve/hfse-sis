@@ -36,7 +36,11 @@ import {
   isPlainSchoolDay,
   storageToDayStatus,
 } from '@/lib/attendance/calendar-operational';
-import { AUDIENCE_LABELS, type Audience } from '@/lib/schemas/attendance';
+import {
+  DAY_AUDIENCE_LABELS,
+  type Audience,
+  type DayAudience,
+} from '@/lib/schemas/attendance';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -74,8 +78,8 @@ function isWeekend(iso: string): boolean {
   return dow === 0 || dow === 6;
 }
 
-function levelSuffix(a: Audience): string {
-  return a === 'all' ? '' : ` · ${AUDIENCE_LABELS[a]}`;
+function levelSuffix(a: DayAudience): string {
+  return a === 'all' ? '' : ` · ${DAY_AUDIENCE_LABELS[a]}`;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -119,7 +123,7 @@ export function DayActionSheet({
   // same delegated-refresh assumption is what left an assigned student sitting
   // in "Students needing setup" on 2026-08-14.
   const removeMutation = useMutation({
-    mutationFn: (audience: Audience) =>
+    mutationFn: (audience: DayAudience) =>
       audience === 'all'
         ? apiFetch(
             '/api/attendance/calendar',
@@ -148,7 +152,7 @@ export function DayActionSheet({
 
   const run = useWriteAction();
 
-  async function removeOverride(audience: Audience) {
+  async function removeOverride(audience: DayAudience) {
     if (!iso) return;
     setBusyKey(`day:${audience}`);
     await run(() => removeMutation.mutateAsync(audience), {
