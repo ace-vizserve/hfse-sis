@@ -5,6 +5,7 @@ import { Pencil, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import {
   useForm,
+  useWatch,
   type FieldErrors,
   type Resolver,
   type UseFormReturn,
@@ -23,10 +24,17 @@ import { LEVEL_LOCKED_MESSAGE } from '@/lib/sis/level-lock';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { composeFullName } from '@/lib/sis/full-name';
+import { toPlainText } from '@/lib/rich-text';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { BoolRadio } from '@/components/sis/bool-radio';
 import { CountryCombobox } from '@/components/sis/country-combobox';
+import { MultiSelectCombobox } from '@/components/sis/multi-select-combobox';
 import { SensitiveInput } from '@/components/sis/sensitive-input';
 import { DatePicker } from '@/components/ui/date-picker';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   Form,
   FormControl,
@@ -53,12 +61,18 @@ import {
   SheetTitle,
   SheetTrigger,
 } from '@/components/ui/sheet';
-import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   buildProfileUpdateSchema,
   CONTRACT_SIGNATORY_OPTIONS,
+  ENROLEE_CATEGORY_OPTIONS,
   GENDER_OPTIONS,
+  HOW_DID_YOU_KNOW_OPTIONS,
+  HOW_DID_YOU_KNOW_OTHER,
+  LEARNING_NEEDS_OPTION_GROUPS,
+  LEARNING_NEEDS_OTHERS,
   MARITAL_STATUS_OPTIONS,
+  MEDICAL_CONDITIONS,
+  paymentOptionsForLevel,
   PREFERRED_PAYMENT_METHOD_OPTIONS,
   PREFERRED_PAYMENT_SCHEME_OPTIONS,
   PREFERRED_SCHEDULE_OPTIONS,
@@ -66,6 +80,7 @@ import {
   STUDENT_CARE_PROGRAM_OPTIONS,
   STUDENT_PASS_TYPE_OPTIONS,
   PROFILE_GATED_FIELDS,
+  splitJoinedList,
   type ProfileUpdateInput,
 } from '@/lib/schemas/sis';
 
@@ -128,8 +143,17 @@ function relaxedProfileResolver(
   }
 }
 
+// Every kind below is the control the PARENT PORTAL uses for that column, so a
+// staff edit is made the same way and stores the same shape the portal writes
+// (Mr Ace, 2026-10-22: "what type of input field or component used to get the
+// information in parent portal just use that in SIS too"). The portal file each
+// field copies is named on its config line in SECTIONS.
 type FieldKind =
   | 'text'
+  // A plain multi-line box. The portal's are plain <Textarea>s and these
+  // columns hold plain text that the Records / cohort / CSV readers print as
+  // plain text, so the formatting editor (KD #205) would put tags in front of
+  // them — see PLAIN_TEXTAREA_ALLOWED in __tests__/ui/textarea-retired.test.ts.
   | 'textarea'
   | 'date'
   | 'tribool'
@@ -138,7 +162,36 @@ type FieldKind =
   | 'yesno'
   | 'select'
   | 'combobox'
-  | 'password';
+  | 'password'
+  // One choice from a short list, shown as radio buttons (portal: Gender).
+  | 'radio'
+  // Yes / No radio pair on a true / false column (portal: ConsentField).
+  | 'boolRadio'
+  // One choice from a set of chips, where "Other" opens a "Please specify" box
+  // whose words are stored instead of "Other" (portal: How did you hear about us).
+  | 'chips'
+  // Grouped, searchable multi-select stored as one ", "-joined text column
+  // (portal: Additional learning needs).
+  | 'multiSelect';
+
+/** The values that decide whether another field is shown or which options it
+ *  offers — watched by the sheet and handed to every field. */
+type Deps = Pick<
+  ProfileUpdateInput,
+  | 'religion'
+  | 'availStudentCare'
+  | 'levelApplied'
+  | 'additionalLearningNeeds'
+  | 'howDidYouKnowAboutHFSEIS'
+>;
+
+const DEP_FIELDS = [
+  'religion',
+  'availStudentCare',
+  'levelApplied',
+  'additionalLearningNeeds',
+  'howDidYouKnowAboutHFSEIS',
+] as const satisfies readonly (keyof Deps)[];
 
 type FieldConfig = {
   name: keyof ProfileUpdateInput;
@@ -149,6 +202,17 @@ type FieldConfig = {
   // Only used when kind === 'select' — bounded option list (e.g. payment
   // scheme/method, both parent-portal-constrained but not DB-enum-checked).
   options?: readonly { label: string; value: string }[];
+  /** Select only — options that depend on another field (payment option by
+   *  level, as the portal does). Wins over `options`. */
+  optionsFor?: (deps: Deps) => readonly { label: string; value: string }[];
+  /**
+   * Shown only when this holds — the portal's "appears once you pick X"
+   * fields. A field that already holds a value is always shown, so nothing on
+   * file is ever hidden behind a choice someone made earlier.
+   */
+  showWhen?: (deps: Deps) => boolean;
+  /** Drawn by the Medical section's checklist rather than as its own field. */
+  checklist?: boolean;
   /** Discount slots only — which of discount1..3 this field is. */
   slot?: number;
   /**
@@ -169,6 +233,8 @@ type SectionConfig = {
   slotGroup?: 'sibling' | 'discount';
   /** Sibling sections only — which of siblings 1..5 this section is. */
   slot?: number;
+  /** Draws the portal's Conditions Checklist above the section's fields. */
+  medicalChecklist?: boolean;
 };
 
 const MAX_SIBLING_SLOTS = 5;
@@ -230,24 +296,37 @@ const SECTIONS: SectionConfig[] = [
         wide: true,
         derived: true,
       },
-      { name: 'category', label: 'Category' },
+      {
+        name: 'category',
+        label: 'Category',
+        kind: 'select',
+        options: ENROLEE_CATEGORY_OPTIONS,
+      },
       { name: 'nric', label: 'NRIC / FIN' },
       { name: 'birthDay', label: 'Date of birth', kind: 'date' },
+      // Portal: steps/student-information/student-details.tsx — RadioGroup.
       {
         name: 'gender',
         label: 'Gender',
-        kind: 'select',
+        kind: 'radio',
         options: GENDER_OPTIONS,
       },
+      // Portal: LocationSelector (country picker, stores the country name).
       { name: 'nationality', label: 'Nationality', kind: 'combobox' },
       { name: 'primaryLanguage', label: 'Primary language' },
+      // Portal: Select over `religions`; "Other" opens a "Please specify" box.
       {
         name: 'religion',
         label: 'Religion',
         kind: 'select',
         options: RELIGION_OPTIONS,
       },
-      { name: 'religionOther', label: 'Religion (other)' },
+      {
+        name: 'religionOther',
+        label: 'Religion — please specify',
+        placeholder: 'Please specify religion',
+        showWhen: (d) => d.religion === 'Other',
+      },
     ],
   },
   {
@@ -272,14 +351,11 @@ const SECTIONS: SectionConfig[] = [
     title: 'Contact',
     fields: [
       { name: 'homePhone', label: 'Home phone' },
-      {
-        name: 'homeAddress',
-        label: 'Home address',
-        kind: 'textarea',
-        wide: true,
-      },
+      // Portal: steps/student-information/student-address-contact.tsx — a
+      // one-line Input, so the column holds plain text.
+      { name: 'homeAddress', label: 'Home address', wide: true },
       { name: 'postalCode', label: 'Postal code' },
-      { name: 'livingWithWhom', label: 'Living with' },
+      { name: 'livingWithWhom', label: 'Living with whom?' },
       { name: 'contactPerson', label: 'Contact person' },
       { name: 'contactPersonNumber', label: 'Contact number' },
       {
@@ -301,7 +377,13 @@ const SECTIONS: SectionConfig[] = [
         options: PREFERRED_SCHEDULE_OPTIONS,
       },
       { name: 'classType', label: 'Class type' },
-      { name: 'paymentOption', label: 'Payment option' },
+      // Portal: enrollment-information.tsx — the list follows the level.
+      {
+        name: 'paymentOption',
+        label: 'Student Development Fees payment option',
+        kind: 'select',
+        optionsFor: (d) => paymentOptionsForLevel(d.levelApplied),
+      },
       {
         name: 'preferredPaymentScheme',
         label: 'Payment scheme',
@@ -314,39 +396,108 @@ const SECTIONS: SectionConfig[] = [
         kind: 'select',
         options: PREFERRED_PAYMENT_METHOD_OPTIONS,
       },
-      { name: 'availSchoolBus', label: 'School bus', kind: 'yesno' },
+      // Portal: Select with Yes / No, stored as the text 'Yes' / 'No'.
+      { name: 'availSchoolBus', label: 'Bus service', kind: 'yesno' },
       { name: 'availStudentCare', label: 'Student care', kind: 'yesno' },
+      // Portal: appears only once Student care is "Yes".
       {
         name: 'studentCareProgram',
         label: 'Student care program',
         kind: 'select',
         options: STUDENT_CARE_PROGRAM_OPTIONS,
+        showWhen: (d) => d.availStudentCare === 'Yes',
       },
       { name: 'availUniform', label: 'Uniform', kind: 'yesno' },
+      // Portal: additional-learning-needs-combo-box.tsx — grouped multi-select,
+      // and "Others (please specify)" opens a plain box.
       {
         name: 'additionalLearningNeeds',
         label: 'Additional learning needs',
-        kind: 'textarea',
+        kind: 'multiSelect',
         wide: true,
       },
       {
         name: 'otherLearningNeeds',
-        label: 'Other learning needs',
+        label: 'Other learning needs — please specify',
         kind: 'textarea',
         wide: true,
+        placeholder:
+          "Describe the student's specific learning need or special requirement",
+        showWhen: (d) =>
+          splitJoinedList(d.additionalLearningNeeds).includes(
+            LEARNING_NEEDS_OTHERS
+          ),
       },
       { name: 'previousSchool', label: 'Previous school' },
-      { name: 'howDidYouKnowAboutHFSEIS', label: 'How did you hear about us' },
-      { name: 'otherSource', label: 'How did you hear about us (other)' },
+      // Portal: parent-survey-feedback.tsx — one chip per answer; Referral
+      // asks for the referrer's name, Other asks the parent to specify.
+      {
+        name: 'howDidYouKnowAboutHFSEIS',
+        label: 'How did you hear about HFSE International School?',
+        kind: 'chips',
+        options: HOW_DID_YOU_KNOW_OPTIONS,
+        wide: true,
+      },
       // "How did you know about HFSE" attribution. The discount-code
       // referrer pair moved to the Discounts section (action item #8) — it
       // belongs with the codes it credits, not with this marketing question.
-      { name: 'marketingReferrerName', label: 'Who referred them' },
+      {
+        name: 'marketingReferrerName',
+        label: "Referrer's name",
+        placeholder: "Enter the referrer's name",
+        showWhen: (d) => d.howDidYouKnowAboutHFSEIS === 'Referral',
+      },
+      { name: 'otherSource', label: 'How did you hear about us (other)' },
       {
         name: 'contractSignatory',
         label: 'Contract signatory',
         kind: 'select',
         options: CONTRACT_SIGNATORY_OPTIONS,
+      },
+    ],
+  },
+  // Portal: steps/student-information/medical-information.tsx (Conditions
+  // Checklist + Medication Consent) and student-details.tsx (dietary
+  // restrictions, a one-line Input). The checklist owns the condition ticks and
+  // their details boxes; they are listed here so they are loaded, labelled and
+  // submitted like every other field.
+  {
+    title: 'Medical',
+    medicalChecklist: true,
+    fields: [
+      { name: 'allergies', label: 'Allergies', checklist: true },
+      {
+        name: 'allergyDetails',
+        label: 'Allergies — details',
+        checklist: true,
+      },
+      { name: 'asthma', label: 'Asthma', checklist: true },
+      { name: 'heartConditions', label: 'Heart Conditions', checklist: true },
+      { name: 'epilepsy', label: 'Epilepsy / Seizures', checklist: true },
+      { name: 'diabetes', label: 'Diabetes', checklist: true },
+      { name: 'eczema', label: 'Eczema / Skin Conditions', checklist: true },
+      { name: 'foodAllergies', label: 'Food Allergies', checklist: true },
+      {
+        name: 'foodAllergyDetails',
+        label: 'Food Allergies — details',
+        checklist: true,
+      },
+      {
+        name: 'otherMedicalConditions',
+        label: 'Other medical condition — details',
+        checklist: true,
+      },
+      {
+        name: 'dietaryRestrictions',
+        label: 'Dietary restrictions',
+        wide: true,
+      },
+      {
+        name: 'paracetamolConsent',
+        label:
+          'Do you give consent for HFSE staff to administer paracetamol if needed?',
+        kind: 'boolRadio',
+        wide: true,
       },
     ],
   },
@@ -458,6 +609,10 @@ export function EditProfileSheet({
   const pickedLevel = form.watch('levelApplied');
   const pickedClassType = form.watch('classType');
   useClearStaleChoices(form, admissionOptions);
+  const depValues = useWatch({ control: form.control, name: DEP_FIELDS });
+  const deps = Object.fromEntries(
+    DEP_FIELDS.map((f, i) => [f, depValues[i]])
+  ) as Deps;
 
   // Full name follows the three name fields as they are typed.
   //
@@ -510,7 +665,17 @@ export function EditProfileSheet({
   // rather than dropping when the PATCH resolves. `run` never rejects, so the
   // `.catch(() => {})` this used to need is gone.
   async function onSubmit(values: ProfileUpdateInput) {
-    await run(() => saveMutation.mutateAsync(values), {
+    // The route writes every key it is sent. A field the page did not load
+    // (absent from `initial`) is null here only because buildDefaults filled
+    // the gap — sending it would write null over whatever is on file. So it
+    // goes only if someone actually put a value in it. This is what keeps the
+    // medical block safe on a caller that never loaded it.
+    const payload = Object.fromEntries(
+      Object.entries(values).filter(
+        ([k, v]) => k in initial || (v !== null && v !== undefined)
+      )
+    ) as ProfileUpdateInput;
+    await run(() => saveMutation.mutateAsync(payload), {
       pending: 'Saving profile…',
       success: (body) => {
         const changed = body.changed as number | undefined;
@@ -610,12 +775,13 @@ export function EditProfileSheet({
                 // A field with no `slot` is not a slot at all (the referrer
                 // pair) and is always drawn — `f.slot ?? 0` would have
                 // filtered it out, since slot numbering starts at 1.
-                const fields =
+                const fields = (
                   section.slotGroup === 'discount'
                     ? section.fields.filter(
                         (f) => f.slot == null || shownDiscounts.includes(f.slot)
                       )
-                    : section.fields;
+                    : section.fields
+                ).filter((f) => !f.checklist);
 
                 const isDiscounts = section.slotGroup === 'discount';
                 // The empty state is about the CODES, so count slot fields
@@ -634,6 +800,9 @@ export function EditProfileSheet({
                         No discount codes on this application.
                       </p>
                     )}
+                    {section.medicalChecklist && (
+                      <MedicalChecklist form={form} />
+                    )}
                     {fields.length > 0 && (
                       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                         {fields.map((cfg) => (
@@ -649,6 +818,7 @@ export function EditProfileSheet({
                               levelLocked
                             )}
                             form={form}
+                            deps={deps}
                           />
                         ))}
                       </div>
@@ -859,12 +1029,30 @@ function withLevelLock(cfg: FieldConfig, locked: boolean): FieldConfig {
 // both the tribool (Yes/No/Not set) and generic options-driven selects.
 const UNSET_SENTINEL = '__unset';
 
+/** Nothing typed or picked — null, undefined or an all-blank string. */
+function isBlank(v: unknown): boolean {
+  return v === null || v === undefined || (typeof v === 'string' && !v.trim());
+}
+
+/**
+ * The portal writes these columns as plain text, but a few rows were saved
+ * through the SIS's old formatting editor and hold `<p>…</p>`. A plain box
+ * shows the words, not the tags; the stored value only changes if someone
+ * edits the field.
+ */
+function plainForDisplay(v: unknown): string {
+  if (typeof v !== 'string') return v == null ? '' : String(v);
+  return /^\s*</.test(v) ? toPlainText(v) : v;
+}
+
 function SchemaField({
   cfg,
   form,
+  deps,
 }: {
   cfg: FieldConfig;
   form: UseFormReturn<ProfileUpdateInput>;
+  deps: Deps;
 }) {
   const kind = cfg.kind ?? 'text';
   return (
@@ -873,6 +1061,141 @@ function SchemaField({
       name={cfg.name}
       render={({ field }) => {
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
+        if (cfg.showWhen && !cfg.showWhen(deps) && isBlank(field.value)) {
+          return <></>;
+        }
+        if (kind === 'radio') {
+          const v = field.value as string | null | undefined;
+          const options = cfg.options ?? [];
+          const isKnown = v == null || options.some((o) => o.value === v);
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <RadioGroup
+                  value={v ?? ''}
+                  onValueChange={(next) => field.onChange(next)}
+                  className="flex h-9 flex-wrap items-center gap-x-5 gap-y-2"
+                >
+                  {[
+                    ...(!isKnown && v
+                      ? [{ label: `${v} (current)`, value: v }]
+                      : []),
+                    ...options,
+                  ].map((o) => (
+                    <label
+                      key={o.value}
+                      className="flex cursor-pointer items-center gap-2 text-sm text-foreground"
+                    >
+                      <RadioGroupItem value={o.value} />
+                      {o.label}
+                    </label>
+                  ))}
+                </RadioGroup>
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'boolRadio') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <BoolRadio
+                  value={field.value as boolean | null | undefined}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'chips') {
+          // The portal stores the parent's own words in place of "Other", so a
+          // value off the list IS an Other answer: the Other chip lights up and
+          // the words sit in the box under it. Picking Other with nothing typed
+          // keeps "Other" so the choice is not lost.
+          const v = field.value as string | null | undefined;
+          const options = cfg.options ?? [];
+          const onList = options.some(
+            (o) => o.value === v && o.value !== HOW_DID_YOU_KNOW_OTHER
+          );
+          const chip = isBlank(v)
+            ? ''
+            : onList
+              ? (v as string)
+              : HOW_DID_YOU_KNOW_OTHER;
+          const specify =
+            chip === HOW_DID_YOU_KNOW_OTHER && v !== HOW_DID_YOU_KNOW_OTHER
+              ? (v ?? '')
+              : '';
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  size="sm"
+                  spacing={2}
+                  value={chip}
+                  onValueChange={(next) =>
+                    field.onChange(next === '' ? null : next)
+                  }
+                  className="w-full flex-wrap justify-start"
+                >
+                  {options.map((o) => (
+                    <ToggleGroupItem
+                      key={o.value}
+                      value={o.value}
+                      className="rounded-full px-3 text-xs data-[state=on]:border-brand-indigo/40 data-[state=on]:bg-brand-indigo/10 data-[state=on]:text-brand-indigo-deep"
+                    >
+                      {o.label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+              </FormControl>
+              {chip === HOW_DID_YOU_KNOW_OTHER && (
+                <Input
+                  type="text"
+                  aria-label="Please specify"
+                  placeholder="Please specify"
+                  value={specify}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value.trim() === ''
+                        ? HOW_DID_YOU_KNOW_OTHER
+                        : e.target.value
+                    )
+                  }
+                />
+              )}
+              <FormMessage />
+            </FormItem>
+          );
+        }
+        if (kind === 'multiSelect') {
+          const raw = field.value as string | null | undefined;
+          const picked = splitJoinedList(plainForDisplay(raw));
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <MultiSelectCombobox
+                  value={picked}
+                  onChange={(next) =>
+                    field.onChange(next.length === 0 ? null : next.join(', '))
+                  }
+                  groups={LEARNING_NEEDS_OPTION_GROUPS}
+                  placeholder="Select learning needs"
+                  searchPlaceholder="Search learning needs..."
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
         if (kind === 'tribool' || kind === 'yesno') {
           const v = field.value as boolean | string | null | undefined;
           const value =
@@ -909,7 +1232,7 @@ function SchemaField({
         }
         if (kind === 'select') {
           const v = field.value as string | null | undefined;
-          const options = cfg.options ?? [];
+          const options = cfg.optionsFor?.(deps) ?? cfg.options ?? [];
           // These are parent-portal-constrained lists, not DB-enum-checked
           // (lib/schemas/sis.ts) — a stored value can in principle be
           // outside the known options. Surface it as an extra item instead
@@ -993,10 +1316,13 @@ function SchemaField({
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
               <FormControl>
-                <RichTextEditor
-                  rows={3}
-                  value={(field.value as string | null) ?? ''}
-                  onChange={(next) => field.onChange(next === '' ? null : next)}
+                <Textarea
+                  value={plainForDisplay(field.value)}
+                  onChange={(e) =>
+                    field.onChange(
+                      e.target.value === '' ? null : e.target.value
+                    )
+                  }
                   onBlur={field.onBlur}
                   placeholder={cfg.placeholder ?? ''}
                 />
@@ -1025,7 +1351,7 @@ function SchemaField({
             <FormControl>
               <Input
                 type="text"
-                value={(field.value as string | null) ?? ''}
+                value={plainForDisplay(field.value)}
                 onChange={(e) =>
                   field.onChange(e.target.value === '' ? null : e.target.value)
                 }
@@ -1055,5 +1381,151 @@ function SchemaField({
         );
       }}
     />
+  );
+}
+
+const MEDICAL_FLAG_FIELDS = MEDICAL_CONDITIONS.map((c) => c.id);
+const OTHER_MEDICAL_FIELD = 'otherMedicalConditions' as const;
+
+/**
+ * The portal's Conditions Checklist (steps/student-information/
+ * medical-information.tsx), field for field:
+ *
+ * - each condition is a tick on its own true / false column;
+ * - Allergies, Food Allergies and Other open a details box when ticked, and
+ *   un-ticking one clears its box, as the portal does;
+ * - "Other Medical Condition" and "None of the above" have no column of their
+ *   own. Other is ticked while `otherMedicalConditions` has text (or was just
+ *   ticked here); None is ticked when every condition is false, and ticking it
+ *   sets them all false and clears the boxes. Un-ticking None puts the
+ *   conditions back to "not answered".
+ *
+ * A condition that was never answered (null — a VizSchool row, or one from
+ * before the checklist) shows un-ticked and stays null unless someone ticks it,
+ * so opening and saving the sheet does not turn "not answered" into "no".
+ */
+function MedicalChecklist({
+  form,
+}: {
+  form: UseFormReturn<ProfileUpdateInput>;
+}) {
+  const watched = useWatch({
+    control: form.control,
+    name: [
+      ...MEDICAL_FLAG_FIELDS,
+      'allergyDetails',
+      'foodAllergyDetails',
+      OTHER_MEDICAL_FIELD,
+    ],
+  });
+  const flags = Object.fromEntries(
+    MEDICAL_FLAG_FIELDS.map((f, i) => [f, watched[i]])
+  ) as Record<(typeof MEDICAL_FLAG_FIELDS)[number], boolean | null>;
+  const otherText = form.getValues(OTHER_MEDICAL_FIELD);
+  const [otherTicked, setOtherTicked] = useState(() => !isBlank(otherText));
+  const noneTicked =
+    !otherTicked && MEDICAL_FLAG_FIELDS.every((f) => flags[f] === false);
+
+  const set = (name: keyof ProfileUpdateInput, value: unknown) =>
+    form.setValue(name, value as never, { shouldDirty: true });
+
+  function toggleCondition(
+    c: (typeof MEDICAL_CONDITIONS)[number],
+    checked: boolean
+  ) {
+    set(c.id, checked);
+    if (!checked && 'details' in c) set(c.details, null);
+  }
+
+  function toggleOther(checked: boolean) {
+    setOtherTicked(checked);
+    if (!checked) set(OTHER_MEDICAL_FIELD, null);
+  }
+
+  function toggleNone(checked: boolean) {
+    for (const c of MEDICAL_CONDITIONS) {
+      set(c.id, checked ? false : null);
+      if ('details' in c) set(c.details, null);
+    }
+    if (checked) toggleOther(false);
+  }
+
+  const items: Array<{
+    key: string;
+    label: string;
+    checked: boolean;
+    onChange: (checked: boolean) => void;
+    details?: keyof ProfileUpdateInput;
+  }> = [
+    ...MEDICAL_CONDITIONS.map((c) => ({
+      key: c.id,
+      label: c.label,
+      checked: flags[c.id] === true,
+      onChange: (checked: boolean) => toggleCondition(c, checked),
+      details: 'details' in c ? c.details : undefined,
+    })),
+    {
+      key: 'other',
+      label: 'Other Medical Condition',
+      checked: otherTicked,
+      onChange: toggleOther,
+      details: OTHER_MEDICAL_FIELD,
+    },
+    {
+      key: 'none',
+      label: 'None of the above',
+      checked: noneTicked,
+      onChange: toggleNone,
+    },
+  ];
+
+  return (
+    <fieldset className="space-y-2">
+      <legend className="mb-2 text-xs font-medium text-foreground">
+        Conditions checklist
+      </legend>
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {items.map((item) => (
+          <div
+            key={item.key}
+            className="rounded-lg border border-border bg-card p-3 transition-colors has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5"
+          >
+            <label className="flex cursor-pointer items-center gap-3 text-sm font-medium text-foreground">
+              <Checkbox
+                checked={item.checked}
+                onCheckedChange={(next) => item.onChange(next === true)}
+              />
+              {item.label}
+            </label>
+            {item.details && item.checked && (
+              <FormField
+                control={form.control}
+                name={item.details}
+                render={({ field }) => (
+                  <FormItem className="mt-3">
+                    <FormLabel className="text-xs">
+                      Please provide specific details
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        value={plainForDisplay(field.value)}
+                        onChange={(e) =>
+                          field.onChange(
+                            e.target.value === '' ? null : e.target.value
+                          )
+                        }
+                        onBlur={field.onBlur}
+                        placeholder="Details regarding severity, triggers, or management"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+    </fieldset>
   );
 }

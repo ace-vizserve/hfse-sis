@@ -60,13 +60,30 @@ function codeLines(pattern: string): string[] {
   }
 }
 
+/**
+ * The surfaces that deliberately keep the plain box, each with its reason.
+ *
+ * - The applicant Edit profile sheet (Other learning needs, and the Medical
+ *   checklist's details boxes): every field there copies the parent portal's
+ *   own control (Mr Ace, 2026-10-22), and the portal's are plain <Textarea>s.
+ *   These columns hold the parent's plain text and are printed as plain text
+ *   by Records, the cohort table and the CSV export, so markup would show.
+ */
+const PLAIN_TEXTAREA_ALLOWED = ['components/sis/edit-profile-sheet.tsx'];
+
 describe('the plain Textarea is retired', () => {
   it('is imported by nothing', () => {
-    expect(grep("from '@/components/ui/textarea'")).toEqual([]);
+    expect(
+      grep("from '@/components/ui/textarea'").filter(
+        (f) => !PLAIN_TEXTAREA_ALLOWED.includes(f)
+      )
+    ).toEqual([]);
   });
 
   it('is rendered by nothing', () => {
-    expect(grep('<Textarea[ />]')).toEqual([]);
+    expect(
+      grep('<Textarea[ />]').filter((f) => !PLAIN_TEXTAREA_ALLOWED.includes(f))
+    ).toEqual([]);
   });
 
   it('has no hand-rolled raw <textarea> anywhere', () => {

@@ -142,6 +142,22 @@ export function ProfileTab({
     siblingReligion5: app.siblingReligion5,
     siblingEducationOccupation5: app.siblingEducationOccupation5,
     siblingSchoolCompany5: app.siblingSchoolCompany5,
+    // Medical — edited on the sheet's Medical section with the portal's
+    // Conditions Checklist. Must be loaded here: the sheet only sends a field
+    // the page loaded (or that someone filled in), so leaving one out keeps it
+    // read-only rather than nulling it.
+    allergies: app.allergies,
+    allergyDetails: app.allergyDetails,
+    asthma: app.asthma,
+    heartConditions: app.heartConditions,
+    epilepsy: app.epilepsy,
+    diabetes: app.diabetes,
+    eczema: app.eczema,
+    foodAllergies: app.foodAllergies,
+    foodAllergyDetails: app.foodAllergyDetails,
+    otherMedicalConditions: app.otherMedicalConditions,
+    dietaryRestrictions: app.dietaryRestrictions,
+    paracetamolConsent: app.paracetamolConsent,
   };
 
   const identityFields: Field[] = [
@@ -162,9 +178,10 @@ export function ProfileTab({
   ];
   const contactFields: Field[] = [
     { label: 'Home phone', value: app.homePhone },
-    // ⚠ `richText`, not `multiline` — this box is a `RichTextEditor` on
-    // `edit-profile-sheet`, so the column holds HTML and printing it escaped
-    // showed a staff member the `<p>` tags around their own address.
+    // ⚠ `richText`, not `multiline` — older rows were saved by the SIS
+    // formatting editor and hold HTML (printing it escaped showed a staff
+    // member the `<p>` tags around their own address). The sheet now uses the
+    // portal's one-line input and writes plain text, which `richText` shows too.
     {
       label: 'Home address',
       value: app.homeAddress,
@@ -201,11 +218,11 @@ export function ProfileTab({
     { label: 'Student care program', value: app.studentCareProgram },
     { label: 'Uniform', value: app.availUniform },
     // ⚠ THESE TWO ARE `richText`; THE MEDICAL BOXES BELOW STAY `multiline`.
-    // The difference is which editor writes them: these two are
-    // `RichTextEditor` on `edit-profile-sheet`, so they hold HTML. The
-    // allergy / dietary / conditions fields come off the application form the
-    // parent filled in and never pass through our editor at all — they are
-    // plain text and must keep the `pre-line` treatment.
+    // These two were once written by the SIS formatting editor, so older rows
+    // hold HTML; since 2026-10-22 the sheet uses the portal's own controls
+    // (multi-select + plain box) and writes plain text, which `richText`
+    // also shows correctly. The allergy / dietary / conditions fields have
+    // only ever been plain text and keep the `pre-line` treatment.
     {
       label: 'Additional learning needs',
       value: app.additionalLearningNeeds,

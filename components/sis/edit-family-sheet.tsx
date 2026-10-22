@@ -18,6 +18,7 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { composeFullName } from '@/lib/sis/full-name';
 import { Button } from '@/components/ui/button';
+import { BoolRadio } from '@/components/sis/bool-radio';
 import { CountryCombobox } from '@/components/sis/country-combobox';
 import { DatePicker } from '@/components/ui/date-picker';
 import { SensitiveInput } from '@/components/sis/sensitive-input';
@@ -56,18 +57,21 @@ import {
   MARITAL_STATUS_OPTIONS,
   MOTHER_GATED_FIELDS,
   PARENT_GUARDIAN_PASS_TYPE_OPTIONS,
-  RELIGION_OPTIONS,
   type FatherUpdateInput,
   type GuardianUpdateInput,
   type MotherUpdateInput,
   type ParentSlot,
 } from '@/lib/schemas/sis';
 
+// Each kind is the control the parent portal uses for that column, so a staff
+// edit stores the shape the portal writes (see edit-profile-sheet.tsx).
 type FieldKind =
   | 'text'
   | 'email'
   | 'date'
   | 'tribool'
+  // Yes / No radio pair on a true / false column (portal: ConsentField).
+  | 'boolRadio'
   | 'select'
   | 'combobox'
   | 'password';
@@ -121,13 +125,13 @@ const FATHER_FIELDS: FieldConfig[] = [
   { name: 'fatherBirthDay', label: 'Date of birth', kind: 'date' },
   { name: 'fatherMobile', label: 'Mobile' },
   { name: 'fatherEmail', label: 'Email', kind: 'email', wide: true },
+  // Portal: LocationSelector (country picker, stores the country name).
   { name: 'fatherNationality', label: 'Nationality', kind: 'combobox' },
-  {
-    name: 'fatherReligion',
-    label: 'Religion',
-    kind: 'select',
-    options: RELIGION_OPTIONS,
-  },
+  // Portal: a free-text Input on every application form (steps/, tabs/,
+  // vizschool/ and open-house/ father-, mother- and guardian-information.tsx).
+  // Only complete-enrolment.tsx offers the student's religion list here, so the
+  // application form's typed answer is what most rows hold.
+  { name: 'fatherReligion', label: 'Religion' },
   { name: 'fatherReligionOther', label: 'Religion (other)' },
   {
     name: 'fatherMarital',
@@ -146,10 +150,13 @@ const FATHER_FIELDS: FieldConfig[] = [
     options: PARENT_GUARDIAN_PASS_TYPE_OPTIONS,
   },
   { name: 'fatherPassExpiry', label: 'Pass expiry', kind: 'date' },
+  // Portal: ConsentField — a Yes / No radio pair on a true / false column.
   {
     name: 'fatherWhatsappTeamsConsent',
-    label: 'WhatsApp / Teams consent',
-    kind: 'tribool',
+    label:
+      'Include this mobile number in the class WhatsApp / Teams group chat?',
+    kind: 'boolRadio',
+    wide: true,
   },
 ];
 
@@ -419,6 +426,20 @@ function SchemaField<T extends FieldValues>({
       name={name}
       render={({ field }) => {
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
+        if (kind === 'boolRadio') {
+          return (
+            <FormItem className={wrapperClass}>
+              <FormLabel className="text-xs">{cfg.label}</FormLabel>
+              <FormControl>
+                <BoolRadio
+                  value={field.value as boolean | null | undefined}
+                  onChange={field.onChange}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          );
+        }
         if (kind === 'tribool') {
           const v = field.value as boolean | null | undefined;
           const value =

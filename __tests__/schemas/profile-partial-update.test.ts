@@ -33,8 +33,17 @@ import {
   ProfileUpdateSchema,
 } from '@/lib/schemas/sis';
 
-/** Fields the sheet never renders — the ones that used to block every save. */
-const NEVER_RENDERED = [
+/**
+ * Fields left out of the submit below — the ones that used to block every save.
+ *
+ * Since 2026-10-22 the sheet DOES draw the medical block (its Medical section
+ * copies the portal's Conditions Checklist), but the guard is unchanged: a key
+ * the caller did not send must stay absent, never come back as null. The sheet
+ * itself also drops any field its page did not load (onSubmit in
+ * edit-profile-sheet.tsx), so the medical block is still only written when it
+ * was loaded or someone filled it in.
+ */
+const OMITTED = [
   'allergies',
   'allergyDetails',
   'asthma',
@@ -57,7 +66,7 @@ const SHEET_SUBMIT = {
 };
 
 describe('profile PATCH schema', () => {
-  it('accepts a submit that omits the fields the sheet does not render', () => {
+  it('accepts a submit that omits fields', () => {
     const result = buildProfileUpdateSchema(new Set()).safeParse(SHEET_SUBMIT);
 
     expect(result.success).toBe(true);
@@ -69,7 +78,7 @@ describe('profile PATCH schema', () => {
     const result = buildProfileUpdateSchema(new Set()).safeParse(SHEET_SUBMIT);
     if (!result.success) throw new Error('expected the submit to validate');
 
-    for (const field of NEVER_RENDERED) {
+    for (const field of OMITTED) {
       expect(field in result.data).toBe(false);
     }
   });
@@ -94,11 +103,11 @@ describe('profile PATCH schema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('keeps the medical fields in the schema — they are readable, just not edited here', () => {
+  it('keeps the medical fields in the schema', () => {
     // If one of these disappears from the schema the route's `allowedCols`
     // filter would start dropping it, which is a different bug wearing the
     // same clothes.
-    for (const field of NEVER_RENDERED) {
+    for (const field of OMITTED) {
       expect(Object.keys(ProfileUpdateSchema.shape)).toContain(field);
     }
   });
