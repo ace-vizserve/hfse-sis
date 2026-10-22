@@ -15,7 +15,11 @@ import {
   sameStatus,
   storageToDayStatus,
 } from '@/lib/attendance/calendar-operational';
-import { AUDIENCE_LABELS, type Audience } from '@/lib/schemas/attendance';
+import {
+  AUDIENCE_LABELS,
+  type Audience,
+  type DayAudience,
+} from '@/lib/schemas/attendance';
 
 export type CalendarIndex = {
   /** Per date: readable, color-coded chips (school overrides + events). */
@@ -44,7 +48,7 @@ export function useCalendarIndex(
     // Group school_calendar rows by date → audience.
     const byDateAud = new Map<
       string,
-      Partial<Record<Audience, SchoolCalendarRow>>
+      Partial<Record<DayAudience, SchoolCalendarRow>>
     >();
     // A date is "present" if it has ANY row, any audience, any day_type —
     // used by the Phase 2 redesign to flag dates that will block attendance

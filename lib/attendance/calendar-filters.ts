@@ -5,6 +5,7 @@ import type {
 import {
   isEncodableDayType,
   type Audience,
+  type DayAudience,
   type DayType,
   type EventCategory,
 } from '@/lib/schemas/attendance';
@@ -97,7 +98,7 @@ export function hasActiveCalendarFilters(s: CalendarFilterState): boolean {
   );
 }
 
-function inLevel(rowAudience: Audience, level: Audience): boolean {
+function inLevel(rowAudience: DayAudience, level: Audience): boolean {
   return level === 'all'
     ? true
     : rowAudience === 'all' || rowAudience === level;

@@ -10,7 +10,7 @@ import {
   getDedupedSchoolCalendarForTerm,
 } from '@/lib/attendance/calendar';
 import { getDailyForSection, isMarked } from '@/lib/attendance/queries';
-import { levelTypeForAudienceLookup, type LevelCode } from '@/lib/sis/levels';
+import type { LevelCode } from '@/lib/sis/levels';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { getTeacherEmailMap } from '@/lib/auth/teacher-emails';
 import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
@@ -253,14 +253,14 @@ export async function GET(
   };
 
   const enrolments = (enrolmentsRaw ?? []) as EnrRow[];
-  const levelType = levelTypeForAudienceLookup(level?.code ?? null);
+  const levelCode = level?.code ?? null;
 
   // One term's sheet input: calendar + events + daily in parallel.
   async function termInput(
     term: DatedTerm
   ): Promise<AttendanceSheetExportInput> {
     const [calendar, events, daily] = await Promise.all([
-      getDedupedSchoolCalendarForTerm(term.id, levelType),
+      getDedupedSchoolCalendarForTerm(term.id, levelCode),
       getCalendarEventsForSection(
         term.id,
         (level?.code as LevelCode | null) ?? null,

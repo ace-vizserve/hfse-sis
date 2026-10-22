@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  createNonSchoolDayChecker,
   decideNonSchoolDay,
   expandSchoolDays,
 } from '@/lib/attendance/school-days';
@@ -213,6 +214,42 @@ describe('decideNonSchoolDay — the rule itself', () => {
     // ⚠ Legacy mode, pre-migration-019. Removing this branch would refuse
     // marks on every date of any term nobody has configured yet.
     expect(decideNonSchoolDay([], 'P4', false)).toBe(false);
+  });
+
+  it('rows aimed only at other audiences read as an unlisted date', () => {
+    // Matches the SQL gate's "no hit → blocked" by construction: the row
+    // that is present is someone else's, so this section has no row at all.
+    const rows: Row[] = [
+      { day_type: 'school_day', audience: 'P1', hbl_overlay: false },
+    ];
+    expect(decideNonSchoolDay(rows, 'P2', true)).toBe(true);
+    expect(decideNonSchoolDay(rows, 'P2', false)).toBe(false);
+  });
+});
+
+describe('createNonSchoolDayChecker', () => {
+  it('keeps P1 and P2 apart for the same term and date (cache key)', async () => {
+    const service = fakeService({
+      terms: TERMS,
+      calendar: [
+        ...schoolWeek('t1', ['2026-01-06']),
+        {
+          term_id: 't1',
+          date: '2026-01-06',
+          day_type: 'no_class',
+          audience: 'P1',
+          hbl_overlay: false,
+        },
+      ],
+    });
+    const isNonSchoolDay = createNonSchoolDayChecker(service as never);
+
+    // P1 first, so a band- or term-keyed cache would hand P2 P1's answer.
+    expect(await isNonSchoolDay('t1', '2026-01-06', 'P1')).toBe(true);
+    expect(await isNonSchoolDay('t1', '2026-01-06', 'P2')).toBe(false);
+    // And the cached answers stay put.
+    expect(await isNonSchoolDay('t1', '2026-01-06', 'P1')).toBe(true);
+    expect(await isNonSchoolDay('t1', '2026-01-06', 'P2')).toBe(false);
   });
 });
 

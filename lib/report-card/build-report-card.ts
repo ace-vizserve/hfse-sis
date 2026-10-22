@@ -11,7 +11,6 @@ import {
   deriveAnnualLetterForNonExam,
 } from '@/lib/compute/letter-grade';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { subjectReportName } from '@/lib/sis/subjects/display-name';
 import {
   DEFAULT_SCHOOL_CONFIG,
@@ -207,8 +206,8 @@ const getSubjectReportMap = cache(async function getSubjectReportMap(
 // (app/(markbook)/markbook/report-cards/section/[sectionId]/print) calls
 // buildReportCard once per student in the SAME section — every one of those
 // students shares the same level, and `getEncodableDatesForTerm` doesn't
-// vary by student, only by (term, levelType). Passing a pre-fetched map here
-// lets a batch caller resolve each (term, levelType) pair's encodable dates
+// vary by student, only by (term, level code). Passing a pre-fetched map here
+// lets a batch caller resolve each (term, level code) pair's encodable dates
 // ONCE and reuse them across every buildReportCard call in the batch,
 // instead of this function's internal per-student N-term fan-out repeating
 // identical calendar queries. Optional — when omitted, behavior (and query
@@ -217,11 +216,20 @@ const getSubjectReportMap = cache(async function getSubjectReportMap(
 // lib/sync/students.ts (a request-scoped object passed by the caller, never
 // a module-level/global cache).
 export type PreloadedCalendarDates = {
-  // Keyed by `${termId}:${levelType ?? 'none'}` — matches exactly how this
-  // function itself derives its cache key below, so a set of dates fetched
-  // for one levelType is never mistakenly reused for another.
+  // Keyed by `calendarDatesKey(termId, levelCode)` — the same helper this
+  // function derives its own key with below, so a set of dates fetched for
+  // one level is never mistakenly reused for another. Keyed on the CODE, not
+  // the band: P1 and P2 can disagree about a date (migration 196).
   byTermAndLevel: Map<string, string[]>;
 };
+
+/** The `PreloadedCalendarDates` key for one term and level code. */
+export function calendarDatesKey(
+  termId: string,
+  levelCode: string | null
+): string {
+  return `${termId}:${levelCode ?? 'none'}`;
+}
 
 export async function buildReportCard(
   supabase: SupabaseClient,
@@ -793,21 +801,21 @@ export async function buildReportCard(
 
   // Per-term school_days = count of school_calendar rows in the term where
   // day_type IN ('school_day','hbl'), with audience precedence applied for
-  // the student's level type (KD #50 + #76). When the calendar isn't
-  // configured for a term yet the helper returns 0 — fall back to the
+  // the student's level code (KD #50 + #76, migration 196). When the calendar
+  // isn't configured for a term yet the helper returns 0 — fall back to the
   // student-recorded count from `attendance_records` so the report card
   // doesn't mis-render as 0 / N during early-term setup.
-  const levelType = levelTypeForAudienceLookup(level.code);
+  const levelCode = level.code;
   const calendarDatesByTerm = new Map<string, string[]>();
   await Promise.all(
     termList.map(async (t) => {
-      const cacheKey = `${t.id}:${levelType ?? 'none'}`;
+      const cacheKey = calendarDatesKey(t.id, levelCode);
       const cached = preloadedCalendar?.byTermAndLevel.get(cacheKey);
       if (cached) {
         calendarDatesByTerm.set(t.id, cached);
         return;
       }
-      const dates = await getEncodableDatesForTerm(t.id, levelType);
+      const dates = await getEncodableDatesForTerm(t.id, levelCode);
       calendarDatesByTerm.set(t.id, dates);
       preloadedCalendar?.byTermAndLevel.set(cacheKey, dates);
     })

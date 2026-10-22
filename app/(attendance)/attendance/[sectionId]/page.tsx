@@ -52,7 +52,7 @@ import { canReadAttendance } from '@/lib/classroom/scope';
 import { sgToday } from '@/lib/dates';
 import { SCHEDULE_LABELS, type Schedule } from '@/lib/schemas/section';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import { levelTypeForAudienceLookup, type LevelCode } from '@/lib/sis/levels';
+import type { LevelCode } from '@/lib/sis/levels';
 import { getSchoolConfig } from '@/lib/sis/school-config';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 
@@ -249,16 +249,15 @@ export default async function SectionAttendancePage({
   const enrolmentList = (enrolmentsRaw ?? []) as EnrolmentRow[];
 
   // Fetch calendar + events + daily + quota in parallel.
-  // Audience scope (KD #76): the section's level type drives which calendar
-  // rows + events are visible. `getDedupedSchoolCalendarForTerm` returns
-  // exactly one row per date (level-specific override wins over the 'all'
-  // baseline) so the grid never renders the same date twice.
+  // Audience scope (KD #76, migration 196): the section's level code drives
+  // which calendar rows + events are visible. `getDedupedSchoolCalendarForTerm`
+  // returns exactly one row per date (the level's row beats the band's, which
+  // beats the 'all' baseline) so the grid never renders the same date twice.
   //
   // Events are scoped by the section's LEVEL, not its band (migration 158).
   // `getCalendarEventsForSection` still honours `audience` for the rows that
   // carry no level, so a pre-158 event behaves exactly as it did — but "P6
   // Fieldtrip" no longer tags a P1 teacher's column.
-  const sectionLevelType = levelTypeForAudienceLookup(level?.code ?? null);
   const [
     calendar,
     events,
@@ -269,7 +268,7 @@ export default async function SectionAttendancePage({
     schoolConfig,
     rollups,
   ] = await Promise.all([
-    getDedupedSchoolCalendarForTerm(selectedTermId, sectionLevelType),
+    getDedupedSchoolCalendarForTerm(selectedTermId, level?.code ?? null),
     getCalendarEventsForSection(
       selectedTermId,
       (level?.code as LevelCode | null) ?? null,

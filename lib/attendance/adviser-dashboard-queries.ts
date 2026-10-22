@@ -23,7 +23,6 @@ import {
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import type { Role } from '@/lib/auth/roles';
 import { sgToday } from '@/lib/dates';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   getDailyForSection,
@@ -170,12 +169,11 @@ export async function loadAdviserAttendanceDashboard(opts: {
   // map could be lifted out from behind it.
   const [counts, perSection, quotaRisks] = await Promise.all([
     activeRosterCounts(sections.map((s) => s.id)),
-    // The calendar is audience-resolved per level (KD #50), so a primary and a
-    // secondary class can genuinely disagree about whether today is a school
+    // The calendar is audience-resolved per level (KD #50, migration 196), so
+    // a P1 and a P2 class — let alone primary and secondary — can disagree about whether today is a school
     // day. Resolve per section rather than once for the whole page.
     Promise.all(
       sections.map(async (s) => {
-        const levelType = levelTypeForAudienceLookup(s.levelCode);
         // ONE DAILY READ PER CLASS, NOT TWO. This asked `getDailyForSection`
         // for `{ fromDate: today, toDate: today }` AND `{ toDate: today }` — the
         // second window contains the first, so the narrow read re-fetched rows
@@ -193,7 +191,7 @@ export async function loadAdviserAttendanceDashboard(opts: {
         // where today's marks only appear on the wide read's SECOND page.
         const [allRows, encodable, summary] = await Promise.all([
           getDailyForSection(s.id, termId, { toDate: today }),
-          getEncodableDatesForTerm(termId, levelType),
+          getEncodableDatesForTerm(termId, s.levelCode),
           getSectionAttendanceSummary(s.id, termId),
         ]);
         // FILTERED AT THE READ, which fixes BOTH consumers below at once and
@@ -280,10 +278,7 @@ async function describeNonSchoolDay(
   today: string,
   levelCode: string | null
 ): Promise<{ holidayLabel: string | null; nextSchoolDay: string | null }> {
-  const rows = await getDedupedSchoolCalendarForTerm(
-    termId,
-    levelTypeForAudienceLookup(levelCode)
-  );
+  const rows = await getDedupedSchoolCalendarForTerm(termId, levelCode);
   const todayRow = rows.find((r) => r.date === today);
   const next =
     rows

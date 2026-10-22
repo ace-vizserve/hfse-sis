@@ -5,12 +5,12 @@ import { ArrowLeft } from 'lucide-react';
 import { getSessionUser, createClient } from '@/lib/supabase/server';
 import {
   buildReportCard,
+  calendarDatesKey,
   type PreloadedCalendarDates,
 } from '@/lib/report-card/build-report-card';
 import { getEncodableDatesForTerm } from '@/lib/attendance/calendar';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTerm } from '@/lib/sis/current-term';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { ReportCardDocument } from '@/components/report-card/report-card-document';
 import { TermSelect } from '@/components/markbook/term-select';
 import { PrintButton } from '../../../[studentId]/print-button';
@@ -129,19 +129,18 @@ export default async function SectionPrintPage({
   // every one of them back to this same section — meaning they all share
   // this section's level, and therefore the same per-term encodable-date
   // set. Resolve it here ONCE so every buildReportCard call below reuses it
-  // instead of each independently re-querying the same (term, levelType)
+  // instead of each independently re-querying the same (term, level code)
   // calendar rows (Finding L-B/6 — query-count reduction only, the resolved
   // dates are identical to what each per-student call would have fetched).
   const preloadedCalendar: PreloadedCalendarDates = {
     byTermAndLevel: new Map(),
   };
   if (studentIds.length > 0 && ayTerms && ayTerms.length > 0) {
-    const levelType = levelTypeForAudienceLookup(level.code);
     await Promise.all(
       ayTerms.map(async (t) => {
-        const dates = await getEncodableDatesForTerm(t.id, levelType);
+        const dates = await getEncodableDatesForTerm(t.id, level.code);
         preloadedCalendar.byTermAndLevel.set(
-          `${t.id}:${levelType ?? 'none'}`,
+          calendarDatesKey(t.id, level.code),
           dates
         );
       })
