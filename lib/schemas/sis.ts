@@ -58,7 +58,12 @@ const optionalBool = z.boolean().nullable();
 // 'Yes' / 'No' / null. Some columns on the production admissions table store
 // the literal strings 'Yes' / 'No' instead of true/false (e.g. availSchoolBus,
 // availUniform, availStudentCare, preCourseAnswer). Three-state tri-string.
-const optionalYesNo = z.enum(['Yes', 'No']).nullable();
+// The parent portal writes '' when the parent skipped the question, and the
+// sheet submits every field on save, so '' must read as "not set" here.
+const optionalYesNo = z.preprocess(
+  (v) => (v === '' ? null : v),
+  z.enum(['Yes', 'No']).nullable()
+);
 
 // NUMBERS ARRIVE HERE, AND THAT IS NOT HYPOTHETICAL. Every mobile column on
 // the admissions tables is numeric in production — `motherMobile` is a `number`

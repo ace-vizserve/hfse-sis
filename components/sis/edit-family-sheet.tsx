@@ -275,7 +275,7 @@ export function EditFamilySheet({
         const changed = body.changed as number | undefined;
         return changed === 0
           ? `${PARENT_LABELS[parent]} saved (no changes)`
-          : `${PARENT_LABELS[parent]} updated (${changed} field${changed === 1 ? '' : 's'})`;
+          : `${PARENT_LABELS[parent]} updated`;
       },
       error: (e) => (e instanceof Error ? e.message : 'Failed to save'),
       onResolved: () => setOpen(false),
