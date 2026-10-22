@@ -16,6 +16,12 @@
 //
 // One parser and one query-applier, so a page cannot wire up three of the four
 // filters and look finished.
+//
+// The SEARCH BOX is a fifth filter for the same reason the date range became
+// one: it searched the 50 loaded rows of a log holding thousands, so a search
+// for anything older than the current page found nothing.
+
+import { auditActionLabel } from '@/lib/audit/humanize';
 
 /**
  * The three PostgREST builder methods this needs, structurally.
@@ -28,6 +34,7 @@ type Filterable = {
   eq(column: string, value: string): Filterable;
   gte(column: string, value: string): Filterable;
   lt(column: string, value: string): Filterable;
+  or(filters: string): Filterable;
 };
 
 export type AuditFilterParams = {
@@ -35,6 +42,8 @@ export type AuditFilterParams = {
   actor?: string;
   from?: string;
   to?: string;
+  /** The table's search box. */
+  q?: string;
 };
 
 export type AuditFilters = {
@@ -44,7 +53,22 @@ export type AuditFilters = {
   /** ISO yyyy-mm-dd, as the picker writes them. */
   from: string | null;
   to: string | null;
+  /** The search text, cleaned for PostgREST; null if blank. */
+  search: string | null;
+  /**
+   * The module's actions whose on-screen name contains the search. The table
+   * shows "Sheet locked", not `sheet.lock`, so a search for the words on
+   * screen has to find the action through its label.
+   */
+  searchActions: string[];
 };
+
+/**
+ * Characters that are syntax in a PostgREST `or=(…)` list, and the `\` that
+ * escapes inside a quoted value. The ilike wildcards stay: one only widens a
+ * search the reader typed, and `_` is in real email addresses.
+ */
+const SEARCH_UNSAFE = /[,()"\\]/g;
 
 const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -91,10 +115,19 @@ export function parseAuditFilters(
   const from = params.from && isRealDay(params.from) ? params.from : null;
   const to = params.to && isRealDay(params.to) ? params.to : null;
 
-  // A backwards window returns nothing and looks like an empty log; swap it.
-  if (from && to && from > to) return { action, actor, from: to, to: from };
+  const search = params.q?.replace(SEARCH_UNSAFE, '').trim() || null;
+  const needle = search?.toLowerCase();
+  const searchActions = needle
+    ? allowlist.filter((a) =>
+        auditActionLabel(a).toLowerCase().includes(needle)
+      )
+    : [];
 
-  return { action, actor, from, to };
+  // A backwards window returns nothing and looks like an empty log; swap it.
+  if (from && to && from > to)
+    return { action, actor, from: to, to: from, search, searchActions };
+
+  return { action, actor, from, to, search, searchActions };
 }
 
 /** Singapore is a fixed +08:00 and has had no DST since 1935. */
@@ -138,6 +171,19 @@ export function applyAuditFilters<T>(
   if (filters.from) q = q.gte(column, `${filters.from}T00:00:00${SGT_OFFSET}`);
   if (filters.to) {
     q = q.lt(column, `${nextDay(filters.to)}T00:00:00${SGT_OFFSET}`);
+  }
+  if (filters.search) {
+    const like = `"%${filters.search}%"`;
+    const any = [
+      `actor_email.ilike.${like}`,
+      `action.ilike.${like}`,
+      `entity_type.ilike.${like}`,
+    ];
+    if (filters.searchActions.length > 0)
+      any.push(
+        `action.in.(${filters.searchActions.map((a) => `"${a}"`).join(',')})`
+      );
+    q = q.or(any.join(','));
   }
   return q as unknown as T;
 }

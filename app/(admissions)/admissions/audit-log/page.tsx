@@ -87,6 +87,7 @@ export default async function AdmissionsAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -230,6 +231,7 @@ export default async function AdmissionsAuditLogPage({
         currentActor={filters.actor}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...ADMISSIONS_AUDIT_ACTIONS]}
         actorOptions={actorOptions}
         canExport={canExport}

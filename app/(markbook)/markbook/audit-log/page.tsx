@@ -75,6 +75,7 @@ export default async function AuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
     page?: string;
     pageSize?: string;
   }>;
@@ -267,6 +268,7 @@ export default async function AuditLogPage({
         currentActor={actorFilter}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...MARKBOOK_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         canExport={canExport}

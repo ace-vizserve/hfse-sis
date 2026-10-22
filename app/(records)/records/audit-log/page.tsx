@@ -30,6 +30,7 @@ export default async function SisAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -240,6 +241,7 @@ export default async function SisAuditLogPage({
         currentActor={filters.actor}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...RECORDS_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         pagination={{

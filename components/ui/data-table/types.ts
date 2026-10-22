@@ -243,6 +243,17 @@ export type DataTableProps<TRow> = {
    * round-trips.
    */
   initialSearchParam?: string;
+  /**
+   * The search runs in the DATABASE, not over `data`. For a table whose
+   * server sends only part of the list (one page of a log, the newest N): a
+   * search over `data` would only look through the rows that happened to be
+   * loaded and miss every match on the others. With this the box still shows
+   * and types as usual, but the table does not filter on it — it hands the
+   * text to `onChange` (debounced), the page re-queries with it, and `data`
+   * arrives already matching. `value` is the search the page last queried
+   * with (its URL param), so a link or Back re-seeds the box.
+   */
+  serverSearch?: { value: string; onChange: (search: string) => void };
 
   facets?: FacetConfig[];
   /** Optional — one or more facet groups, each collapsed behind a single
