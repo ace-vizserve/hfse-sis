@@ -5,6 +5,7 @@ import {
   filterDays,
   hasActiveCalendarFilters,
   isMultiFilterChecked,
+  levelFacetMatches,
   toggleMultiFilterValue,
   type CalendarFilterState,
 } from '@/lib/attendance/calendar-filters';
@@ -103,6 +104,35 @@ describe('calendar filters', () => {
       s
     );
     expect(out.map((d) => d.audience).sort()).toEqual(['all', 'primary']);
+  });
+
+  it('a level-code row follows its half of the school (migration 196)', () => {
+    const rows = [
+      day({ audience: 'all' }),
+      day({ audience: 'P1' }),
+      day({ audience: 'P6' }),
+      day({ audience: 'S1' }),
+      day({ audience: 'S4' }),
+    ];
+    const audiencesFor = (level: CalendarFilterState['level']) =>
+      filterDays(rows, { ...defaultFilterState(), level })
+        .map((d) => d.audience)
+        .sort();
+    expect(audiencesFor('primary')).toEqual(['P1', 'P6', 'all']);
+    expect(audiencesFor('secondary')).toEqual(['S1', 'S4', 'all']);
+    expect(audiencesFor('all')).toHaveLength(rows.length);
+  });
+
+  it('the list view Level facet answers Primary/Secondary as the sidebar does', () => {
+    expect(levelFacetMatches('P1', ['Primary'])).toBe(true);
+    expect(levelFacetMatches('all', ['Primary'])).toBe(true);
+    expect(levelFacetMatches('S1', ['Primary'])).toBe(false);
+    expect(levelFacetMatches('S4', ['Secondary'])).toBe(true);
+    // A code or "All" matches only itself.
+    expect(levelFacetMatches('P1', ['P1'])).toBe(true);
+    expect(levelFacetMatches('P2', ['P1'])).toBe(false);
+    expect(levelFacetMatches('primary', ['All'])).toBe(false);
+    expect(levelFacetMatches('all', ['All'])).toBe(true);
   });
 
   it('explicit empty dayTypes ([]) hides every day — distinct from null (show-all)', () => {

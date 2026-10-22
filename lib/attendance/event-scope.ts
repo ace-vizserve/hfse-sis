@@ -4,7 +4,12 @@
 // Split out of the dialog so the wording is testable on its own — this is the
 // sentence a school admin reads to check they picked the right classes, and it
 // is the only confirmation they get before saving.
-import { LEVEL_CODES, LEVEL_LABELS, type LevelCode } from '@/lib/sis/levels';
+import {
+  LEVEL_CODES,
+  LEVEL_LABELS,
+  levelTypeForAudienceLookup,
+  type LevelCode,
+} from '@/lib/sis/levels';
 
 /** Level codes in the canonical P1→S4 order, duplicates dropped. */
 export function sortLevels(codes: readonly LevelCode[]): LevelCode[] {
@@ -83,7 +88,9 @@ export function eventAppliesToSection(
     levels: readonly LevelCode[] | null;
     sectionIds: readonly string[] | null;
   },
-  section: { levelCode: LevelCode | null; sectionId: string | null }
+  // Any level code, YS included — YS has no level option of its own but
+  // belongs to the primary half, like the school-day rule.
+  section: { levelCode: string | null; sectionId: string | null }
 ): boolean {
   if (event.sectionIds && event.sectionIds.length > 0) {
     return (
@@ -92,17 +99,75 @@ export function eventAppliesToSection(
   }
   if (event.levels && event.levels.length > 0) {
     return (
-      section.levelCode !== null && event.levels.includes(section.levelCode)
+      section.levelCode !== null &&
+      (event.levels as readonly string[]).includes(section.levelCode)
     );
   }
   if (event.audience === 'all') return true;
-  if (section.levelCode === null) return false;
-  const band = section.levelCode.startsWith('P') ? 'primary' : 'secondary';
-  return event.audience === band;
+  // YS → 'primary'; an unknown level → null, which only 'all' matches.
+  const band = levelTypeForAudienceLookup(section.levelCode);
+  return band !== null && event.audience === band;
 }
 
 /** "2 classes." / "1 class." — the class-mode counterpart. */
 export function describeClassScope(count: number): string {
   if (count === 0) return 'No classes chosen yet.';
   return count === 1 ? '1 class.' : `${count} classes.`;
+}
+
+// ─── "Who is it for?" on the add/edit dialog (migration 196) ─────────────────
+//
+// One dropdown for every entry type. "Specific levels…" reveals the level
+// chips; "Specific classes…" (informational events only) reveals the class
+// picker.
+//
+// "Specific levels…" saves EXACTLY the codes picked — never collapsed to a
+// band or to 'all'. Youngstarters (YS) has no level option and reads its band
+// ('primary') and 'all', so collapsing "P1–P6" to 'primary' would quietly
+// close the YS register too. Whole school / Primary / Secondary are the
+// options that include YS, as they always have.
+
+export const PRIMARY_LEVEL_CODES: readonly LevelCode[] = LEVEL_CODES.filter(
+  (c) => c.startsWith('P')
+);
+export const SECONDARY_LEVEL_CODES: readonly LevelCode[] = LEVEL_CODES.filter(
+  (c) => c.startsWith('S')
+);
+
+export type ScopeChoice =
+  | 'all'
+  | 'primary'
+  | 'secondary'
+  | 'levels'
+  | 'classes';
+
+export const SCOPE_CHOICE_LABELS: Record<ScopeChoice, string> = {
+  all: 'Whole school',
+  primary: 'Primary',
+  secondary: 'Secondary',
+  levels: 'Specific levels…',
+  classes: 'Specific classes…',
+};
+
+/**
+ * An existing event → the option its dialog opens on. Saved levels always
+ * open as "Specific levels…" with exactly those chips, so saving untouched
+ * writes back exactly what was there.
+ */
+export function scopeChoiceForEvent(event: {
+  audience: 'all' | 'primary' | 'secondary';
+  levels: readonly LevelCode[] | null;
+  sectionIds: readonly string[] | null;
+}): { choice: ScopeChoice; levels: LevelCode[]; sectionIds: string[] } {
+  if (event.sectionIds && event.sectionIds.length > 0) {
+    return { choice: 'classes', levels: [], sectionIds: [...event.sectionIds] };
+  }
+  if (!event.levels || event.levels.length === 0) {
+    return { choice: event.audience, levels: [], sectionIds: [] };
+  }
+  return {
+    choice: 'levels',
+    levels: sortLevels(event.levels),
+    sectionIds: [],
+  };
 }

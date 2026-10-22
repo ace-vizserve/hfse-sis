@@ -42,8 +42,8 @@ import {
   CLOSED_REASON_LABELS,
   storageToDayStatus,
 } from '@/lib/attendance/calendar-operational';
+import { levelFacetMatches } from '@/lib/attendance/calendar-filters';
 import {
-  AUDIENCE_LABELS,
   DAY_AUDIENCE_LABELS,
   EVENT_CATEGORY_LABELS,
   isEncodableDayType,
@@ -72,7 +72,8 @@ type ListRow = {
 const KEY_SEP = '|';
 
 function rowKey(row: ListRow): string {
-  return `${row.kind}${KEY_SEP}${row.iso}${KEY_SEP}${row.typeLabel}`;
+  // The level too: "No class" for P1 and for P2 on one date are two rows.
+  return `${row.kind}${KEY_SEP}${row.iso}${KEY_SEP}${row.typeLabel}${KEY_SEP}${row.level}`;
 }
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -187,11 +188,15 @@ const DATA_COLUMNS: ColumnDef<ListRow>[] = [
   },
   {
     // accessor returns the LABEL so the Level facet (whose valueOptions are
-    // AUDIENCE_LABELS) compares like-for-like — a raw 'primary' accessor would
+    // DAY_AUDIENCE_LABELS) compares like-for-like — a raw 'primary' accessor would
     // never match the 'Primary' facet option.
     id: 'level',
     accessorFn: (row) => DAY_AUDIENCE_LABELS[row.level],
     header: 'Level',
+    // "Primary" / "Secondary" answer as the sidebar's Audience filter does —
+    // see levelFacetMatches.
+    filterFn: (row, _columnId, picked: string[]) =>
+      levelFacetMatches(row.original.level, picked),
     // Audience chip — plain neutral Badge (§9.3 "informational/neutral"
     // recipe), pairing with the Type column's colored ChartLegendChip so a
     // row reads as two distinct affordances rather than a pill next to
@@ -224,7 +229,7 @@ export function ListView({ days, events, onRowClick }: ListViewProps) {
         <div className="flex justify-end">
           <Button
             type="button"
-            variant="ghost"
+            variant="outline"
             size="sm"
             className="h-7 gap-1.5 px-2.5 text-[12px]"
             onClick={() => onRowClick(row.original.iso)}
@@ -251,7 +256,8 @@ export function ListView({ days, events, onRowClick }: ListViewProps) {
         {
           columnId: 'level',
           label: 'Level',
-          valueOptions: Object.values(AUDIENCE_LABELS),
+          // Whole school / halves first, then each level a closure can name.
+          valueOptions: Object.values(DAY_AUDIENCE_LABELS),
         },
       ]}
       initialSort={[{ id: 'iso', desc: false }]}

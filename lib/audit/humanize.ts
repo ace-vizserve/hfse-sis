@@ -45,7 +45,7 @@ import {
   ATTENDANCE_STATUS_LABELS,
   EX_REASON_LABELS,
   DAY_TYPE_LABELS,
-  AUDIENCE_LABELS,
+  DAY_AUDIENCE_LABELS,
   EVENT_CATEGORY_LABELS,
 } from '@/lib/schemas/attendance';
 import { DISCIPLINE_RECORD_TYPE_LABELS } from '@/lib/schemas/discipline';
@@ -1020,7 +1020,14 @@ function templateSummary(
     // School calendar upsert -------------------------------------------------
     case 'attendance.calendar.upsert': {
       const parts: string[] = [];
-      const audience = labelFor('audience', ctx.audience);
+      // A save for several levels at once (migration 196) lists them in
+      // `audiences` instead of `audience`: "P1, P2, P3".
+      const audienceList = strArray(ctx.audiences).map((a) =>
+        labelFor('audience', a)
+      );
+      const audience = audienceList.length
+        ? listText(audienceList, audienceList.length)
+        : labelFor('audience', ctx.audience);
       if (audience) parts.push(audience);
       if (str(ctx.action) === 'autofill_weekdays') {
         const start = fmtMaybeDate(ctx.start);
@@ -1036,14 +1043,37 @@ function templateSummary(
       }
       const diffs = Array.isArray(ctx.diffs) ? ctx.diffs : null;
       if (diffs && diffs.length) {
-        const rendered = diffs
+        // A multi-level save writes one diff per level per date, usually the
+        // same change each time. Say each distinct change once, and name the
+        // levels on a line only when they did not all change the same way.
+        // Keyed by the change itself; the first record of each is kept to
+        // re-render it with its levels: "9 Nov 2026 (P1): No class".
+        const byChange = new Map<
+          string,
+          { rec: Record<string, unknown>; auds: string[] }
+        >();
+        for (const d of diffs) {
+          const rec = isRecord(d) ? d : {};
+          const text = calendarDayChange(rec);
+          if (!text) continue;
+          const entry = byChange.get(text) ?? { rec, auds: [] };
+          const aud = labelFor('audience', rec.audience);
+          if (aud && !entry.auds.includes(aud)) entry.auds.push(aud);
+          byChange.set(text, entry);
+        }
+        const levelCount = audienceList.length;
+        const changes = [...byChange.entries()];
+        const rendered = changes
           .slice(0, LIST_CAP)
-          .map((d) => calendarDayChange(isRecord(d) ? d : {}))
-          .filter(Boolean);
+          .map(([text, { rec, auds }]) =>
+            levelCount > 1 && auds.length && auds.length < levelCount
+              ? calendarDayChange(rec, listText(auds, auds.length))
+              : text
+          );
         if (rendered.length) {
           parts.push(rendered.join(', '));
-          if (diffs.length > LIST_CAP)
-            parts.push(`+${diffs.length - LIST_CAP} more`);
+          if (changes.length > LIST_CAP)
+            parts.push(`+${changes.length - LIST_CAP} more`);
         }
       } else {
         const from = labelFor('day_type', ctx.old_day_type);
@@ -3477,8 +3507,14 @@ function eventAudienceText(ctx: Record<string, unknown>): string {
 }
 
 /** One day on the school calendar: "3 Mar 2026: School day → Public holiday “Deepavali”". */
-function calendarDayChange(rec: Record<string, unknown>): string {
-  const date = fmtMaybeDate(rec.date);
+function calendarDayChange(
+  rec: Record<string, unknown>,
+  /** Levels this change applied to, when a save covered several: "P1". */
+  audienceText?: string
+): string {
+  const rawDate = fmtMaybeDate(rec.date);
+  const date =
+    rawDate && audienceText ? `${rawDate} (${audienceText})` : rawDate;
   const from = labelFor(
     'day_type',
     rec.before_day_type ?? rec.old_day_type ?? rec.from ?? rec.old
@@ -3646,7 +3682,8 @@ function labelFor(key: string, value: unknown): string {
     case 'after_day_type':
       return (DAY_TYPE_LABELS as Record<string, string>)[raw] ?? raw;
     case 'audience':
-      return (AUDIENCE_LABELS as Record<string, string>)[raw] ?? raw;
+      // Day rows may name one level (migration 196) — "P1".
+      return (DAY_AUDIENCE_LABELS as Record<string, string>)[raw] ?? raw;
     case 'category':
       return (EVENT_CATEGORY_LABELS as Record<string, string>)[raw] ?? raw;
     case 'ex_reason':

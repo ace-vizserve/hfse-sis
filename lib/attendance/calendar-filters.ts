@@ -3,12 +3,15 @@ import type {
   SchoolCalendarRow,
 } from '@/lib/attendance/calendar';
 import {
+  AUDIENCE_LABELS,
+  DAY_AUDIENCE_LABELS,
   isEncodableDayType,
   type Audience,
   type DayAudience,
   type DayType,
   type EventCategory,
 } from '@/lib/schemas/attendance';
+import { LEVEL_TYPE_BY_CODE } from '@/lib/sis/levels';
 
 export type StatusFilter = 'all' | 'open' | 'closed';
 
@@ -98,10 +101,34 @@ export function hasActiveCalendarFilters(s: CalendarFilterState): boolean {
   );
 }
 
+// A level-code row (migration 196, e.g. "No class — P1") belongs to its half
+// of the school, so the Primary filter keeps P1–P6 rows and Secondary S1–S4.
 function inLevel(rowAudience: DayAudience, level: Audience): boolean {
-  return level === 'all'
-    ? true
-    : rowAudience === 'all' || rowAudience === level;
+  if (level === 'all' || rowAudience === 'all') return true;
+  if (rowAudience === 'primary' || rowAudience === 'secondary') {
+    return rowAudience === level;
+  }
+  return LEVEL_TYPE_BY_CODE[rowAudience] === level;
+}
+
+/**
+ * The list view's Level facet. Its options are the row labels ("All",
+ * "Primary", "Secondary", "P1"…). Picking "Primary" / "Secondary" answers as
+ * the sidebar's Audience filter does (`inLevel`): that half, its level rows
+ * (P1–P6 / S1–S4) and whole-school rows. Any other pick matches exactly.
+ */
+export function levelFacetMatches(
+  rowAudience: DayAudience,
+  pickedLabels: readonly string[]
+): boolean {
+  return pickedLabels.some((label) => {
+    if (label === AUDIENCE_LABELS.primary)
+      return inLevel(rowAudience, 'primary');
+    if (label === AUDIENCE_LABELS.secondary) {
+      return inLevel(rowAudience, 'secondary');
+    }
+    return DAY_AUDIENCE_LABELS[rowAudience] === label;
+  });
 }
 
 export function filterEvents(

@@ -868,6 +868,57 @@ describe('attendance', () => {
     expect(out).not.toContain('upsert');
   });
 
+  it('a calendar save for several levels names them and says the change once', () => {
+    const diff = (audience: string, before: string | null) => ({
+      date: '2026-11-04',
+      audience,
+      before_day_type: before,
+      after_day_type: 'no_class',
+      before_hbl_overlay: false,
+      after_hbl_overlay: false,
+      label: 'Sports day',
+      before_label: null,
+      after_label: 'Sports day',
+    });
+    const same = line('attendance.calendar.upsert', {
+      action: 'upsert',
+      audiences: ['P1', 'P2'],
+      rows: 2,
+      diffs: [diff('P1', null), diff('P2', null)],
+    });
+    expect(same).toContain('P1, P2');
+    expect(same.match(/No class/g)).toHaveLength(1);
+    expect(same).not.toContain('(P1');
+
+    const mixed = line('attendance.calendar.upsert', {
+      action: 'upsert',
+      audiences: ['P1', 'P2'],
+      rows: 2,
+      diffs: [diff('P1', 'school_day'), diff('P2', null)],
+    });
+    expect(mixed).toContain('4 Nov 2026 (P1): School day → No class');
+    expect(mixed).toContain('4 Nov 2026 (P2): No class');
+  });
+
+  it('a one-level calendar save labels the level code', () => {
+    const out = line('attendance.calendar.upsert', {
+      action: 'upsert',
+      audience: 'P1',
+      rows: 1,
+      diffs: [
+        {
+          date: '2026-11-04',
+          audience: 'P1',
+          before_day_type: null,
+          after_day_type: 'no_class',
+          after_label: 'Sports day',
+        },
+      ],
+    });
+    expect(out).toContain('P1');
+    expect(out).toContain('No class');
+  });
+
   it('calendar autofill reads the range', () => {
     const out = line('attendance.calendar.upsert', {
       action: 'autofill_weekdays',
