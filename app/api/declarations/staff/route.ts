@@ -7,7 +7,6 @@ import { DECLARATION_STATUS_LABELS } from '@/lib/schemas/declarations';
 import { createServiceClient } from '@/lib/supabase/service';
 import { sgToday } from '@/lib/dates';
 import { logAction } from '@/lib/audit/log-action';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import { staffMedicalCertificateSchema } from '@/lib/schemas/staff-declaration';
 import {
   filingCoversAnySchoolDay,
@@ -176,7 +175,7 @@ export async function POST(request: Request) {
       children: [
         {
           academicYearId: target.academicYearId,
-          levelType: levelTypeForAudienceLookup(target.levelCode),
+          levelCode: target.levelCode,
         },
       ],
     });

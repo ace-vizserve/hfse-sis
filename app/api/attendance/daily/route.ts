@@ -12,7 +12,6 @@ import {
   type RollupAfterWrite,
 } from '@/lib/attendance/mutations';
 import { createNonSchoolDayChecker } from '@/lib/attendance/school-days';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import {
   DailyBulkSchema,
   DailyEntrySchema,
@@ -345,13 +344,14 @@ export async function PATCH(request: NextRequest) {
       priorNoteByKey.set(key, row.ex_note ?? null);
     }
   }
-  const levelTypeByEnrolment = new Map<
-    string,
-    'primary' | 'secondary' | null
-  >();
+  // The level CODE, not the band: a calendar row can be aimed at one level
+  // (migration 196), and the checker derives the band itself.
+  const levelCodeByEnrolment = new Map<string, string | null>();
   for (const [enrolmentId, sectionId] of sectionIdByEnrolment) {
-    const code = levelCodeBySection.get(sectionId) ?? null;
-    levelTypeByEnrolment.set(enrolmentId, levelTypeForAudienceLookup(code));
+    levelCodeByEnrolment.set(
+      enrolmentId,
+      levelCodeBySection.get(sectionId) ?? null
+    );
   }
 
   // Write-gate: encodable when day_type IN ('school_day','hbl'); blocked
@@ -376,8 +376,8 @@ export async function PATCH(request: NextRequest) {
     // Write-gate: encodable day_types are school_day + hbl. Others reject
     // unless registrar+ is writing NC (the legitimate way to mark "no class"
     // on a pre-calendar date or back-fill a closure).
-    const levelType = levelTypeByEnrolment.get(entry.sectionStudentId) ?? null;
-    const blocked = await isNonSchoolDay(entry.termId, entry.date, levelType);
+    const levelCode = levelCodeByEnrolment.get(entry.sectionStudentId) ?? null;
+    const blocked = await isNonSchoolDay(entry.termId, entry.date, levelCode);
     // ⚠ A CLEAR (status null) IS ALWAYS LET THROUGH, whatever the calendar
     // says. This gate exists to stop a mark being PUT on a day the school was
     // shut; clearing only ever takes one away, so refusing it protects

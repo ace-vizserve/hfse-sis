@@ -115,7 +115,7 @@ const schoolDay = (date: string, audience = 'all'): CalRow => ({
   hbl_overlay: false,
 });
 
-const CHILD = { academicYearId: 'ay', levelType: 'primary' as const };
+const CHILD = { academicYearId: 'ay', levelCode: 'P4' };
 
 describe('filingCoversAnySchoolDay', () => {
   it('lets through a range with school days in it', async () => {
@@ -199,7 +199,42 @@ describe('filingCoversAnySchoolDay', () => {
       await filingCoversAnySchoolDay(service as never, {
         startDate: '2026-02-09',
         endDate: '2026-02-09',
-        children: [CHILD, { academicYearId: 'ay', levelType: 'secondary' }],
+        children: [CHILD, { academicYearId: 'ay', levelCode: 'S2' }],
+      })
+    ).toBe(true);
+  });
+
+  it('reads each sibling level separately, even inside one half', async () => {
+    // Migration 196: the day is closed for P1 only. A P1 child alone has no
+    // school day; a P2 sibling does, so the filing is real. Grouping siblings
+    // by band would have answered both from one read.
+    const service = fakeService({
+      terms: [TERM],
+      calendar: [
+        schoolDay('2026-02-09'),
+        {
+          term_id: 't1',
+          date: '2026-02-09',
+          day_type: 'no_class',
+          audience: 'P1',
+          hbl_overlay: false,
+        },
+      ],
+    });
+    const args = { startDate: '2026-02-09', endDate: '2026-02-09' };
+    expect(
+      await filingCoversAnySchoolDay(service as never, {
+        ...args,
+        children: [{ academicYearId: 'ay', levelCode: 'P1' }],
+      })
+    ).toBe(false);
+    expect(
+      await filingCoversAnySchoolDay(service as never, {
+        ...args,
+        children: [
+          { academicYearId: 'ay', levelCode: 'P1' },
+          { academicYearId: 'ay', levelCode: 'P2' },
+        ],
       })
     ).toBe(true);
   });
@@ -214,7 +249,7 @@ describe('filingCoversAnySchoolDay', () => {
       await filingCoversAnySchoolDay(service as never, {
         startDate: '2026-02-09',
         endDate: '2026-02-09',
-        children: [{ academicYearId: 'ay', levelType: 'preschool' }],
+        children: [{ academicYearId: 'ay', levelCode: null }],
       })
     ).toBe(true);
   });

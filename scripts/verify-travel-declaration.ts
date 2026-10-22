@@ -37,8 +37,6 @@ import { DECLARATION_APPROVAL_FLOW } from '../lib/schemas/approval-flows';
 
 type Service = ReturnType<typeof createServiceClient>;
 type LevelType = 'primary' | 'secondary' | 'preschool' | null;
-/** What the calendar's audience understands — preschool reads the 'all' rows. */
-type CalendarLevel = 'primary' | 'secondary' | null;
 
 const problems: string[] = [];
 const fail = (why: string) => problems.push(why);
@@ -98,14 +96,14 @@ async function markableDays(
   academicYearId: string,
   from: string,
   to: string,
-  levelType: CalendarLevel
+  levelCode: string | null
 ): Promise<string[]> {
   if (to < from) return [];
   const days = await expandSchoolDays(service, {
     startDate: from,
     endDate: to,
     academicYearId,
-    levelType,
+    levelCode,
   });
   return days.map((d) => d.date);
 }
@@ -376,9 +374,12 @@ async function main() {
     `  Window examined: ${today} → ${lastEnd} (end of the last dated term)`
   );
 
+  // One level stands in for each half. A day aimed at a single level
+  // (migration 196) shows only for that level, so P1 / S1 can differ from
+  // the rest of their half on such a day.
   const byHalf: Record<'primary' | 'secondary', string[]> = {
-    primary: await markableDays(service, ay.id, today, lastEnd, 'primary'),
-    secondary: await markableDays(service, ay.id, today, lastEnd, 'secondary'),
+    primary: await markableDays(service, ay.id, today, lastEnd, 'P1'),
+    secondary: await markableDays(service, ay.id, today, lastEnd, 'S1'),
   };
 
   for (const half of ['primary', 'secondary'] as const) {
@@ -681,24 +682,21 @@ async function main() {
         );
         const { data: sectionRow } = await service
           .from('sections')
-          .select('levels(level_type)')
+          .select('levels(code)')
           .eq('id', f.section_id)
           .maybeSingle();
-        const lv = (
-          sectionRow as { levels?: { level_type?: string } | null } | null
-        )?.levels;
-        const rawType = Array.isArray(lv)
-          ? (lv[0] as { level_type?: string })?.level_type
-          : lv?.level_type;
-        const calendarLevel: CalendarLevel =
-          rawType === 'primary' || rawType === 'secondary' ? rawType : null;
+        const lv = (sectionRow as { levels?: { code?: string } | null } | null)
+          ?.levels;
+        const levelCode =
+          (Array.isArray(lv) ? (lv[0] as { code?: string })?.code : lv?.code) ??
+          null;
 
         const termDays = await markableDays(
           service,
           f.academic_year_id,
           term.startDate,
           term.endDate,
-          calendarLevel
+          levelCode
         );
         // `startedBeforeTerm` is false here on purpose: this probe reports what
         // THIS term's marks say. A trip carried in from the previous term is

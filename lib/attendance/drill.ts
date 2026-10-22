@@ -996,14 +996,14 @@ async function rollupVacationLeave(
       startDate: term.start_date,
       endDate: term.end_date,
       academicYearId: ctx.ayId,
-      levelType: null,
+      levelCode: null,
     }),
     priorTerm?.start_date && priorTerm.end_date
       ? expandSchoolDays(service, {
           startDate: priorTerm.start_date,
           endDate: priorTerm.end_date,
           academicYearId: ctx.ayId,
-          levelType: null,
+          levelCode: null,
         })
       : Promise.resolve(null),
   ]);

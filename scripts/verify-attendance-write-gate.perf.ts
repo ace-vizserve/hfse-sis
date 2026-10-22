@@ -112,7 +112,7 @@ describe('attendance write gate — SQL vs TypeScript', () => {
       for (const date of dateSet) {
         for (const p of probes) {
           const levelType = levelTypeForAudienceLookup(p.code);
-          const ts = await isNonSchoolDay(termId, date, levelType);
+          const ts = await isNonSchoolDay(termId, date, p.code);
           const { data: sqlVal, error } = await svc.rpc(
             'attendance_write_blocked',
             {

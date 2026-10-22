@@ -3,9 +3,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { eachDateInclusive } from '@/lib/attendance/sheet-columns';
 import {
   isEncodableDayType,
-  type Audience,
+  type DayAudience,
   type DayType,
 } from '@/lib/schemas/attendance';
+import {
+  LEVEL_CODES,
+  levelTypeForAudienceLookup,
+  type LevelCode,
+} from '@/lib/sis/levels';
 
 // Attendance module — "is this a day the register can be marked on?", in one
 // place.
@@ -30,37 +35,59 @@ import {
 // nothing at all (the pre-migration-019 world, where schools had not filled
 // the calendar in yet). Removing that would refuse marks on every date of any
 // term nobody has configured.
-
-export type CalendarLevelType = 'primary' | 'secondary' | null;
+//
+// Audience (migration 196): every reader takes the section's LEVEL CODE and
+// derives its band (primary / secondary) itself. For a date, the row aimed at
+// the code beats the band's row, which beats the 'all' row. Youngstarters has
+// no code rows (its code is not one of the ten) and keeps its band + 'all';
+// preschool, or a section with no level, reads only 'all'.
 
 /** One day inside an approved range that the register can carry a mark for. */
 export type SchoolDay = { date: string; termId: string };
 
 type CalendarRow = {
   day_type: DayType;
-  audience: Audience;
+  audience: DayAudience;
   hbl_overlay: boolean | null;
 };
 
 export type NonSchoolDayChecker = (
   termId: string,
   date: string,
-  levelType: CalendarLevelType
+  levelCode: string | null
 ) => Promise<boolean>;
+
+/** The code itself when it can carry calendar rows (one of the ten), else null. */
+function calendarCode(levelCode: string | null): LevelCode | null {
+  return levelCode && (LEVEL_CODES as readonly string[]).includes(levelCode)
+    ? (levelCode as LevelCode)
+    : null;
+}
+
+/** The audiences a section with this level code sees: 'all', band, code. */
+function audiencesFor(levelCode: string | null): DayAudience[] {
+  const band = levelTypeForAudienceLookup(levelCode);
+  const code = calendarCode(levelCode);
+  const audiences: DayAudience[] = ['all'];
+  if (band) audiences.push(band);
+  if (code) audiences.push(code);
+  return audiences;
+}
 
 /**
  * The rule itself, with no I/O.
  *
  * `rowsForDate` is every `school_calendar` row for this date whose audience
- * the section can see ('all', plus its own level type). `termHasAnyRows` says
- * whether the term has been configured at all.
+ * the section can see ('all', its band, its level code). `termHasAnyRows`
+ * says whether the term has been configured at all.
  *
- * Audience precedence: a row aimed at this level beats the 'all' row for the
- * same date. Preschool sections (levelType null) only ever see 'all'.
+ * Audience precedence: the level code's row beats the band's row, which
+ * beats the 'all' row for the same date. Preschool sections (no band) only
+ * ever see 'all'.
  */
 export function decideNonSchoolDay(
   rowsForDate: CalendarRow[],
-  levelType: CalendarLevelType,
+  levelCode: string | null,
   termHasAnyRows: boolean
 ): boolean {
   if (rowsForDate.length === 0) {
@@ -69,8 +96,13 @@ export function decideNonSchoolDay(
     // mode — no block.
     return termHasAnyRows;
   }
-  const specific = rowsForDate.find((r) => r.audience === levelType);
-  const chosen = specific ?? rowsForDate[0];
+  const band = levelTypeForAudienceLookup(levelCode);
+  const code = calendarCode(levelCode);
+  const chosen =
+    (code ? rowsForDate.find((r) => r.audience === code) : undefined) ??
+    (band ? rowsForDate.find((r) => r.audience === band) : undefined) ??
+    rowsForDate.find((r) => r.audience === 'all') ??
+    rowsForDate[0];
   // school_holiday + hbl_overlay=true IS encodable — teachers deliver HBL
   // while the day is a school closure for students (migration 051).
   return !isEncodableDayType(chosen.day_type, chosen.hbl_overlay ?? false);
@@ -87,12 +119,14 @@ export function createNonSchoolDayChecker(
   const blockCache = new Map<string, boolean>();
   const termHasRowsCache = new Map<string, boolean>();
 
-  return async function isNonSchoolDay(termId, date, levelType) {
-    const key = `${termId}|${date}|${levelType ?? 'all'}`;
+  return async function isNonSchoolDay(termId, date, levelCode) {
+    // Keyed on the code, not the band: two primary levels can now disagree
+    // about the same date.
+    const key = `${termId}|${date}|${levelCode ?? 'all'}`;
     const cached = blockCache.get(key);
     if (cached !== undefined) return cached;
 
-    const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
+    const audiences = audiencesFor(levelCode);
     const { data } = await service
       .from('school_calendar')
       .select('day_type, audience, hbl_overlay')
@@ -119,7 +153,7 @@ export function createNonSchoolDayChecker(
       termHasRowsCache.set(termId, termHasAnyRows);
     }
 
-    const blocked = decideNonSchoolDay(rows, levelType, termHasAnyRows);
+    const blocked = decideNonSchoolDay(rows, levelCode, termHasAnyRows);
     blockCache.set(key, blocked);
     return blocked;
   };
@@ -179,10 +213,11 @@ export async function expandSchoolDays(
     startDate: string;
     endDate: string;
     academicYearId: string;
-    levelType: CalendarLevelType;
+    /** The section's level code; null reads only 'all'. */
+    levelCode: string | null;
   }
 ): Promise<SchoolDay[]> {
-  const { startDate, endDate, academicYearId, levelType } = args;
+  const { startDate, endDate, academicYearId, levelCode } = args;
 
   const allDates = eachDateInclusive(startDate, endDate);
   if (allDates.length === 0) return [];
@@ -199,7 +234,7 @@ export async function expandSchoolDays(
   if (dated.length === 0) return [];
 
   const termIds = [...new Set(dated.map((d) => d.termId))];
-  const audiences: Audience[] = levelType ? ['all', levelType] : ['all'];
+  const audiences = audiencesFor(levelCode);
 
   // One query for the whole window rather than one per day. The shipped
   // per-date checker is fine for a class-sized submit; a declaration range is
@@ -259,7 +294,7 @@ export async function expandSchoolDays(
     ({ date, termId }) =>
       !decideNonSchoolDay(
         rowsByKey.get(`${termId}|${date}`) ?? [],
-        levelType,
+        levelCode,
         termConfigured.get(termId) ?? false
       )
   );

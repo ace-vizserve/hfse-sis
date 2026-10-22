@@ -242,7 +242,7 @@ export async function POST(request: Request) {
       endDate: input.endDate,
       children: resolved.map((s) => ({
         academicYearId: s.academicYearId,
-        levelType: s.levelType,
+        levelCode: s.levelCode,
       })),
     });
     if (!opensSomeDay) {
