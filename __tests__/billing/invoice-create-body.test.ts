@@ -16,6 +16,30 @@ const base = {
   requestId: '6f1c1a52-6a43-4b8e-9d55-0a4a3f0f2b11',
 };
 
+describe('CreateInvoiceBody — discount lines', () => {
+  it('takes a line with a rate below 0 (Sibling Discount)', () => {
+    const r = CreateInvoiceBody.safeParse({
+      ...base,
+      lines: [...base.lines, { itemId: '9', qty: 1, unitPrice: -50 }],
+    });
+    expect(r.success).toBe(true);
+  });
+  it('takes an invoice the discounts bring to 0 (a full scholar)', () => {
+    const r = CreateInvoiceBody.safeParse({
+      ...base,
+      lines: [...base.lines, { itemId: '9', qty: 1, unitPrice: -100 }],
+    });
+    expect(r.success).toBe(true);
+  });
+  it('refuses an invoice the discounts bring below 0', () => {
+    const r = CreateInvoiceBody.safeParse({
+      ...base,
+      lines: [...base.lines, { itemId: '9', qty: 1, unitPrice: -100.01 }],
+    });
+    expect(r.success).toBe(false);
+  });
+});
+
 describe('CreateInvoiceBody — stage', () => {
   it('is optional', () => {
     const r = CreateInvoiceBody.safeParse(base);

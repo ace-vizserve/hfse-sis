@@ -66,11 +66,13 @@ export function useProductItems(enabled: boolean) {
   });
 }
 
+// A rate below 0 is a discount line (Sibling Discount, Referral Discount…),
+// as HFSE's QuickBooks has them; only the document's total must stay above 0.
 const lineReady = (l: ProductLine) =>
   l.qty.trim() !== '' &&
   Number(l.qty) > 0 &&
   l.unitPrice.trim() !== '' &&
-  Number(l.unitPrice) >= 0;
+  Number.isFinite(Number(l.unitPrice));
 
 export const lineAmount = (l: ProductLine) =>
   lineReady(l)
@@ -102,6 +104,7 @@ export function ProductLinesEditor({
   knownNames,
   actions,
   showErrors,
+  belowZero = false,
 }: {
   lines: ProductLine[];
   onChange: (next: ProductLine[]) => void;
@@ -114,6 +117,8 @@ export function ProductLinesEditor({
   /** Buttons before Add line (e.g. Same items as last time). */
   actions?: ReactNode;
   showErrors: boolean;
+  /** The discount lines come to more than the rest (an invoice below 0). */
+  belowZero?: boolean;
 }) {
   const setLine = (key: number, patch: Partial<ProductLine>) =>
     onChange(lines.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -269,6 +274,12 @@ export function ProductLinesEditor({
       {showErrors && !productLinesValid(lines) && (
         <FieldError>
           Each line needs a product or service, a quantity above 0 and a rate.
+        </FieldError>
+      )}
+      {showErrors && belowZero && (
+        <FieldError>
+          The discounts come to more than the invoice. QuickBooks needs an
+          invoice of 0 or more.
         </FieldError>
       )}
     </>

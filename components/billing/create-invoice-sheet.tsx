@@ -177,17 +177,22 @@ export function CreateInvoiceSheet({
       l.qty.trim() !== '' &&
       l.q > 0 &&
       l.unitPrice.trim() !== '' &&
-      l.p >= 0
+      Number.isFinite(l.p)
   );
+  // A rate below 0 is a discount line; QuickBooks takes an invoice that
+  // comes to 0 or more.
   const total = parsed.reduce(
     (s, l) =>
       s +
-      (l.qty.trim() !== '' && l.unitPrice.trim() !== '' && l.q > 0 && l.p >= 0
+      (l.qty.trim() !== '' &&
+      l.unitPrice.trim() !== '' &&
+      l.q > 0 &&
+      Number.isFinite(l.p)
         ? Math.round(l.q * l.p * 100) / 100
         : 0),
     0
   );
-  const valid = linesValid && /^\d{4}-\d{2}-\d{2}$/.test(txnDate);
+  const valid = linesValid && total >= 0 && /^\d{4}-\d{2}-\d{2}$/.test(txnDate);
 
   // Created from a stage that already has a live invoice tied to it.
   // Not when editing: the stage's live invoice is this one.
@@ -293,9 +298,7 @@ export function CreateInvoiceSheet({
       );
       setSameNote(
         `Filled from invoice ${d.from ?? 'the last one'}. Check the lines before you create it.` +
-          (d.skipped
-            ? " Discounts and other lines without a product weren't copied."
-            : '')
+          (d.skipped ? " Lines without a product weren't copied." : '')
       );
     },
     onError: (e) => setSameNote((e as Error).message),
@@ -472,6 +475,7 @@ export function CreateInvoiceSheet({
                 // loads or once inactive in QuickBooks.
                 knownNames={editNames}
                 showErrors={showErrors}
+                belowZero={linesValid && total < 0}
                 actions={
                   stage &&
                   !edit && (

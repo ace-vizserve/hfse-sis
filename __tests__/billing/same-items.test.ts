@@ -38,7 +38,7 @@ describe('sameItemsFrom', () => {
       skipped: false,
     });
   });
-  it('leaves out discounts and lines with no product, and says so', () => {
+  it('keeps discount lines, leaves out lines with no product, and says so', () => {
     const got = sameItemsFrom(
       [
         row({
@@ -51,8 +51,10 @@ describe('sameItemsFrom', () => {
       ],
       'registration'
     );
-    expect(got?.lines).toHaveLength(1);
-    expect(got?.lines[0].itemId).toBe('7');
+    expect(got?.lines.map((l) => [l.itemId, l.unitPrice])).toEqual([
+      ['7', expect.any(Number)],
+      ['9', -50],
+    ]);
     expect(got?.skipped).toBe(true);
   });
   it('skips voided, other stages and lines with no product', () => {

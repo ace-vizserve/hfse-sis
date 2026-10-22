@@ -34,6 +34,19 @@ describe('SalesDocBody', () => {
   it('accepts a credit note with no bank account', () => {
     expect(SalesDocBody.safeParse(credit).success).toBe(true);
   });
+  it('takes an invoice discount line copied onto a credit note', () => {
+    const lines = [
+      { itemId: '25', qty: 1, unitPrice: 3000 },
+      { itemId: '9', qty: 1, unitPrice: -150 },
+    ];
+    expect(SalesDocBody.safeParse({ ...credit, lines }).success).toBe(true);
+    expect(
+      SalesDocBody.safeParse({
+        ...credit,
+        lines: [{ itemId: '9', qty: 1, unitPrice: -150 }],
+      }).success
+    ).toBe(false);
+  });
   it('refuses no lines, a zero total, a bad date, another kind, no request id', () => {
     for (const bad of [
       { ...credit, lines: [] },

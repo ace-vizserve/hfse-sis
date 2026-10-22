@@ -23,17 +23,16 @@ export type SameItemLine = {
 export type SameItems = {
   from: string | null;
   lines: SameItemLine[];
-  /** Some lines of that invoice were left out (a discount, a line with no product). */
+  /** Some lines of that invoice were left out (a line with no product). */
   skipped: boolean;
 };
 
 /**
- * One stored line as Create invoice's form takes it; null without a product
- * or with a negative amount (a discount — Create invoice has no discount line).
+ * One stored line as Create invoice's form takes it; null without a product.
+ * A negative amount is a discount product (Sibling Discount…) and comes too.
  */
 function formLine(l: InvoiceLine): SameItemLine | null {
   if (!l.itemId) return null;
-  if (Number(l.amount) < 0) return null;
   const qty = l.qty && l.qty > 0 ? l.qty : 1;
   return {
     itemId: l.itemId,

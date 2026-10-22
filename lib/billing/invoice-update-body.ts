@@ -5,8 +5,10 @@
 import { z } from 'zod';
 
 import {
+  INVOICE_BELOW_ZERO,
   INVOICE_NOTE_MAX,
   invoiceNote,
+  linesTotalNotNegative,
 } from '@/lib/billing/invoice-create-body';
 import { isRealDate } from '@/lib/billing/settings-helpers';
 import { QboError, qboErrorMessage } from '@/lib/qbo/client';
@@ -27,11 +29,13 @@ export const UpdateInvoiceBody = z.object({
         itemId: z.string().min(1),
         description: z.string().max(4000).optional(),
         qty: z.number().positive(),
-        unitPrice: z.number().nonnegative(),
+        // Below 0 = a discount line, as HFSE's invoices have them.
+        unitPrice: z.number().finite(),
       })
     )
     .min(1, 'Add at least one line.')
-    .max(50),
+    .max(50)
+    .refine(linesTotalNotNegative, INVOICE_BELOW_ZERO),
   txnDate: Date10,
   dueDate: Date10.nullable(),
   /** Note to customer — blank clears it. */

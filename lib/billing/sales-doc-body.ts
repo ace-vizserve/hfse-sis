@@ -51,7 +51,8 @@ export const SalesDocBody = z
           itemId: z.string().min(1),
           description: z.string().max(4000).optional(),
           qty: z.number().positive(),
-          unitPrice: z.number().nonnegative(),
+          // Below 0 = a discount line; the total must stay above 0.
+          unitPrice: z.number().finite(),
         })
       )
       .min(1, 'Add at least one line.')

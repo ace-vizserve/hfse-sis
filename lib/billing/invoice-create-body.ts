@@ -8,6 +8,18 @@ import { isRealDate } from '@/lib/billing/settings-helpers';
 /** QuickBooks' limit on an Invoice's PrivateNote ("Memo on statement"). */
 export const INVOICE_NOTE_MAX = 4000;
 
+export const INVOICE_BELOW_ZERO =
+  'The discounts come to more than the invoice. QuickBooks needs an invoice of 0 or more.';
+
+/** QuickBooks takes an invoice whose lines come to 0 or more. */
+export function linesTotalNotNegative(
+  lines: Array<{ qty: number; unitPrice: number }>
+): boolean {
+  return (
+    lines.reduce((s, l) => s + Math.round(l.qty * l.unitPrice * 100), 0) >= 0
+  );
+}
+
 const Date10 = z
   .string()
   .regex(/^\d{4}-\d{2}-\d{2}$/)
@@ -20,11 +32,13 @@ export const CreateInvoiceBody = z.object({
         itemId: z.string().min(1),
         description: z.string().max(4000).optional(),
         qty: z.number().positive(),
-        unitPrice: z.number().nonnegative(),
+        // Below 0 = a discount line, as HFSE's invoices have them.
+        unitPrice: z.number().finite(),
       })
     )
     .min(1, 'Add at least one line.')
-    .max(50),
+    .max(50)
+    .refine(linesTotalNotNegative, INVOICE_BELOW_ZERO),
   txnDate: Date10,
   dueDate: Date10.nullable(),
   /** Note to customer — QuickBooks' CustomerMemo, printed on the invoice. */
