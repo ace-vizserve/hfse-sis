@@ -10,7 +10,7 @@ import {
   type Resolver,
   type UseFormReturn,
 } from 'react-hook-form';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 
 import {
@@ -575,6 +575,22 @@ export function EditProfileSheet({
 }) {
   const [open, setOpen] = useState(false);
 
+  // The year's discount codes — the slots pick from them, as the parent
+  // portal does. Fetched only once the sheet is open.
+  const codesQuery = useQuery({
+    queryKey: ['sis', 'discount-codes', ayCode],
+    queryFn: () =>
+      apiFetch<{ codes: Array<{ discountCode: string }> }>(
+        `/api/sis/discount-codes?ay=${encodeURIComponent(ayCode)}`
+      ),
+    enabled: open,
+    staleTime: 5 * 60_000,
+  });
+  const discountCodeOptions = (codesQuery.data?.codes ?? []).map((c) => ({
+    label: c.discountCode,
+    value: c.discountCode,
+  }));
+
   // Slots drawn this session: those with data, plus any revealed by "Add".
   // Never resets on save — only on close, alongside the form reset below.
   const [shownSiblings, setShownSiblings] = useState<number[]>(() =>
@@ -810,7 +826,13 @@ export function EditProfileSheet({
                             key={cfg.name}
                             cfg={withLevelLock(
                               withAdmissionOptions(
-                                cfg,
+                                isDiscounts && cfg.slot != null
+                                  ? {
+                                      ...cfg,
+                                      kind: 'select',
+                                      options: discountCodeOptions,
+                                    }
+                                  : cfg,
                                 admissionOptions,
                                 pickedLevel,
                                 pickedClassType
