@@ -28,8 +28,10 @@ import type {
 } from '@/lib/attendance/calendar';
 import {
   AUDIENCE_LABELS,
+  DAY_AUDIENCE_LABELS,
   EVENT_CATEGORY_LABELS,
   type Audience,
+  type DayAudience,
   type DayType,
   type EventCategory,
 } from '@/lib/schemas/attendance';
@@ -154,7 +156,7 @@ export function CopyFromPriorAyDialog({
       dayTypeRows: Array<{
         date: string;
         dayType: DayType;
-        audience: Audience;
+        audience: DayAudience;
         label: string;
       }>;
       events: Array<{
@@ -185,7 +187,7 @@ export function CopyFromPriorAyDialog({
       .map((r) => ({
         date: r.targetDate!,
         dayType: r.source.dayType as DayType,
-        audience: r.source.audience as Audience,
+        audience: r.source.audience as DayAudience,
         label: r.source.label ?? r.source.dayType,
       }));
     const events = eventRows
@@ -342,7 +344,7 @@ export function CopyFromPriorAyDialog({
                                   variant="secondary"
                                   className="shrink-0 text-[10px]"
                                 >
-                                  {AUDIENCE_LABELS[r.source.audience]}
+                                  {DAY_AUDIENCE_LABELS[r.source.audience]}
                                 </Badge>
                               )}
                             </div>

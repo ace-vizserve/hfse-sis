@@ -259,36 +259,70 @@ export const EVENT_CATEGORY_LABELS: Record<EventCategory, string> = {
   other: 'Other',
 };
 
+// Most rows one save may write: entries × audiences. Ten levels × a 200-day
+// range is the widest real request; this keeps a single upsert bounded.
+export const SCHOOL_CALENDAR_MAX_ROWS = 2000;
+
 // Schemas for the school-calendar admin surface.
-export const SchoolCalendarUpsertSchema = z.object({
-  termId: uuidString,
-  audience: z.enum(AUDIENCE_VALUES).optional().default('all'),
-  entries: z
-    .array(
-      z
-        .object({
-          date: dateString,
-          // `dayType` is the preferred field. `isHoliday` is legacy — if both
-          // are omitted it's a bad request; if only `isHoliday` is present it
-          // maps to `school_day` / `public_holiday`.
-          dayType: z.enum(DAY_TYPE_VALUES).optional(),
-          isHoliday: z.boolean().optional(),
-          label: z.string().trim().max(200).optional().nullable(),
-          // When true, a school_holiday row is also encodable — teachers take
-          // attendance. Only meaningful when dayType='school_holiday'.
-          hblOverlay: z.boolean().optional().default(false),
-        })
-        .refine((v) => v.dayType !== undefined || v.isHoliday !== undefined, {
-          message: 'Provide dayType (preferred) or isHoliday (legacy)',
-          path: ['dayType'],
-        })
-    )
-    .min(1)
-    .max(200),
-});
+//
+// `audiences` (migration 196) writes the same entries for several audiences
+// in one save — e.g. "No class" for P1 and P2. `audience` stays for older
+// callers. If both are sent, `audiences` wins: `audience` defaults to 'all'
+// after parsing, so it cannot tell "sent" from "left out", and a caller that
+// bothered to send the list means the list. Use `schoolCalendarAudiences()`
+// to read the effective set.
+export const SchoolCalendarUpsertSchema = z
+  .object({
+    termId: uuidString,
+    audience: z.enum(DAY_AUDIENCE_VALUES).optional().default('all'),
+    audiences: z
+      .array(z.enum(DAY_AUDIENCE_VALUES))
+      .min(1)
+      .max(DAY_AUDIENCE_VALUES.length)
+      .transform((list) => Array.from(new Set(list)))
+      .optional(),
+    entries: z
+      .array(
+        z
+          .object({
+            date: dateString,
+            // `dayType` is the preferred field. `isHoliday` is legacy — if both
+            // are omitted it's a bad request; if only `isHoliday` is present it
+            // maps to `school_day` / `public_holiday`.
+            dayType: z.enum(DAY_TYPE_VALUES).optional(),
+            isHoliday: z.boolean().optional(),
+            label: z.string().trim().max(200).optional().nullable(),
+            // When true, a school_holiday row is also encodable — teachers take
+            // attendance. Only meaningful when dayType='school_holiday'.
+            hblOverlay: z.boolean().optional().default(false),
+          })
+          .refine((v) => v.dayType !== undefined || v.isHoliday !== undefined, {
+            message: 'Provide dayType (preferred) or isHoliday (legacy)',
+            path: ['dayType'],
+          })
+      )
+      .min(1)
+      .max(200),
+  })
+  .refine(
+    (v) =>
+      v.entries.length * (v.audiences?.length ?? 1) <= SCHOOL_CALENDAR_MAX_ROWS,
+    {
+      message:
+        'That is too much for one save — pick fewer dates or fewer levels.',
+      path: ['audiences'],
+    }
+  );
 export type SchoolCalendarUpsertInput = z.infer<
   typeof SchoolCalendarUpsertSchema
 >;
+
+/** The audiences one upsert writes: `audiences` if sent, else `[audience]`. */
+export function schoolCalendarAudiences(
+  v: Pick<SchoolCalendarUpsertInput, 'audience' | 'audiences'>
+): DayAudience[] {
+  return v.audiences ?? [v.audience];
+}
 
 /** Resolves the `day_type` value to persist from either a new-shape or
  *  legacy-shape upsert entry. */
@@ -381,7 +415,9 @@ export const CopyFromPriorAyPayloadSchema = z.object({
       z.object({
         date: dateString, // already year-shifted
         dayType: z.enum(DAY_TYPE_VALUES),
-        audience: z.enum(AUDIENCE_VALUES),
+        // A day row may be aimed at one level (migration 196); events stay
+        // three-valued below.
+        audience: z.enum(DAY_AUDIENCE_VALUES),
         label: z.string().trim().max(200).optional().nullable(),
       })
     )
