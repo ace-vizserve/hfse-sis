@@ -42,7 +42,11 @@ export type LinkedStudent = {
   sectionId: string;
   academicYearId: string;
   displayName: string;
-  /** e.g. `P4` — for labelling a child in a picker, never for logic. */
+  /**
+   * e.g. `P4` — for labelling a child in a picker, and for the school
+   * calendar: a calendar day can be aimed at one level (migration 196), so
+   * `filingCoversAnySchoolDay` reads the code, not `levelType` below.
+   */
   levelCode: string | null;
   /**
    * `primary` / `secondary`, from `levels.level_type`.

@@ -14,7 +14,6 @@ import {
 } from '@/lib/attendance/mutations';
 import { expandSchoolDays } from '@/lib/attendance/school-days';
 import { sgToday } from '@/lib/dates';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 import type { ExReason } from '@/lib/schemas/attendance';
 import { inclusiveDayCount } from '@/lib/schemas/declarations';
 
@@ -163,8 +162,9 @@ export async function writeRegisterForDeclaration(
   }
 
   try {
-    // The calendar's audience precedence needs the child's half of the school.
-    // Same lookup the daily PATCH route does before its own write-gate.
+    // The calendar's audience precedence needs the child's level code (the
+    // band is derived from it). Same lookup the daily PATCH route does before
+    // its own write-gate.
     // `name` rides along for the audit rows below — same read.
     const { data: sectionRow } = await service
       .from('sections')
@@ -176,13 +176,11 @@ export async function writeRegisterForDeclaration(
         ?.levels?.code ?? null;
     const sectionName =
       (sectionRow as { name?: string | null } | null)?.name ?? null;
-    const levelType = levelTypeForAudienceLookup(levelCode);
-
     const days = await expandSchoolDays(service, {
       startDate: row.start_date,
       endDate: row.end_date,
       academicYearId: row.academic_year_id,
-      levelType,
+      levelCode,
     });
 
     // Days inside the filed range that carry no mark: weekends, public

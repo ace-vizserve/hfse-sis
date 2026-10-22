@@ -7,10 +7,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import {
-  expandSchoolDays,
-  type CalendarLevelType,
-} from '@/lib/attendance/school-days';
+import { expandSchoolDays } from '@/lib/attendance/school-days';
 
 /**
  * Does a parent's filing actually cover a day the school is open?
@@ -43,35 +40,30 @@ export async function filingCoversAnySchoolDay(
     startDate: string;
     endDate: string;
     /**
-     * ⚠ `levelType` here is the STUDENT's, which carries `'preschool'` — the
-     * calendar's audience does not. `school_calendar.audience` is only
-     * `('all','primary','secondary')`; KD #76 deferred preschool and settled
-     * that preschool sections read the `'all'` rows. So it narrows to `null`
-     * below, which is exactly what `expandSchoolDays` treats as "see only
-     * 'all'". Widening the parameter rather than casting at the call site
-     * keeps that reasoning next to the calendar it is about.
+     * `levelCode` is the child's section level code (`P4`, `YS`, …).
+     * `expandSchoolDays` derives the band from it and reads the code's own
+     * calendar rows too (migration 196). A preschool code, or null, has no
+     * band and reads only the `'all'` rows (KD #76).
      */
     children: Array<{
       academicYearId: string;
-      levelType: CalendarLevelType | 'preschool';
+      levelCode: string | null;
     }>;
   }
 ): Promise<boolean> {
   const { startDate, endDate, children } = args;
   if (children.length === 0) return false;
 
-  // Siblings overwhelmingly share a year and a half of the school, so this is
-  // normally ONE calendar read however many children were named.
+  // Siblings in the same year and level share one calendar read. Keyed on the
+  // CODE, not the band: a day can be closed for P1 and open for P2.
   const groups = new Map<
     string,
-    { academicYearId: string; levelType: CalendarLevelType }
+    { academicYearId: string; levelCode: string | null }
   >();
   for (const child of children) {
-    const levelType: CalendarLevelType =
-      child.levelType === 'preschool' ? null : child.levelType;
-    groups.set(`${child.academicYearId}|${levelType ?? 'all'}`, {
+    groups.set(`${child.academicYearId}|${child.levelCode ?? 'all'}`, {
       academicYearId: child.academicYearId,
-      levelType,
+      levelCode: child.levelCode,
     });
   }
 
@@ -80,7 +72,7 @@ export async function filingCoversAnySchoolDay(
       startDate,
       endDate,
       academicYearId: group.academicYearId,
-      levelType: group.levelType,
+      levelCode: group.levelCode,
     });
     if (days.length > 0) return true;
   }

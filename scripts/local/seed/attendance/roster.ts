@@ -33,7 +33,7 @@
 // register that stopped at a fixed TODAY would show every later day as owed).
 
 import { expandSchoolDays } from '@/lib/attendance/school-days';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
+import { EXTRA_LEVEL_CODES, LEVEL_CODES } from '@/lib/sis/levels';
 
 import { runDateSg } from '../lib/constants';
 import { pickFrom } from '../lib/distribution';
@@ -112,15 +112,21 @@ export async function loadRoster(): Promise<Roster> {
     const ayTerms = terms.filter((t) => t.ay === ay);
     const start = ayTerms[0].start;
     const end = ayTerms[ayTerms.length - 1].end;
-    for (const levelType of ['primary', 'secondary', null] as const) {
+    // Per level code, not per band: a calendar day can be aimed at one level
+    // (migration 196). null stands for any code with no band (preschool).
+    for (const levelCode of [
+      ...LEVEL_CODES,
+      ...EXTRA_LEVEL_CODES,
+      null,
+    ] as const) {
       const list = await expandSchoolDays(service(), {
         startDate: start,
         endDate: end,
         academicYearId: ayIds.get(ay)!,
-        levelType,
+        levelCode,
       });
       days.set(
-        `${ay}|${levelType}`,
+        `${ay}|${levelCode}`,
         list.map((d) => ({
           date: d.date,
           termId: d.termId,
@@ -130,7 +136,7 @@ export async function loadRoster(): Promise<Roster> {
     }
   }
   const schoolDays = (ay: AttAy, level: string) =>
-    days.get(`${ay}|${levelTypeForAudienceLookup(level)}`)!;
+    days.get(`${ay}|${level}`) ?? days.get(`${ay}|null`)!;
 
   const raw = sqlRows(
     `select ss.id, st.id, st.student_number, st.first_name, st.last_name, s.id, s.name, l.code,

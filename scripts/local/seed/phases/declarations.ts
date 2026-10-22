@@ -89,7 +89,6 @@ import {
 import { DecideApprovalSchema } from '@/lib/schemas/approval-flows';
 import { fileDeclarationSchema } from '@/lib/schemas/declarations';
 import { staffMedicalCertificateSchema } from '@/lib/schemas/staff-declaration';
-import { levelTypeForAudienceLookup } from '@/lib/sis/levels';
 
 import { LOCAL_PARENT_MARK, LOCAL_PASSWORD } from '../lib/constants';
 import { anon, must, service, sqlRows } from '../lib/local';
@@ -685,7 +684,7 @@ async function file(spec: Spec, parentId: string): Promise<FiledRow[]> {
     endDate: input.endDate,
     children: resolved.map((s) => ({
       academicYearId: s.academicYearId,
-      levelType: s.levelType,
+      levelCode: s.levelCode,
     })),
   });
   if (!opens)
@@ -1003,7 +1002,7 @@ async function staffCertificate(
     children: [
       {
         academicYearId: target.academicYearId,
-        levelType: levelTypeForAudienceLookup(target.levelCode),
+        levelCode: target.levelCode,
       },
     ],
   });

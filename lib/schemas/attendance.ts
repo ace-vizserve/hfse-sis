@@ -214,6 +214,24 @@ export const AUDIENCE_LABELS: Record<Audience, string> = {
   secondary: 'Secondary',
 };
 
+// Day audience (migration 196). `school_calendar.audience` also takes a level
+// code, so a closure can be aimed at one level ("No class — P1"). Events keep
+// `Audience` above — they scope to levels through `levels` / `section_ids`.
+// For a section on a date the applying row is its code → its band → 'all'.
+export const DAY_AUDIENCE_VALUES = [
+  ...AUDIENCE_VALUES,
+  ...LEVEL_CODES,
+] as const;
+export type DayAudience = (typeof DAY_AUDIENCE_VALUES)[number];
+
+export const DAY_AUDIENCE_LABELS: Record<DayAudience, string> = {
+  ...AUDIENCE_LABELS,
+  ...(Object.fromEntries(LEVEL_CODES.map((c) => [c, c])) as Record<
+    (typeof LEVEL_CODES)[number],
+    string
+  >),
+};
+
 // Event category (migration 037). Drives color-coding + filtering on
 // calendar_events. Display-only — does NOT gate attendance.
 export const EVENT_CATEGORY_VALUES = [

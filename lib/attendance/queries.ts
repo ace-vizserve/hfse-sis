@@ -1141,7 +1141,7 @@ async function loadTermTripContext(
       startDate: term.start_date,
       endDate: term.end_date,
       academicYearId: term.academic_year_id,
-      levelType: null,
+      levelCode: null,
     }),
     (async () => {
       const { data: priorRow } = await service
@@ -1160,7 +1160,7 @@ async function loadTermTripContext(
         startDate: prior.start_date,
         endDate: prior.end_date,
         academicYearId: term.academic_year_id,
-        levelType: null,
+        levelCode: null,
       });
       return priorDays.at(-1)?.date ?? null;
     })(),

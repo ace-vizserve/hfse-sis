@@ -7,7 +7,9 @@ import {
   decideNonSchoolDay,
   expandSchoolDays,
 } from '@/lib/attendance/school-days';
-import type { Audience, DayType } from '@/lib/schemas/attendance';
+import type { DayAudience, DayType } from '@/lib/schemas/attendance';
+
+type Row = { day_type: DayType; audience: DayAudience; hbl_overlay: boolean };
 
 // The rule that decides which days of an approved absence carry a mark.
 //
@@ -117,7 +119,7 @@ describe('decideNonSchoolDay — the rule itself', () => {
     expect(
       decideNonSchoolDay(
         [{ day_type: 'school_day', audience: 'all', hbl_overlay: false }],
-        'primary',
+        'P4',
         true
       )
     ).toBe(false);
@@ -127,7 +129,7 @@ describe('decideNonSchoolDay — the rule itself', () => {
     expect(
       decideNonSchoolDay(
         [{ day_type: 'public_holiday', audience: 'all', hbl_overlay: false }],
-        'primary',
+        'P4',
         true
       )
     ).toBe(true);
@@ -137,42 +139,87 @@ describe('decideNonSchoolDay — the rule itself', () => {
     expect(
       decideNonSchoolDay(
         [{ day_type: 'school_holiday', audience: 'all', hbl_overlay: true }],
-        'primary',
+        'P4',
         true
       )
     ).toBe(false);
   });
 
-  it('prefers the level-specific row over the "all" row', () => {
-    const rows: Array<{
-      day_type: DayType;
-      audience: Audience;
-      hbl_overlay: boolean;
-    }> = [
+  it('prefers the band row over the "all" row', () => {
+    const rows: Row[] = [
       { day_type: 'school_day', audience: 'all', hbl_overlay: false },
       { day_type: 'public_holiday', audience: 'secondary', hbl_overlay: false },
     ];
-    // Secondary sees its own row and is blocked...
-    expect(decideNonSchoolDay(rows, 'secondary', true)).toBe(true);
-    // ...while primary falls back to 'all' and is not.
-    expect(decideNonSchoolDay(rows, 'primary', true)).toBe(false);
+    // A secondary level sees its band's row and is blocked...
+    expect(decideNonSchoolDay(rows, 'S2', true)).toBe(true);
+    // ...while a primary level falls back to 'all' and is not.
+    expect(decideNonSchoolDay(rows, 'P4', true)).toBe(false);
+  });
+
+  it('ranks the level row over the band row over the "all" row (migration 196)', () => {
+    const all: Row = {
+      day_type: 'public_holiday',
+      audience: 'all',
+      hbl_overlay: false,
+    };
+    const primary: Row = {
+      day_type: 'no_class',
+      audience: 'primary',
+      hbl_overlay: false,
+    };
+    const p1: Row = {
+      day_type: 'school_day',
+      audience: 'P1',
+      hbl_overlay: false,
+    };
+    // Order in the array must not matter — the rank decides.
+    expect(decideNonSchoolDay([all, primary, p1], 'P1', true)).toBe(false);
+    expect(decideNonSchoolDay([p1, primary, all], 'P1', true)).toBe(false);
+    // P2 has no row of its own: the band's row wins over 'all'. Flip the
+    // band row to a school day to prove it is the band, not 'all', deciding.
+    expect(
+      decideNonSchoolDay(
+        [all, { ...primary, day_type: 'school_day' }, p1],
+        'P2',
+        true
+      )
+    ).toBe(false);
+    expect(decideNonSchoolDay([all, primary, p1], 'P2', true)).toBe(true);
+  });
+
+  it('a P1 closure does not close P2', () => {
+    const rows: Row[] = [
+      { day_type: 'school_day', audience: 'all', hbl_overlay: false },
+      { day_type: 'no_class', audience: 'P1', hbl_overlay: false },
+    ];
+    expect(decideNonSchoolDay(rows, 'P1', true)).toBe(true);
+    expect(decideNonSchoolDay(rows, 'P2', true)).toBe(false);
+  });
+
+  it('Youngstarters keeps its band and "all", and has no code rows', () => {
+    // YS is 'primary' (migration 173) but not one of the ten codes.
+    const rows: Row[] = [
+      { day_type: 'school_day', audience: 'all', hbl_overlay: false },
+      { day_type: 'no_class', audience: 'primary', hbl_overlay: false },
+    ];
+    expect(decideNonSchoolDay(rows, 'YS', true)).toBe(true);
   });
 
   it('blocks an unlisted date when the term IS configured', () => {
-    expect(decideNonSchoolDay([], 'primary', true)).toBe(true);
+    expect(decideNonSchoolDay([], 'P4', true)).toBe(true);
   });
 
   it('blocks NOTHING when the term has no calendar rows at all', () => {
     // ⚠ Legacy mode, pre-migration-019. Removing this branch would refuse
     // marks on every date of any term nobody has configured yet.
-    expect(decideNonSchoolDay([], 'primary', false)).toBe(false);
+    expect(decideNonSchoolDay([], 'P4', false)).toBe(false);
   });
 });
 
 describe('expandSchoolDays', () => {
   const base = {
     academicYearId: 'ay',
-    levelType: 'primary' as const,
+    levelCode: 'P4',
   };
 
   it('drops the weekend inside a Friday-to-Tuesday range', async () => {
@@ -319,11 +366,84 @@ describe('expandSchoolDays', () => {
 
     const secondary = await expandSchoolDays(service as never, {
       academicYearId: 'ay',
-      levelType: 'secondary',
+      levelCode: 'S2',
       startDate: '2026-02-09',
       endDate: '2026-02-09',
     });
     expect(secondary).toEqual([]);
+  });
+
+  describe('a closure aimed at one level (migration 196)', () => {
+    const calendar: CalRow[] = [
+      ...schoolWeek('t1', ['2026-02-09', '2026-02-10']),
+      {
+        term_id: 't1',
+        date: '2026-02-09',
+        day_type: 'no_class',
+        audience: 'P1',
+        hbl_overlay: false,
+      },
+    ];
+    const range = {
+      academicYearId: 'ay',
+      startDate: '2026-02-09',
+      endDate: '2026-02-10',
+    };
+    const datesFor = async (levelCode: string | null) =>
+      (
+        await expandSchoolDays(
+          fakeService({ terms: TERMS, calendar }) as never,
+          {
+            ...range,
+            levelCode,
+          }
+        )
+      ).map((d) => d.date);
+
+    it('closes P1', async () => {
+      expect(await datesFor('P1')).toEqual(['2026-02-10']);
+    });
+
+    it('leaves P2 a school day', async () => {
+      expect(await datesFor('P2')).toEqual(['2026-02-09', '2026-02-10']);
+    });
+
+    it('leaves Youngstarters a school day — it reads no code rows', async () => {
+      expect(await datesFor('YS')).toEqual(['2026-02-09', '2026-02-10']);
+    });
+
+    it('reads only "all" for a preschool code or no level', async () => {
+      expect(await datesFor('N1')).toEqual(['2026-02-09', '2026-02-10']);
+      expect(await datesFor(null)).toEqual(['2026-02-09', '2026-02-10']);
+    });
+
+    it('asks only for the audiences the section can see', async () => {
+      const seen: string[][] = [];
+      const service = fakeService({ terms: TERMS, calendar });
+      const realFrom = service.from.bind(service);
+      service.from = (table: string) => {
+        const sel = realFrom(table);
+        return {
+          select(cols: string, opts?: { head?: boolean }) {
+            const b = sel.select(cols, opts);
+            const realIn = b.in.bind(b);
+            b.in = (col: string, vals: string[]) => {
+              if (col === 'audience') seen.push(vals);
+              return realIn(col, vals);
+            };
+            return b;
+          },
+        };
+      };
+      await expandSchoolDays(service as never, { ...range, levelCode: 'P1' });
+      await expandSchoolDays(service as never, { ...range, levelCode: 'YS' });
+      await expandSchoolDays(service as never, { ...range, levelCode: null });
+      expect(seen).toEqual([
+        ['all', 'primary', 'P1'],
+        ['all', 'primary'],
+        ['all'],
+      ]);
+    });
   });
 
   it('returns nothing for a reversed range rather than looping', async () => {
