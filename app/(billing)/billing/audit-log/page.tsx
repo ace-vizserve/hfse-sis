@@ -77,6 +77,7 @@ export default async function BillingAuditLogPage({
     actor?: string;
     from?: string;
     to?: string;
+    q?: string;
   }>;
 }) {
   const sessionUser = await getSessionUser();
@@ -208,6 +209,7 @@ export default async function BillingAuditLogPage({
         currentActor={filters.actor}
         currentFrom={filters.from}
         currentTo={filters.to}
+        currentSearch={filters.search}
         actionOptions={[...BILLING_AUDIT_ALLOWLIST]}
         actorOptions={actorOptions}
         canExport={canExport}
