@@ -262,7 +262,17 @@ function ResidenceRow({ entry }: { entry: ResidenceEntry }) {
         <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="inline-flex items-center gap-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             <CalendarRange className="size-3" />
-            {formatYearRange(entry.fromYear, entry.toYear)}
+            {/* Older rows store `from` / `to`. */}
+            {formatYearRange(
+              entry.fromYear ??
+                ((entry as Record<string, unknown>).from as
+                  | ResidenceEntry['fromYear']
+                  | undefined),
+              entry.toYear ??
+                ((entry as Record<string, unknown>).to as
+                  | ResidenceEntry['toYear']
+                  | undefined)
+            )}
           </span>
           {entry.purposeOfStay && (
             <Badge variant="secondary">{entry.purposeOfStay}</Badge>

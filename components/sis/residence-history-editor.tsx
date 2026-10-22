@@ -74,8 +74,9 @@ function parseInitial(value: unknown): ResidenceEntry[] {
     .map((item) => {
       if (!item || typeof item !== 'object' || Array.isArray(item)) return null;
       const r = item as Record<string, unknown>;
-      const fromY = r.fromYear;
-      const toY = r.toYear;
+      // Older rows store `from` / `to` rather than `fromYear` / `toYear`.
+      const fromY = r.fromYear ?? r.from;
+      const toY = r.toYear ?? r.to;
       return {
         country: typeof r.country === 'string' ? r.country : '',
         cityOrTown: typeof r.cityOrTown === 'string' ? r.cityOrTown : '',

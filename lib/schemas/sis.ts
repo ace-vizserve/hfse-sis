@@ -173,6 +173,166 @@ export const ENROLEE_CATEGORIES = [
   'VizSchool Current',
 ] as const;
 
+export const ENROLEE_CATEGORY_OPTIONS = ENROLEE_CATEGORIES.map((c) => ({
+  label: c,
+  value: c,
+}));
+
+// The parent portal's own lists (app-online-admission src/data.ts
+// `howDidYouKnowAboutUs` and the Student Development Fees selects), copied so
+// a staff edit stores a value the portal could have — the admissions
+// dashboard's referral chart groups on the exact string.
+//
+// ⚠ The portal never stores "Other". Picking it opens a "Please specify" box
+// and the parent's own words are saved in its place (parent-survey-feedback.tsx,
+// `howDidYouKnowAboutHFSEIS === "Other" ? otherSource.trim() : …`). So a value
+// that is not on this list is an "Other" answer, and the edit sheet shows it
+// that way.
+export const HOW_DID_YOU_KNOW_OPTIONS = [
+  { label: 'Google / Search Engine', value: 'Google / Search Engine' },
+  { label: 'Facebook', value: 'Facebook' },
+  { label: 'Instagram', value: 'Instagram' },
+  {
+    label: 'Word of Mouth (Friend / Colleague)',
+    value: 'Word of Mouth (Friend / Colleague)',
+  },
+  {
+    label: 'Current / Former HFSE Parent',
+    value: 'Current / Former HFSE Parent',
+  },
+  { label: 'Sibling Enrolled at HFSE', value: 'Sibling Enrolled at HFSE' },
+  { label: 'Referral', value: 'Referral' },
+  { label: 'Walk-in / Open House', value: 'Walk-in / Open House' },
+  { label: 'Education Fair', value: 'Education Fair' },
+  {
+    label: 'Education Agent / Consultant',
+    value: 'Education Agent / Consultant',
+  },
+  { label: 'Other (Please specify)', value: 'Other' },
+] as const;
+
+export const HOW_DID_YOU_KNOW_OTHER = 'Other';
+
+// Student Development Fees payment option. The portal offers a different list
+// by level (app-online-admission src/data.ts `campusDevelopmentFeePrimary` /
+// `campusDevelopmentFeeSecondary`, picked by `PRIMARY_CLASS_LEVELS` /
+// `SECONDARY_SDF_CLASS_LEVELS` in enrollment-information.tsx), and only
+// "Not Applicable" for every other level. The stored values are the same three
+// on both lists; only the amounts in the labels differ.
+export const SDF_PRIMARY_LEVELS = [
+  'Primary One',
+  'Primary Two',
+  'Primary Three',
+  'Primary Four',
+  'Primary Five',
+  'Primary Six',
+  'HFSE International Education Programme – Year 2 (equivalent to Primary One)',
+] as const;
+
+export const SDF_SECONDARY_LEVELS = [
+  'Secondary One',
+  'Secondary Two',
+  'Secondary Three',
+  'Secondary Four',
+  'HFSE International Education Programme – Year 8',
+  'HFSE International Education Programme – Year 9',
+  'HFSE International Education Programme – Year 10',
+] as const;
+
+const PAYMENT_OPTION_PRIMARY_OPTIONS = [
+  { label: 'Option 1: Full Payment (SGD 1050 UPFRONT)', value: 'Option 1' },
+  { label: 'Option 2: Partial (SGD 250 + SGD 75/mo)', value: 'Option 2' },
+  { label: 'Option 3: Monthly Only (SGD 100/mo)', value: 'Option 3' },
+] as const;
+
+const PAYMENT_OPTION_SECONDARY_OPTIONS = [
+  { label: 'Option 1 – Full payment (S$1,350 upfront)', value: 'Option 1' },
+  {
+    label: 'Option 2 – Partial + Monthly (S$250 + S$100/mo)',
+    value: 'Option 2',
+  },
+  { label: 'Option 3 – Monthly only (S$125/mo)', value: 'Option 3' },
+] as const;
+
+const PAYMENT_OPTION_NOT_APPLICABLE = [
+  { label: 'Not Applicable', value: 'Not Applicable' },
+] as const;
+
+/** The payment options the portal offers for this level, labels included. */
+export function paymentOptionsForLevel(
+  level: string | null | undefined
+): readonly { label: string; value: string }[] {
+  const l = (level ?? '').trim();
+  if ((SDF_PRIMARY_LEVELS as readonly string[]).includes(l)) {
+    return PAYMENT_OPTION_PRIMARY_OPTIONS;
+  }
+  if ((SDF_SECONDARY_LEVELS as readonly string[]).includes(l)) {
+    return PAYMENT_OPTION_SECONDARY_OPTIONS;
+  }
+  return PAYMENT_OPTION_NOT_APPLICABLE;
+}
+
+// Additional learning needs — the portal's grouped multi-select
+// (app-online-admission src/components/ui/additional-learning-needs-combo-box.tsx
+// `LEARNING_NEEDS`). It stores the picks joined with ", " in one text column
+// (enrolment-payload.ts `additionalLearningNeeds.join(", ")`), and picking
+// "Others (please specify)" opens a box whose text goes in `otherLearningNeeds`.
+export const LEARNING_NEEDS_OPTION_GROUPS = [
+  {
+    group: 'Learning & Developmental',
+    items: [
+      'Dyslexia',
+      'Dyscalculia',
+      'Dysgraphia',
+      'Autism Spectrum Disorder (ASD)',
+      'Attention Deficit Hyperactivity Disorder (ADHD)',
+      'Global Developmental Delay (GDD)',
+      'Speech and Language Delay',
+    ],
+  },
+  {
+    group: 'Behavioral',
+    items: [
+      'Behavioral Concerns (General)',
+      'Oppositional Defiant Disorder (ODD)',
+      'Anxiety Disorder',
+    ],
+  },
+  { group: 'Other', items: ['Others (please specify)'] },
+] as const;
+
+export const LEARNING_NEEDS_OTHERS = 'Others (please specify)';
+
+/** The joined text column back into its picks. */
+export function splitJoinedList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+// The portal's Conditions Checklist (app-online-admission src/data.ts
+// `medicalConditions`, rendered in steps/student-information/
+// medical-information.tsx). Each tick is its own boolean column; three carry a
+// details box. "Other Medical Condition" and "None of the above" are NOT
+// columns — the portal strips both before saving (enrolment-payload.ts) — so
+// "Other" is ticked when `otherMedicalConditions` has text, and "None" means
+// every condition is false.
+export const MEDICAL_CONDITIONS = [
+  { id: 'allergies', label: 'Allergies', details: 'allergyDetails' },
+  { id: 'asthma', label: 'Asthma' },
+  { id: 'heartConditions', label: 'Heart Conditions' },
+  { id: 'epilepsy', label: 'Epilepsy / Seizures' },
+  { id: 'diabetes', label: 'Diabetes' },
+  { id: 'eczema', label: 'Eczema / Skin Conditions' },
+  {
+    id: 'foodAllergies',
+    label: 'Food Allergies',
+    details: 'foodAllergyDetails',
+  },
+] as const;
+
 // `preferredPaymentScheme` / `preferredPaymentMethod` — parent-portal-only
 // columns added directly on the admissions table (not yet part of any
 // migration's DDL as of this writing). Stored as plain text, not a DB CHECK —
@@ -188,7 +348,7 @@ export const PREFERRED_PAYMENT_SCHEME_OPTIONS = [
 
 export const PREFERRED_PAYMENT_METHOD_OPTIONS = [
   { label: 'Bank Transfer', value: 'Bank Transfer' },
-  { label: 'GIRO', value: 'GIRO' },
+  { label: 'GIRO (Not applicable to Enrolment Fees)', value: 'GIRO' },
   {
     label: 'Credit/Debit Card ( 3% platform fee)',
     value: 'Credit/Debit Card Payment',
@@ -242,18 +402,20 @@ export const PREFERRED_SCHEDULE_OPTIONS = [
   { label: 'Whole Day', value: 'Whole Day' },
 ] as const;
 
+// Portal: enrollment-information.tsx `studentCareProgram`, shown only once
+// Student Care is "Yes".
 export const STUDENT_CARE_PROGRAM_OPTIONS = [
-  { label: 'Full day (Full-Day Program)', value: 'Full day' },
-  { label: 'Daily (Daily Program)', value: 'Daily' },
+  { label: 'Full-Day Program', value: 'Full day' },
+  { label: 'Daily Program', value: 'Daily' },
 ] as const;
 
 // The portal only offers Father when father details were supplied. The SIS
 // shows both: it edits records where that's already settled, and the value is
 // a plain string, so hiding an option would make an existing "Father" row
-// uneditable.
+// uneditable. Same order as the portal (enrollment-information.tsx).
 export const CONTRACT_SIGNATORY_OPTIONS = [
-  { label: 'Mother', value: 'Mother' },
   { label: 'Father', value: 'Father' },
+  { label: 'Mother', value: 'Mother' },
 ] as const;
 
 // Immigration pass TYPE — a category, not a credential. Same
@@ -554,10 +716,11 @@ export const PROFILE_GATED_FIELDS = [
  *
  * ⚠ IT IS PARTIAL, AND THAT IS LOAD-BEARING IN BOTH DIRECTIONS.
  *
- * The edit sheet renders about 60 of this schema's ~85 fields; the medical
- * block (`allergies`, `asthma`, `allergyDetails`, …) is never drawn, because
- * parents supply it on the application form and it is not the school's to edit.
- * The sheet therefore submits only what it renders.
+ * The edit sheet renders about 70 of this schema's ~85 fields. Until
+ * 2026-10-22 that excluded the medical block (`allergies`, `asthma`,
+ * `allergyDetails`, …); it now has a Medical section copying the portal's
+ * checklist, and the sheet still sends only the fields its page loaded or that
+ * someone filled in. The sheet therefore submits only what it renders.
  *
  * Required keys made that impossible: `allergies` is `z.boolean().nullable()`,
  * which rejects `undefined`, so every save failed on ~24 fields nobody could
@@ -1556,7 +1719,8 @@ export const STAGE_LABELS: Record<StageKey, string> = {
 // stage; the route enforces this.
 export const StageUpdateSchema = z.object({
   status: optionalText(120),
-  remarks: optionalText(4000),
+  // Rich text: the limit is the typed text the editor counts, not the HTML.
+  remarks: optionalRichText(4000),
   extras: z.record(z.string(), z.union([z.string(), z.null()])).optional(),
   /** Registrar-chosen section id — required only when flipping the
    *  `application` stage to `Enrolled` (validated in the route, not here,
@@ -1710,7 +1874,12 @@ export type HouseAssignmentInput = z.infer<typeof HouseAssignmentSchema>;
 
 export const ResidenceEntrySchema = z.object({
   fromYear: z.number().int().min(1900).max(2100),
-  toYear: z.number().int().min(1900).max(2100),
+  // A year, or 'Present' — the parent portal's own rule (zod-schema.ts), and
+  // what the editor's Present tick sends.
+  toYear: z.union([
+    z.coerce.number().int().min(1900).max(2100),
+    z.literal('Present'),
+  ]),
   country: z.string().min(1).max(100),
   cityOrTown: z.string().min(1).max(100),
   purposeOfStay: z.string().max(200).optional(),

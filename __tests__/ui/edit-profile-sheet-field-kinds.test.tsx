@@ -37,6 +37,42 @@ describe('EditProfileSheet — new field kinds', () => {
     expect(input).toHaveAttribute('type', 'password');
   });
 
+  it('renders Gender as radio buttons, as the portal does', async () => {
+    await openSheet();
+    expect(screen.getByRole('radio', { name: 'Male' })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Female' })).toBeInTheDocument();
+  });
+
+  it('shows an off-list "How did you hear" answer as Other with its words', async () => {
+    const user = userEvent.setup();
+    renderWithClient(
+      <EditProfileSheet
+        ayCode="AY2026"
+        enroleeNumber="ENR-1"
+        initial={{ howDidYouKnowAboutHFSEIS: 'A neighbour told us' }}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /edit profile/i }));
+    expect(
+      screen.getByRole('radio', { name: 'Other (Please specify)' })
+    ).toHaveAttribute('data-state', 'on');
+    expect(screen.getByDisplayValue('A neighbour told us')).toBeInTheDocument();
+  });
+
+  it('opens the details box when a checklist condition is on file', async () => {
+    const user = userEvent.setup();
+    renderWithClient(
+      <EditProfileSheet
+        ayCode="AY2026"
+        enroleeNumber="ENR-1"
+        initial={{ allergies: true, allergyDetails: 'Peanuts' }}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /edit profile/i }));
+    expect(screen.getByRole('checkbox', { name: 'Allergies' })).toBeChecked();
+    expect(screen.getByDisplayValue('Peanuts')).toBeInTheDocument();
+  });
+
   it('reveals Passport number when its toggle is clicked', async () => {
     const user = await openSheet();
     const toggles = screen.getAllByRole('button', { name: /show value/i });

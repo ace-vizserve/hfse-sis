@@ -66,8 +66,16 @@ function codeLines(pattern: string): string[] {
  * - Billing's Create invoice "Memo on statement": QuickBooks stores the memo
  *   (PrivateNote) as plain text, so the formatting editor would send its
  *   markup into QuickBooks.
+ * - The applicant Edit profile sheet (Other learning needs, and the Medical
+ *   checklist's details boxes): every field there copies the parent portal's
+ *   own control (Mr Ace, 2026-10-22), and the portal's are plain <Textarea>s.
+ *   These columns hold the parent's plain text and are printed as plain text
+ *   by Records, the cohort table and the CSV export, so markup would show.
  */
-const PLAIN_TEXTAREA_ALLOWED = ['components/billing/create-invoice-sheet.tsx'];
+const PLAIN_TEXTAREA_ALLOWED = [
+  'components/billing/create-invoice-sheet.tsx',
+  'components/sis/edit-profile-sheet.tsx',
+];
 
 describe('the plain Textarea is retired', () => {
   it('is imported by nothing', () => {
