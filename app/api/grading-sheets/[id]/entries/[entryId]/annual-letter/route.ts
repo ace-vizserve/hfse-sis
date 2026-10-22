@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest, after } from 'next/server';
 import { requireRole } from '@/lib/auth/require-role';
 import { getUserRoleSet } from '@/lib/auth/roles';
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import { logAction } from '@/lib/audit/log-action';
 import { writeAuditRows } from '@/lib/audit/log-grade-change';
@@ -310,8 +311,10 @@ export async function PATCH(
   if (existingValue !== null && correctionNote) {
     after(async () => {
       try {
-        const { data: { users } = { users: [] } } =
-          await service.auth.admin.listUsers({ perPage: 200 });
+        // Every page: a single `perPage: 200` read covered 200 of the 1,000+
+        // accounts parents share the project with (KD #1), so most admins
+        // were never told.
+        const users = await listAllAuthUsers(service);
         const recipients = users
           .filter((u) => {
             // Every role the account holds, not the one it is using right now:

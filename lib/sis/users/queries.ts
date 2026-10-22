@@ -1,5 +1,8 @@
 import 'server-only';
 
+import type { User } from '@supabase/supabase-js';
+
+import { listAllAuthUsers } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   resolveActiveRoleFromMetadata,
@@ -28,19 +31,19 @@ export type AdminUserRow = {
   last_sign_in_at: string | null;
 };
 
-// Request-scoped fetch of every user in the project. Uses service-role
-// listUsers. HFSE's user count is small (<30 active, ~500 parents)
-// so perPage: 1000 is ample; revisit if the tenant grows.
+// Request-scoped fetch of every user in the project, every page of it. This
+// read page 1 only (`perPage: 1000`), and parents share the project (KD #1):
+// production held 1,123 accounts on 2026-10-22, so staff past the first 1,000
+// never reached the Accounts table or its search.
 async function listAllUsers(): Promise<AdminUserRow[]> {
-  const service = createServiceClient();
-  const { data, error } = await service.auth.admin.listUsers({
-    perPage: 1000,
-  });
-  if (error || !data) {
-    console.error('[users] listAllUsers failed:', error?.message);
+  let users: User[];
+  try {
+    users = await listAllAuthUsers(createServiceClient());
+  } catch (e) {
+    console.error('[users] listAllUsers failed:', (e as Error).message);
     return [];
   }
-  return data.users.map((u) => {
+  return users.map((u) => {
     const appMeta = u.app_metadata as Record<string, unknown> | null;
     const userMeta = u.user_metadata as Record<string, unknown> | null;
     const role = resolveActiveRoleFromMetadata(appMeta, userMeta);
