@@ -133,6 +133,9 @@ type FieldKind =
   | 'textarea'
   | 'date'
   | 'tribool'
+  // Same three choices as 'tribool', but the column stores the text 'Yes' /
+  // 'No' rather than true / false (optionalYesNo in lib/schemas/sis.ts).
+  | 'yesno'
   | 'select'
   | 'combobox'
   | 'password';
@@ -311,15 +314,15 @@ const SECTIONS: SectionConfig[] = [
         kind: 'select',
         options: PREFERRED_PAYMENT_METHOD_OPTIONS,
       },
-      { name: 'availSchoolBus', label: 'School bus', kind: 'tribool' },
-      { name: 'availStudentCare', label: 'Student care', kind: 'tribool' },
+      { name: 'availSchoolBus', label: 'School bus', kind: 'yesno' },
+      { name: 'availStudentCare', label: 'Student care', kind: 'yesno' },
       {
         name: 'studentCareProgram',
         label: 'Student care program',
         kind: 'select',
         options: STUDENT_CARE_PROGRAM_OPTIONS,
       },
-      { name: 'availUniform', label: 'Uniform', kind: 'tribool' },
+      { name: 'availUniform', label: 'Uniform', kind: 'yesno' },
       {
         name: 'additionalLearningNeeds',
         label: 'Additional learning needs',
@@ -511,9 +514,7 @@ export function EditProfileSheet({
       pending: 'Saving profile…',
       success: (body) => {
         const changed = body.changed as number | undefined;
-        return changed === 0
-          ? 'Profile saved (no changes)'
-          : `Profile updated (${changed} field${changed === 1 ? '' : 's'})`;
+        return changed === 0 ? 'Profile saved (no changes)' : 'Profile updated';
       },
       error: (e) => (e instanceof Error ? e.message : 'Failed to save'),
       onResolved: () => setOpen(false),
@@ -872,10 +873,16 @@ function SchemaField({
       name={cfg.name}
       render={({ field }) => {
         const wrapperClass = cfg.wide ? 'sm:col-span-2' : '';
-        if (kind === 'tribool') {
-          const v = field.value as boolean | null | undefined;
+        if (kind === 'tribool' || kind === 'yesno') {
+          const v = field.value as boolean | string | null | undefined;
           const value =
-            v === true ? 'yes' : v === false ? 'no' : UNSET_SENTINEL;
+            v === true || v === 'Yes'
+              ? 'yes'
+              : v === false || v === 'No'
+                ? 'no'
+                : UNSET_SENTINEL;
+          const yes = kind === 'yesno' ? 'Yes' : true;
+          const no = kind === 'yesno' ? 'No' : false;
           return (
             <FormItem className={wrapperClass}>
               <FormLabel className="text-xs">{cfg.label}</FormLabel>
@@ -883,7 +890,7 @@ function SchemaField({
                 value={value}
                 onValueChange={(next) =>
                   field.onChange(
-                    next === 'yes' ? true : next === 'no' ? false : null
+                    next === 'yes' ? yes : next === 'no' ? no : null
                   )
                 }
               >
