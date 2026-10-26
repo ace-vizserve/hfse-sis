@@ -37,6 +37,9 @@ const PARENT_ID = 'u-parent';
 const PARENT_PATH = `declarations/${PARENT_ID}/mc.pdf`;
 
 vi.mock('@/lib/declarations/parent', () => ({
+  isOwnParentEvidencePath: (userId: string, path: string) =>
+    path.startsWith(`declarations/${userId}/`) && !path.includes('..'),
+  PARTLY_FILED_MESSAGE: 'partly filed',
   loadFilableStudents: vi.fn(() =>
     Promise.resolve([
       {
@@ -57,6 +60,7 @@ vi.mock('@/lib/declarations/parent', () => ({
 
 let ladderThrows = false;
 vi.mock('@/lib/declarations/approval', () => ({
+  DECLARATION_SUBJECT_TYPE: 'student_declaration',
   openDeclarationApprovals: vi.fn(() =>
     ladderThrows
       ? Promise.reject(new Error('ladder down'))
@@ -99,6 +103,7 @@ vi.mock('@/lib/supabase/service', () => ({
       }),
       delete: () => ({
         in: () => Promise.resolve({ error: rollbackError }),
+        eq: () => ({ in: () => Promise.resolve({ error: null }) }),
       }),
     }),
   }),

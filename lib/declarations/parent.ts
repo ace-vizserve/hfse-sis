@@ -29,6 +29,28 @@ type Service = ReturnType<typeof createServiceClient>;
  */
 
 /**
+ * Is this certificate path the parent's own upload?
+ *
+ * The evidence route writes to `declarations/<parent user id>/<uuid>.<ext>`,
+ * and the prefix is the only thing tying a path to a person. ⚠ `..` is refused
+ * outright rather than resolved — `declarations/<me>/../<them>/x.pdf` starts
+ * with the right prefix and is someone else's folder. Same rule, same shape, as
+ * `isOwnStaffEvidencePath` in `staff-filing.ts`.
+ */
+export function isOwnParentEvidencePath(userId: string, path: string): boolean {
+  if (!path.startsWith(`declarations/${userId}/`)) return false;
+  return !path.split('/').includes('..');
+}
+
+/**
+ * Two submits of the same multi-child filing raced and one child was already
+ * on record, so the insert — one statement — wrote nobody. Some of the children
+ * asked about are filed and some are not.
+ */
+export const PARTLY_FILED_MESSAGE =
+  'Part of this declaration was already sent a moment ago, so nothing new was filed. Please check your list and file again for any child who is missing.';
+
+/**
  * A child this parent may file for, resolved to the ids the write needs.
  *
  * ⚠ Keyed on `studentNumber`, never a uuid — Hard Rule #4, and it is what

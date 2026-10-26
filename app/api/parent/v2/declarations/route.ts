@@ -18,11 +18,16 @@ import {
   type FileDeclarationInput,
 } from '@/lib/schemas/declarations';
 import {
+  isOwnParentEvidencePath,
   listParentDeclarations,
   loadFilableStudents,
+  PARTLY_FILED_MESSAGE,
   type LinkedStudent,
 } from '@/lib/declarations/parent';
-import { openDeclarationApprovals } from '@/lib/declarations/approval';
+import {
+  DECLARATION_SUBJECT_TYPE,
+  openDeclarationApprovals,
+} from '@/lib/declarations/approval';
 import {
   alreadyFiledMessage,
   filingCoversAnySchoolDay,
@@ -223,9 +228,12 @@ export async function POST(request: Request) {
   // parent's own folder is either a typo or an attempt to attach somebody
   // else's medical certificate to their own declaration — where the staff queue
   // would then render it. The prefix is the only thing tying a path to a person.
+  //
+  // ⚠ `..` is refused outright: `declarations/<me>/../<them>/x.pdf` starts with
+  // the right prefix and is not the right folder. Same rule as the staff route
+  // (`isOwnStaffEvidencePath`).
   if (input.declarationType === 'absence' && input.evidencePath) {
-    const expectedPrefix = `declarations/${auth.userId}/`;
-    if (!input.evidencePath.startsWith(expectedPrefix)) {
+    if (!isOwnParentEvidencePath(auth.userId, input.evidencePath)) {
       return NextResponse.json(
         { error: 'That attachment could not be matched to this upload.' },
         { status: 403, headers: cors }
@@ -384,6 +392,17 @@ export async function POST(request: Request) {
           d.startDate === input.startDate &&
           d.endDate === input.endDate
       );
+      // ⚠ ONE STATEMENT, SO ONE DUPLICATE CHILD MEANS NOBODY WAS INSERTED. A
+      // success is only true when every child asked about is already on
+      // record; otherwise the siblings who are missing would be told it
+      // worked. Tell the parent instead, and let them file again for those.
+      const filedNumbers = new Set(match.map((d) => d.studentNumber));
+      if (!resolved.every((s) => filedNumbers.has(s.studentNumber))) {
+        return NextResponse.json(
+          { error: PARTLY_FILED_MESSAGE, alreadyFiled: true },
+          { status: 409, headers: cors }
+        );
+      }
       return NextResponse.json(
         {
           filingGroupId: match[0]?.filingGroupId ?? null,
@@ -445,13 +464,27 @@ export async function POST(request: Request) {
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     console.error('[declarations] approval ladder failed:', reason);
+    const insertedIds = insertedRows.map((r) => r.id);
+    // ⚠ THE LADDER IS OPENED ONE CHILD AT A TIME, so a failure on the second
+    // child leaves the first child's request behind. `approval_requests` has no
+    // foreign key to its subject, so deleting the filings would not take it
+    // with them: it would sit in an approver's queue pointing at nothing.
+    // Requests go first; their stages and decisions cascade.
+    const { error: requestsErr } = await service
+      .from('approval_requests')
+      .delete()
+      .eq('subject_type', DECLARATION_SUBJECT_TYPE)
+      .in('subject_id', insertedIds);
+    if (requestsErr) {
+      console.error(
+        '[declarations] removing approval requests after a ladder failure failed:',
+        requestsErr.message
+      );
+    }
     const { error: rollbackErr } = await service
       .from('student_declarations')
       .delete()
-      .in(
-        'id',
-        insertedRows.map((r) => r.id)
-      );
+      .in('id', insertedIds);
     // ⚠ A ROLLBACK THAT FAILS LEAVES THE FILINGS IN PLACE, with no ladder —
     // the stranded shape described above — and the parent is still told to try
     // again. Those rows then exist with nothing saying how they got there, so
