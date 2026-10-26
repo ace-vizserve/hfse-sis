@@ -43,6 +43,9 @@ export const CHECK_NOTE_PLACEHOLDERS: Record<
 /** A note is rich text, capped on its prose (proseLength): a few sentences. */
 export const CHECK_NOTE_MAX = 1000;
 
+/** The subject head's sign-off remarks (oversight, board 11): same cap. */
+export const SIGNOFF_REMARKS_MAX = 1000;
+
 export const isCheckOption = (v: unknown): v is CheckOption =>
   typeof v === 'string' && (CHECK_OPTIONS as readonly string[]).includes(v);
 

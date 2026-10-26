@@ -9,7 +9,12 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DataTable } from '@/components/ui/data-table';
 import type { CellMark } from '@/lib/sow/check-options';
-import type { GridCell, GridRow, NeedsALookItem } from '@/lib/sow/oversight';
+import type {
+  GridCell,
+  GridRow,
+  NeedsALookItem,
+  SowPlans,
+} from '@/lib/sow/oversight';
 import { cn } from '@/lib/utils';
 
 // The weekly-checks grid (board 10): one row per class × subject with an
@@ -83,11 +88,14 @@ export function ChecksGrid({
   weekCount,
   currentWeek,
   needsALook,
+  plans,
 }: {
   rows: GridRow[];
   weekCount: number;
   currentWeek: number | null;
   needsALook: NeedsALookItem[];
+  /** The planned row per scheme and week, sent once (not per class). */
+  plans: SowPlans;
 }) {
   const [open, setOpen] = useState<{ rowId: string; week: number } | null>(
     null
@@ -107,8 +115,10 @@ export function ChecksGrid({
     if (!open) return null;
     const row = rows.find((r) => r.id === open.rowId);
     const cell = row?.cells.find((c) => c.weekNumber === open.week);
-    return row && cell ? { row, cell } : null;
-  }, [open, rows]);
+    return row && cell
+      ? { row, cell, plan: plans[row.sowId]?.[cell.weekNumber] ?? null }
+      : null;
+  }, [open, rows, plans]);
 
   const columns = useMemo<ColumnDef<Row>[]>(() => {
     const weekColumns: ColumnDef<Row>[] = Array.from(
@@ -171,14 +181,8 @@ export function ChecksGrid({
           </span>
         ),
       },
-      // Facet-only columns, hidden: the toolbar's Level and Subject filters.
-      {
-        id: 'level',
-        accessorFn: (r) => r.levelLabel,
-        header: 'Level',
-        meta: { label: 'Level' },
-        enableSorting: false,
-      },
+      // Facet-only column, hidden: the toolbar's Subject filter. The level is
+      // the page's `?level=` and is never filtered here.
       {
         id: 'subject',
         accessorFn: (r) => r.subjectName,
@@ -199,10 +203,7 @@ export function ChecksGrid({
           getRowId={(r) => r.id}
           searchKeys={[(r) => `${r.className} ${r.subjectName}`]}
           searchPlaceholder="Search classes or subjects"
-          facets={[
-            { columnId: 'level', label: 'Level' },
-            { columnId: 'subject', label: 'Subject' },
-          ]}
+          facets={[{ columnId: 'subject', label: 'Subject' }]}
           meScope={{
             enabled: true,
             userId: null,
@@ -210,7 +211,7 @@ export function ChecksGrid({
             icon: Eye,
             predicate: (r) => r.needsALook,
           }}
-          initialColumnVisibility={{ level: false, subject: false }}
+          initialColumnVisibility={{ subject: false }}
           hidePagination
           emptyState={{
             icon: ClipboardCheck,
@@ -315,7 +316,7 @@ function NeedsALookCard({
           {items.map((i) => (
             <li
               key={i.id}
-              className="grid gap-x-4 gap-y-1.5 px-5 py-3 sm:grid-cols-[minmax(0,240px)_minmax(0,1fr)_auto] sm:items-center"
+              className="grid gap-x-4 gap-y-1.5 px-5 py-3 sm:grid-cols-[minmax(0,320px)_minmax(0,1fr)_auto] sm:items-center"
             >
               <span className="flex items-center gap-2.5 text-[13px] font-medium text-foreground">
                 <MarkChip

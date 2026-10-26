@@ -10,6 +10,7 @@ import { redirect } from 'next/navigation';
 
 import { MetricCard } from '@/components/dashboard/metric-card';
 import { ChecksGrid } from '@/components/sow/checks-grid';
+import { OversightLevelSelect } from '@/components/sow/oversight-level-select';
 import { OversightSowsTable } from '@/components/sow/oversight-sows-table';
 import { Card } from '@/components/ui/card';
 import { NoCurrentAyCard } from '@/components/ui/no-current-ay-card';
@@ -42,9 +43,13 @@ type View = 'sows' | 'checks';
 export default async function SowOversightPage({
   searchParams,
 }: {
-  searchParams: Promise<{ term?: string; view?: string }>;
+  searchParams: Promise<{ term?: string; view?: string; level?: string }>;
 }) {
-  const { term: termParam, view: viewParam } = await searchParams;
+  const {
+    term: termParam,
+    view: viewParam,
+    level: levelParam,
+  } = await searchParams;
   const user = await getSessionUser();
   if (!user) redirect('/login');
 
@@ -91,12 +96,20 @@ export default async function SowOversightPage({
         viewer: { id: user.id, role: user.role },
         termId: term.id,
         academicYearId: ay.id,
+        levelId: levelParam ?? null,
       })
     : null;
 
+  // The level stays with the tabs; a term switch drops it (another term may
+  // not have that level), and the first level of that term is shown.
   const href = (v: View, termNumber = term?.term_number) =>
-    `/classroom/sow/oversight?term=${termNumber ?? ''}${v === 'checks' ? '&view=checks' : ''}`;
+    `/classroom/sow/oversight?term=${termNumber ?? ''}${
+      termNumber === term?.term_number && data?.levelId
+        ? `&level=${data.levelId}`
+        : ''
+    }${v === 'checks' ? '&view=checks' : ''}`;
   const tiles = data?.tiles;
+  const inLevel = data?.levelLabel ? ` in ${data.levelLabel}` : '';
 
   return (
     <PageShell>
@@ -140,20 +153,20 @@ export default async function SowOversightPage({
                 value={tiles.waitingOnYou}
                 icon={Hourglass}
                 intent={tiles.waitingOnYou > 0 ? 'warning' : 'default'}
-                subtext="Schemes at a step you are on"
+                subtext={`Schemes at a step you are on${inLevel}`}
               />
               <MetricCard
                 label="Approved"
                 value={`${tiles.approved} of ${tiles.total}`}
                 icon={BookCheck}
-                subtext="Schemes of work this term"
+                subtext={`Schemes of work${inLevel} this term`}
               />
               <MetricCard
                 label="No SOW yet"
                 value={tiles.notStarted}
                 icon={Eye}
                 intent={tiles.notStarted > 0 ? 'bad' : 'default'}
-                subtext="Subjects taught with no scheme started"
+                subtext={`Subjects taught${inLevel} with no scheme started`}
               />
             </>
           ) : (
@@ -162,7 +175,7 @@ export default async function SowOversightPage({
                 label="Approved SOWs"
                 value={`${tiles.approved} of ${tiles.total}`}
                 icon={BookCheck}
-                subtext="Schemes of work this term"
+                subtext={`Schemes of work${inLevel} this term`}
               />
               <MetricCard
                 label={
@@ -178,7 +191,7 @@ export default async function SowOversightPage({
                 icon={CalendarCheck}
                 subtext={
                   tiles.checkedThisWeek
-                    ? 'Classes whose teachers have all checked'
+                    ? `Classes${inLevel} whose teachers have all checked`
                     : 'No teaching week today'
                 }
               />
@@ -187,30 +200,35 @@ export default async function SowOversightPage({
                 value={data.needsALook.length}
                 icon={Eye}
                 intent={data.needsALook.length > 0 ? 'warning' : 'default'}
-                subtext="Notes, missed checks, two weeks off plan"
+                subtext={`Notes, missed checks, two weeks off plan${inLevel}`}
               />
             </>
           )}
         </section>
       )}
 
-      <Tabs value={view}>
-        <TabsList>
-          <TabsTrigger value="sows" asChild>
-            <Link href={href('sows')}>
-              SOWs
-              {data && (
-                <span className="ml-1.5 tabular-nums text-muted-foreground">
-                  {data.sows.length}
-                </span>
-              )}
-            </Link>
-          </TabsTrigger>
-          <TabsTrigger value="checks" asChild>
-            <Link href={href('checks')}>Weekly checks</Link>
-          </TabsTrigger>
-        </TabsList>
-      </Tabs>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Tabs value={view}>
+          <TabsList>
+            <TabsTrigger value="sows" asChild>
+              <Link href={href('sows')}>
+                SOWs
+                {data && (
+                  <span className="ml-1.5 tabular-nums text-muted-foreground">
+                    {data.sows.length}
+                  </span>
+                )}
+              </Link>
+            </TabsTrigger>
+            <TabsTrigger value="checks" asChild>
+              <Link href={href('checks')}>Weekly checks</Link>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        {data && data.levelId && (
+          <OversightLevelSelect current={data.levelId} options={data.levels} />
+        )}
+      </div>
 
       {!data ? (
         <Card className="items-center gap-2 px-6 py-12 text-center">
@@ -219,9 +237,12 @@ export default async function SowOversightPage({
           </p>
         </Card>
       ) : view === 'sows' ? (
-        <OversightSowsTable rows={data.sows} />
+        // Keyed by level so the status tab re-opens on that level's first.
+        <OversightSowsTable key={data.levelId ?? ''} rows={data.sows} />
       ) : (
         <ChecksGrid
+          key={data.levelId ?? ''}
+          plans={data.plans}
           rows={data.grid}
           weekCount={data.weekCount}
           currentWeek={data.currentWeek}

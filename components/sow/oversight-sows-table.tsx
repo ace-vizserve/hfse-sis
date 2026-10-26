@@ -24,6 +24,30 @@ const STATE_ORDER = [
   'approved',
 ];
 
+const STATUS_TABS: {
+  value: string;
+  label: string;
+  predicate: (r: OversightSowRow) => boolean;
+}[] = [
+  { value: 'none', label: 'Not started', predicate: (r) => r.state === null },
+  { value: 'draft', label: 'Draft', predicate: (r) => r.state === 'draft' },
+  {
+    value: 'review',
+    label: 'In review',
+    predicate: (r) => r.state === 'in_review',
+  },
+  {
+    value: 'returned',
+    label: 'Returned',
+    predicate: (r) => r.state === 'returned',
+  },
+  {
+    value: 'approved',
+    label: 'Approved',
+    predicate: (r) => r.state === 'approved',
+  },
+];
+
 export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
   const columns = useMemo<ColumnDef<OversightSowRow>[]>(
     () => [
@@ -44,14 +68,6 @@ export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
             </span>
           </span>
         ),
-      },
-      // Facet-only, hidden: the toolbar's Level filter.
-      {
-        id: 'level',
-        accessorFn: (r) => r.levelLabel,
-        header: 'Level',
-        meta: { label: 'Level' },
-        enableSorting: false,
       },
       {
         id: 'classes',
@@ -141,6 +157,17 @@ export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
     [rows]
   );
 
+  // One status at a time, always set — there is no "All" tab (Mr Ace's rule
+  // for a long list). It opens on the first status in the school's working
+  // order that has rows: what is still to start, then drafts, in review,
+  // returned, approved.
+  const statusTabs = useMemo(() => {
+    const tabs = STATUS_TABS.map((t) => ({ ...t, isDefault: false }));
+    const first = tabs.find((t) => rows.some(t.predicate)) ?? tabs[0];
+    first.isDefault = true;
+    return tabs;
+  }, [rows]);
+
   return (
     <DataTable<OversightSowRow>
       data={sorted}
@@ -151,36 +178,7 @@ export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
           `${r.subjectName} ${r.levelLabel} ${r.classes.join(' ')} ${r.teachers.join(' ')}`,
       ]}
       searchPlaceholder="Search subjects, classes or teachers"
-      facets={[{ columnId: 'level', label: 'Level' }]}
-      initialColumnVisibility={{ level: false }}
-      statusTabs={[
-        { value: 'all', label: 'All', predicate: () => true, isDefault: true },
-        {
-          value: 'review',
-          label: 'In review',
-          predicate: (r) => r.state === 'in_review',
-        },
-        {
-          value: 'returned',
-          label: 'Returned',
-          predicate: (r) => r.state === 'returned',
-        },
-        {
-          value: 'draft',
-          label: 'Draft',
-          predicate: (r) => r.state === 'draft',
-        },
-        {
-          value: 'none',
-          label: 'Not started',
-          predicate: (r) => r.state === null,
-        },
-        {
-          value: 'approved',
-          label: 'Approved',
-          predicate: (r) => r.state === 'approved',
-        },
-      ]}
+      statusTabs={statusTabs}
       meScope={{
         enabled: true,
         userId: null,

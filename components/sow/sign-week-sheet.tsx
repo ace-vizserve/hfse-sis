@@ -21,8 +21,15 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import { isEmptyRichText, proseLength } from '@/lib/rich-text';
 import { ASSIGNMENT_ROLE_LABELS } from '@/lib/schemas/teacher-assignment';
-import { CHECK_LABELS, CHECK_NOTE_MAX } from '@/lib/sow/check-options';
-import type { GridCell, GridCheck, GridRow } from '@/lib/sow/oversight';
+import { CHECK_LABELS, SIGNOFF_REMARKS_MAX } from '@/lib/sow/check-options';
+import type {
+  GridCell,
+  GridCheck,
+  GridRow,
+  SowPlans,
+} from '@/lib/sow/oversight';
+
+type SowPlan = SowPlans[string][number];
 import { cn } from '@/lib/utils';
 
 // "Review and sign a week" (board 11): one class's week as the subject head
@@ -52,7 +59,7 @@ export function SignWeekSheet({
   onOpenChange,
 }: {
   /** The class and week being reviewed; null = closed. */
-  target: { row: GridRow; cell: GridCell } | null;
+  target: { row: GridRow; cell: GridCell; plan: SowPlan | null } | null;
   onOpenChange: (open: boolean) => void;
 }) {
   return (
@@ -67,6 +74,7 @@ export function SignWeekSheet({
             key={`${target.row.id}|${target.cell.weekNumber}`}
             row={target.row}
             cell={target.cell}
+            plan={target.plan}
             onDone={() => onOpenChange(false)}
           />
         )}
@@ -78,10 +86,13 @@ export function SignWeekSheet({
 function Review({
   row,
   cell,
+  plan,
   onDone,
 }: {
   row: GridRow;
   cell: GridCell;
+  /** The planned row, from the page's one-per-scheme `plans` map. */
+  plan: SowPlan | null;
   onDone: () => void;
 }) {
   const run = useWriteAction();
@@ -90,7 +101,7 @@ function Review({
   const n = cell.weekNumber;
   const signed = cell.signed;
   const empty = isEmptyRichText(remarks);
-  const tooLong = proseLength(remarks) > CHECK_NOTE_MAX;
+  const tooLong = proseLength(remarks) > SIGNOFF_REMARKS_MAX;
 
   // Every teacher who takes the class, with their check or none; then anyone
   // who checked but no longer holds the class (their word still counts).
@@ -158,11 +169,11 @@ function Review({
         <section className="space-y-1">
           <p className="text-xs font-semibold text-muted-foreground">Planned</p>
           <p className="text-sm font-medium text-foreground">
-            {cell.topic || 'No topic'}
+            {plan?.topic || 'No topic'}
           </p>
-          {cell.activities && !isEmptyRichText(cell.activities) && (
+          {plan?.activities && !isEmptyRichText(plan.activities) && (
             <RichText
-              html={cell.activities}
+              html={plan.activities}
               className="text-[13px] text-ink-3"
             />
           )}
@@ -271,7 +282,7 @@ function Review({
             <RichTextEditor
               id="supervisor-remarks"
               rows={3}
-              maxLength={CHECK_NOTE_MAX}
+              maxLength={SIGNOFF_REMARKS_MAX}
               placeholder="e.g. Noted, catch up on Practical 2 in Week 4."
               value={remarks}
               onChange={setRemarks}

@@ -253,7 +253,15 @@ export async function loadTermWeeks(
 export async function loadTermWeeksForLevels(
   service: SupabaseClient,
   termId: string,
-  levelIds: string[]
+  levelIds: string[],
+  /**
+   * The term's dates and the level codes, when the caller has already read
+   * them — then only the calendar and the events are read here.
+   */
+  known?: {
+    term: { start_date: string | null; end_date: string | null };
+    levelCodes: Map<string, string>;
+  }
 ): Promise<
   Map<string, { weeks: TermWeek[]; eventsByWeek: Map<number, string[]> }>
 > {
@@ -265,12 +273,21 @@ export async function loadTermWeeksForLevels(
   if (ids.length === 0) return out;
 
   const [termRes, levelRes, calRes, evRes] = await Promise.all([
-    service
-      .from('terms')
-      .select('start_date, end_date')
-      .eq('id', termId)
-      .single(),
-    service.from('levels').select('id, code').in('id', ids),
+    known
+      ? Promise.resolve({ data: known.term, error: null })
+      : service
+          .from('terms')
+          .select('start_date, end_date')
+          .eq('id', termId)
+          .single(),
+    known
+      ? Promise.resolve({
+          data: ids
+            .filter((id) => known.levelCodes.has(id))
+            .map((id) => ({ id, code: known.levelCodes.get(id) as string })),
+          error: null,
+        })
+      : service.from('levels').select('id, code').in('id', ids),
     service
       .from('school_calendar')
       .select('date, day_type, audience, hbl_overlay, label')

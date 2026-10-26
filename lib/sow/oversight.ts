@@ -26,6 +26,7 @@ import {
   checksAsSigned,
   latestChecks,
   newestSignoff,
+  SIGNOFF_REMARKS_MAX,
   type SignoffRow,
 } from '@/lib/sow/checks';
 import type { SowActor } from '@/lib/sow/create';
@@ -197,10 +198,6 @@ export type GridCell = {
   mark: CellMark;
   /** The newest sign-off row is a signature (shown underlined). */
   signed: boolean;
-  /** The planned row, from the approved snapshot. */
-  topic: string | null;
-  activities: string | null;
-  assessment: string | null;
   /** Each teacher's latest check, as it stood when the week was signed. */
   checks: GridCheck[];
   reliefNotes: { taughtOn: string; name: string; note: string }[];
@@ -213,12 +210,45 @@ export type GridCell = {
   } | null;
 };
 
+/**
+ * The planned row of each week, ONCE per scheme (not per class): sowId →
+ * week number → plan. The drawer reads it; the cells carry no plan HTML.
+ */
+export type SowPlans = Record<
+  string,
+  Record<
+    number,
+    {
+      topic: string | null;
+      activities: string | null;
+      assessment: string | null;
+    }
+  >
+>;
+
+export function buildPlans(sows: GridSow[]): SowPlans {
+  const out: SowPlans = {};
+  for (const sow of sows) {
+    out[sow.id] = {};
+    for (const w of sow.snapshot.weeks) {
+      out[sow.id][w.weekNumber] = {
+        topic: w.topic ?? null,
+        activities: w.activities ?? null,
+        assessment: w.assessment ?? null,
+      };
+    }
+  }
+  return out;
+}
+
 export type GridRow = {
   /** `${sowId}|${sectionId}` */
   id: string;
   sowId: string;
   sectionId: string;
+  /** "Secondary Two Integrity 1" — the level's label, then the section's. */
   className: string;
+  sectionName: string;
   subjectId: string;
   subjectName: string;
   levelId: string;
@@ -364,9 +394,6 @@ export function buildCheckGrid(input: {
             weekEnded: ended,
           }),
           signed: newest?.kind === 'signed',
-          topic: w.topic ?? null,
-          activities: w.activities ?? null,
-          assessment: w.assessment ?? null,
           checks: here.map((c) => ({
             teacherUserId: c.teacher_user_id,
             name: nameOf(c.teacher_user_id, 'Teacher'),
@@ -401,7 +428,11 @@ export function buildCheckGrid(input: {
         id: `${sow.id}|${sectionId}`,
         sowId: sow.id,
         sectionId,
-        className: input.sectionNames.get(sectionId) ?? 'Class',
+        // Section names repeat across levels in some years, so the label
+        // always leads with the level (board 10: "Sec 2 Integrity 1").
+        className:
+          `${sow.levelLabel} ${input.sectionNames.get(sectionId) ?? 'Class'}`.trim(),
+        sectionName: input.sectionNames.get(sectionId) ?? 'Class',
         subjectId: sow.subjectId,
         subjectName: sow.subjectName,
         levelId: sow.levelId,
@@ -461,8 +492,10 @@ const quoted = (text: string) => (text ? `: “${text}”` : '');
  *     run, opening its latest week, in place of one item per week.
  *
  * A single week already signed has been looked at, so it drops off; a run
- * stays while any week of it is unsigned. Weeks after `currentWeek` are not
- * read (they cannot have a mark yet).
+ * stays while any week of it is unsigned. Weeks after the row's OWN current
+ * week are not read (a level-only closure can number one level's weeks
+ * differently); `currentWeek` is the fallback for a row outside the term's
+ * weeks today.
  */
 export function needsALook(
   rows: GridRow[],
@@ -471,7 +504,8 @@ export function needsALook(
   const items: NeedsALookItem[] = [];
   for (const row of rows) {
     const label = `${row.className} · ${row.subjectName}`;
-    const cells = row.cells.filter((c) => c.weekNumber <= currentWeek);
+    const upTo = row.currentWeek ?? currentWeek;
+    const cells = row.cells.filter((c) => c.weekNumber <= upTo);
     let i = 0;
     while (i < cells.length) {
       const cell = cells[i];
@@ -539,7 +573,22 @@ export function needsALook(
 export const SIGNOFF_NOT_HEAD = 'Only the subject head signs off weeks.';
 export const SIGNOFF_REMARKS_REQUIRED =
   'Say what you would like the teacher to look at.';
-export const SIGNOFF_REMARKS_MAX = 1000;
+export { SIGNOFF_REMARKS_MAX };
+
+/**
+ * The capability a viewer gets on one scheme once oversight is counted: an
+ * overseer whose scope takes the scheme in may READ it (they open it from the
+ * oversight page); nothing here ever grants 'edit', and a capability the
+ * viewer already has is left as it is.
+ */
+export function withOversightRead(
+  capability: 'edit' | 'read' | 'none',
+  scope: OversightScope | null,
+  sow: { subjectId: string; levelType: LevelType | null }
+): 'edit' | 'read' | 'none' {
+  if (capability !== 'none' || !scope) return capability;
+  return inOversightScope(scope, sow) ? 'read' : 'none';
+}
 
 export type RecordSignoffResult =
   | { ok: true; signoffId: string }
@@ -725,8 +774,14 @@ export type OversightSowRow = {
 };
 
 export type OversightData = {
+  /** Levels with something in the viewer's scope, in school order. */
+  levels: { id: string; label: string }[];
+  /** The one level everything below is for; null when there is none. */
+  levelId: string | null;
+  levelLabel: string | null;
   sows: OversightSowRow[];
   grid: GridRow[];
+  plans: SowPlans;
   needsALook: NeedsALookItem[];
   /** The week most classes are in today; null outside the term's weeks. */
   currentWeek: number | null;
@@ -782,6 +837,8 @@ export async function loadOversight(
     viewer: { id: string; role: Role | null };
     termId: string;
     academicYearId: string;
+    /** `?level=`; an unknown or missing one falls to the first level. */
+    levelId?: string | null;
     today?: string;
   }
 ): Promise<OversightData> {
@@ -804,7 +861,7 @@ export async function loadOversight(
         'id, subject_id, level_id, track, state, current_submission_id, approved_snapshot, scheme_of_work_classes(section_id)'
       )
       .eq('term_id', input.termId),
-    service.from('levels').select('id, label, level_type'),
+    service.from('levels').select('id, code, label, level_type'),
     service.from('subjects').select('id, name'),
     service
       .from('sections')
@@ -833,7 +890,7 @@ export async function loadOversight(
       .select('subject_id, user_id, applies_to_level_type'),
     service
       .from('terms')
-      .select('start_date')
+      .select('start_date, end_date')
       .eq('id', input.termId)
       .maybeSingle(),
   ]);
@@ -854,10 +911,14 @@ export async function loadOversight(
     (
       (levelRes.data ?? []) as {
         id: string;
+        code: string;
         label: string;
         level_type: string;
       }[]
-    ).map((l) => [l.id, { label: l.label, type: asLevelType(l.level_type) }])
+    ).map((l) => [
+      l.id,
+      { code: l.code, label: l.label, type: asLevelType(l.level_type) },
+    ])
   );
   const subjectName = new Map(
     ((subjectRes.data ?? []) as { id: string; name: string }[]).map((s) => [
@@ -884,11 +945,14 @@ export async function loadOversight(
     userId: r.user_id,
     appliesToLevelType: asLevelType(r.applies_to_level_type),
   }));
-  const termStart =
-    (termRes.data as { start_date: string | null } | null)?.start_date ?? null;
+  const termRow = termRes.data as {
+    start_date: string | null;
+    end_date: string | null;
+  } | null;
+  const termStart = termRow?.start_date ?? null;
 
   const levelTypeOf = (levelId: string) => levels.get(levelId)?.type ?? null;
-  const schemes = ((schemeRes.data ?? []) as SchemeRow[]).filter((s) =>
+  const scoped = ((schemeRes.data ?? []) as SchemeRow[]).filter((s) =>
     inOversightScope(input.scope, {
       subjectId: s.subject_id,
       levelType: levelTypeOf(s.level_id),
@@ -942,6 +1006,33 @@ export async function loadOversight(
     g.sections.add(section.id);
     groups.set(key, g);
   }
+  const notStarted = [...groups.entries()].filter(
+    ([key, g]) =>
+      !allSchemeKeys.has(key) &&
+      inOversightScope(input.scope, {
+        subjectId: g.subjectId,
+        levelType: levelTypeOf(g.levelId),
+      })
+  );
+
+  // ── ONE LEVEL AT A TIME, ALWAYS SET (Mr Ace's rule for a long list: one
+  // group at a time, never "all"). The levels on offer are those with a
+  // scheme, or a subject still to start one, in the viewer's scope; an
+  // unknown or missing `?level=` falls to the first. Everything below — the
+  // heavy wave included — reads that level only.
+  const levelOptions = [
+    ...new Set([
+      ...scoped.map((s) => s.level_id),
+      ...notStarted.map(([, g]) => g.levelId),
+    ]),
+  ]
+    .map((id) => ({ id, label: levels.get(id)?.label ?? '' }))
+    .sort((a, b) => compareLevelLabels(a.label, b.label));
+  const levelId =
+    levelOptions.find((l) => l.id === input.levelId)?.id ??
+    levelOptions[0]?.id ??
+    null;
+  const schemes = scoped.filter((s) => s.level_id === levelId);
 
   const gridSows: GridSow[] = [];
   for (const s of schemes) {
@@ -1011,10 +1102,21 @@ export async function loadOversight(
             .range(from, to)
         )
       : Promise.resolve([]),
+    // The term and the level codes are already read above; passed in so the
+    // weeks cost the calendar and event reads only.
     loadTermWeeksForLevels(
       service,
       input.termId,
-      gridSows.map((s) => s.levelId)
+      gridSows.map((s) => s.levelId),
+      {
+        term: {
+          start_date: termRow?.start_date ?? null,
+          end_date: termRow?.end_date ?? null,
+        },
+        levelCodes: new Map(
+          [...levels.entries()].map(([id, l]) => [id, l.code])
+        ),
+      }
     ),
     loadSowStepLabels(service, submissionIds),
     listSowReviewQueue(service, {
@@ -1110,12 +1212,9 @@ export async function loadOversight(
       waiting: waitingText(s),
     };
   });
-  for (const [key, g] of groups) {
-    if (allSchemeKeys.has(key)) continue;
+  for (const [key, g] of notStarted) {
+    if (g.levelId !== levelId) continue;
     const levelType = levelTypeOf(g.levelId);
-    if (!inOversightScope(input.scope, { subjectId: g.subjectId, levelType })) {
-      continue;
-    }
     sowRows.push({
       id: key,
       sowId: null,
@@ -1191,8 +1290,12 @@ export async function loadOversight(
   }
 
   return {
+    levels: levelOptions,
+    levelId,
+    levelLabel: levelOptions.find((l) => l.id === levelId)?.label ?? null,
     sows: sowRows,
     grid,
+    plans: buildPlans(gridSows),
     needsALook: look,
     currentWeek,
     weekCount: Math.max(

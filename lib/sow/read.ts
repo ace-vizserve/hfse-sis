@@ -18,7 +18,7 @@ import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { REOPEN_ROLES } from '@/lib/sow/approval';
 import { loadSowChecking, type SowChecking } from '@/lib/sow/checks';
 import type { SowActor } from '@/lib/sow/create';
-import { inOversightScope, resolveOversightScope } from '@/lib/sow/oversight';
+import { resolveOversightScope, withOversightRead } from '@/lib/sow/oversight';
 import {
   loadFirstSowStepLabel,
   loadSowReview,
@@ -173,33 +173,30 @@ export async function loadSowView(
     (c) => c.section_id
   );
 
-  let capability = sowCapability({
-    role: actor.role ?? 'teacher',
-    userId: actor.id,
-    assignments,
-    sow: {
-      subjectId: sow.subject_id,
-      state: sow.state,
-      classSectionIds: sectionIds,
-    },
-    isOnCurrentApprovalStep: onStep,
-  });
   // A subject head or an approver who oversees this scheme opens it from the
   // oversight page, so they may read it (never edit it) even when it is not
-  // waiting on their step.
+  // waiting on their step (`withOversightRead`).
   const levelType = (levelTypeRes.data as { level_type?: string } | null)
     ?.level_type;
-  if (
-    capability === 'none' &&
-    oversight &&
-    inOversightScope(oversight, {
+  const capability = withOversightRead(
+    sowCapability({
+      role: actor.role ?? 'teacher',
+      userId: actor.id,
+      assignments,
+      sow: {
+        subjectId: sow.subject_id,
+        state: sow.state,
+        classSectionIds: sectionIds,
+      },
+      isOnCurrentApprovalStep: onStep,
+    }),
+    oversight,
+    {
       subjectId: sow.subject_id,
       levelType:
         levelType === 'primary' || levelType === 'secondary' ? levelType : null,
-    })
-  ) {
-    capability = 'read';
-  }
+    }
+  );
   if (capability === 'none') return null;
 
   let classes: { sectionId: string; name: string }[] = [];

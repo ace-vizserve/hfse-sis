@@ -27,12 +27,15 @@ vi.mock('@/lib/audit/log-action', () => ({
 import { checksAsSigned, latestChecks } from '@/lib/sow/checks';
 import {
   buildCheckGrid,
+  buildPlans,
   type GridRow,
   type GridSow,
   needsALook,
+  type OversightScope,
   recordSignoff,
   resolveOversightScope,
   SIGNOFF_NOT_HEAD,
+  withOversightRead,
 } from '@/lib/sow/oversight';
 import type { TermWeek } from '@/lib/sow/weeks';
 
@@ -260,7 +263,7 @@ function grid(over: {
 }) {
   return buildCheckGrid({
     sows: [SOW],
-    sectionNames: new Map([['secA', 'Sec 1 Discipline 1']]),
+    sectionNames: new Map([['secA', 'Discipline 1']]),
     termWeeks: new Map([['L1', WEEKS]]),
     assignments: [
       {
@@ -286,79 +289,122 @@ function grid(over: {
   });
 }
 
-const row = (
-  name: string,
-  subject: string,
-  marks: GridRow['cells'][number]['mark'][],
-  notes: (string | null)[] = []
-): GridRow => ({
-  id: `${name}|${subject}`,
-  sowId: `sow-${name}`,
-  sectionId: `sec-${name}`,
-  className: name,
-  subjectId: subject.toLowerCase(),
-  subjectName: subject,
-  levelId: 'L1',
-  levelLabel: 'Secondary 1',
-  levelType: 'secondary',
-  track: 'Standard',
-  currentWeek: 3,
-  canSign: true,
-  teachers: [],
-  cells: marks.map((mark, i) => ({
-    weekNumber: i + 1,
-    startsOn: WEEKS[i].kind === 'week' ? WEEKS[i].startsOn : '',
-    endsOn: WEEKS[i].kind === 'week' ? WEEKS[i].endsOn : '',
-    started: true,
-    ended: i < 2,
-    mark,
-    signed: false,
-    topic: `Topic ${i + 1}`,
-    activities: null,
-    assessment: null,
-    checks:
-      mark === 'note'
+type Mark = GridRow['cells'][number]['mark'];
+
+/**
+ * Grid rows built by the real `buildCheckGrid` from checks, so the labels
+ * (level + section) and the marks are the code's own. Section names carry
+ * NO level: the code must add it. 'ok' / 'note' are checks; 'missed' and
+ * 'todo' are no check (weeks 1–2 are over on TODAY, week 3 is not).
+ */
+function lookRows(
+  spec: {
+    section: string;
+    level: string;
+    marks: Mark[];
+    notes?: string[];
+  }[],
+  signed: { section: string; week: number }[] = []
+): GridRow[] {
+  const sows: GridSow[] = spec.map((s, i) => ({
+    ...SOW,
+    id: `sow${i}`,
+    levelLabel: s.level,
+    sectionIds: [`sec${i}`],
+  }));
+  const checks = spec.flatMap((s, i) =>
+    s.marks.flatMap((m, w) =>
+      m === 'ok' || m === 'note'
         ? [
             {
-              teacherUserId: 't1',
-              name: 'Ms Tan',
-              role: 'subject_teacher' as const,
-              option: 'delayed' as const,
-              note: `<p>${notes[i] ?? 'Lab not available'}</p>`,
-              recordedAt: '2026-10-09T00:00:00.000Z',
+              sow_id: `sow${i}`,
+              week_number: w + 1,
+              section_id: `sec${i}`,
+              teacher_user_id: 't1',
+              option: (m === 'ok' ? 'as_planned' : 'delayed') as
+                | 'as_planned'
+                | 'delayed',
+              note:
+                m === 'ok'
+                  ? null
+                  : `<p>${s.notes?.[w] ?? 'Lab not available'}</p>`,
+              recorded_at: '2026-10-01T00:00:00.000Z',
             },
           ]
-        : [],
+        : []
+    )
+  );
+  return buildCheckGrid({
+    sows,
+    sectionNames: new Map(spec.map((s, i) => [`sec${i}`, s.section])),
+    termWeeks: new Map([['L1', WEEKS]]),
+    assignments: spec.map((_, i) => ({
+      teacher_user_id: 't1',
+      section_id: `sec${i}`,
+      subject_id: 'sci',
+      role: 'subject_teacher',
+    })),
+    checks,
+    signoffs: signed.map((s) => {
+      const i = spec.findIndex((x) => x.section === s.section);
+      return {
+        sow_id: `sow${i}`,
+        section_id: `sec${i}`,
+        week_number: s.week,
+        kind: 'signed' as const,
+        signed_by: 'head-sci',
+        remarks: null,
+        created_at: '2026-10-25T00:00:00.000Z',
+      };
+    }),
     reliefNotes: [],
-    signoff: null,
-  })),
-});
+    names: new Map([['t1', 'Ms Tan']]),
+    heads: [{ subjectId: 'sci', userId: 'head-sci', appliesToLevelType: null }],
+    viewerId: 'head-sci',
+    today: TODAY,
+  });
+}
 
 describe('needsALook', () => {
   it('needsALook lists a note, a missed week, and two adjusted weeks in a row', () => {
     const items = needsALook(
-      [
-        row('Sec 2 Integrity 1', 'Science', ['ok', 'ok', 'note']),
-        row('Sec 2 Integrity 2', 'Science', ['ok', 'missed', 'todo']),
-        row(
-          'Sec 3 Consistency',
-          'Science',
-          ['note', 'note', 'todo'],
-          ['Ch 5 started', 'Ch 5 taking longer than planned']
-        ),
-        row('Sec 1 Discipline 1', 'Science', ['ok', 'ok', 'ok']),
-      ],
+      lookRows([
+        {
+          section: 'Integrity 1',
+          level: 'Secondary 2',
+          marks: ['ok', 'ok', 'note'],
+        },
+        {
+          section: 'Integrity 2',
+          level: 'Secondary 2',
+          marks: ['ok', 'missed', 'todo'],
+        },
+        {
+          section: 'Consistency',
+          level: 'Secondary 3',
+          marks: ['note', 'note', 'todo'],
+          notes: ['Ch 5 started', 'Ch 5 taking longer than planned'],
+        },
+        {
+          section: 'Discipline 1',
+          level: 'Secondary 1',
+          marks: ['ok', 'ok', 'ok'],
+        },
+      ]),
       3
     );
     expect(items.map((i) => [i.who, i.note])).toEqual(
       expect.arrayContaining([
-        ['Sec 2 Integrity 1 · Science, Wk 3', 'Delayed: “Lab not available”'],
         [
-          'Sec 2 Integrity 2 · Science, Wk 2',
+          'Secondary 2 Integrity 1 · Science, Wk 3',
+          'Delayed: “Lab not available”',
+        ],
+        [
+          'Secondary 2 Integrity 2 · Science, Wk 2',
           'Week 2 is over and was never checked.',
         ],
         [
-          'Sec 3 Consistency · Science, Wk 1–2',
+          'Secondary 3 Consistency · Science, Wk 1–2',
           'Delayed two weeks running: “Ch 5 taking longer than planned”',
         ],
       ])
@@ -366,13 +412,92 @@ describe('needsALook', () => {
     // The two-week run is one item, not two notes plus a run.
     expect(items).toHaveLength(3);
     // "Review and sign" opens the run's latest week.
-    expect(items.find((i) => i.who.startsWith('Sec 3'))?.weekNumber).toBe(2);
+    expect(items.find((i) => i.who.startsWith('Secondary 3'))?.weekNumber).toBe(
+      2
+    );
   });
 
   it('a signed note no longer needs a look on its own', () => {
-    const r = row('Sec 2 Integrity 1', 'Science', ['ok', 'ok', 'note']);
-    r.cells[2].signed = true;
-    expect(needsALook([r], 3)).toEqual([]);
+    const rows = lookRows(
+      [
+        {
+          section: 'Integrity 1',
+          level: 'Secondary 2',
+          marks: ['ok', 'ok', 'note'],
+        },
+      ],
+      [{ section: 'Integrity 1', week: 3 }]
+    );
+    expect(rows[0].cells[2]).toMatchObject({ mark: 'note', signed: true });
+    expect(needsALook(rows, 3)).toEqual([]);
+  });
+
+  it('reads each row up to its own current week', () => {
+    const rows = lookRows([
+      { section: 'Integrity 2', level: 'Secondary 2', marks: ['ok', 'missed'] },
+    ]);
+    // This row's level is still in week 1 (a level-only closure, say).
+    rows[0].currentWeek = 1;
+    expect(needsALook(rows, 3)).toEqual([]);
+    rows[0].currentWeek = null;
+    expect(needsALook(rows, 3)).toHaveLength(1);
+  });
+});
+
+describe('withOversightRead — the widened read of a scheme', () => {
+  const head = (
+    subjectId: string,
+    levelType: 'primary' | 'secondary' | null
+  ): OversightScope => ({
+    all: false,
+    subjectIds: [subjectId],
+    levelTypes: [],
+    heads: [{ subjectId, levelType }],
+  });
+
+  it('a head scoped to primary cannot read a secondary SOW of the same subject', () => {
+    expect(
+      withOversightRead('none', head('sci', 'primary'), {
+        subjectId: 'sci',
+        levelType: 'secondary',
+      })
+    ).toBe('none');
+  });
+
+  it("a subject head cannot read another subject's SOW", () => {
+    expect(
+      withOversightRead('none', head('sci', null), {
+        subjectId: 'math',
+        levelType: 'secondary',
+      })
+    ).toBe('none');
+  });
+
+  it('an approver scoped to secondary cannot read a primary SOW', () => {
+    const oic: OversightScope = {
+      all: false,
+      subjectIds: [],
+      levelTypes: ['secondary'],
+      heads: [],
+    };
+    expect(
+      withOversightRead('none', oic, { subjectId: 'sci', levelType: 'primary' })
+    ).toBe('none');
+    expect(
+      withOversightRead('none', oic, {
+        subjectId: 'sci',
+        levelType: 'secondary',
+      })
+    ).toBe('read');
+  });
+
+  it("an in-scope overseer gets 'read', never 'edit'", () => {
+    const sow = { subjectId: 'sci', levelType: 'secondary' as const };
+    expect(withOversightRead('none', head('sci', null), sow)).toBe('read');
+    expect(withOversightRead('none', { all: true }, sow)).toBe('read');
+    // What the viewer already has is left alone — never raised to 'edit'.
+    expect(withOversightRead('read', { all: true }, sow)).toBe('read');
+    expect(withOversightRead('none', null, sow)).toBe('none');
   });
 });
 
@@ -413,6 +538,16 @@ describe('the grid', () => {
     expect(r.teachers).toEqual([
       { userId: 't1', name: 'Ms Tan', role: 'subject_teacher' },
     ]);
+    // The level leads the class name; the section name stays as stored.
+    expect(r.className).toBe('Secondary 1 Discipline 1');
+    expect(r.sectionName).toBe('Discipline 1');
+    // The plan is not copied into the cells; it is sent once per scheme.
+    expect(r.cells[0]).not.toHaveProperty('topic');
+    expect(buildPlans([SOW]).sow1[2]).toEqual({
+      topic: 'Topic 2',
+      activities: null,
+      assessment: null,
+    });
   });
 
   it('a check recorded after the signature is not what was signed', () => {

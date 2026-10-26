@@ -498,7 +498,10 @@ function OpenWeek({
                 />
                 <div className="min-w-0 space-y-0.5">
                   <p className="font-semibold">
-                    Your subject head asked
+                    {/* "Your" only to a teacher who checks that class. */}
+                    {c.canCheck
+                      ? 'Your subject head asked'
+                      : 'The subject head asked'}
                     {week.classes.length > 1 ? ` about ${c.name}` : ''}:
                   </p>
                   <RichText
