@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getLevelRows } from '@/lib/sis/levels';
-import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
+import {
+  getClientIp,
+  rateLimit,
+  tooManyRequests,
+  userRateLimit,
+} from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 
 // GET /api/parent/v2/levels
@@ -75,11 +80,9 @@ export async function GET(request: Request) {
   }
 
   // Per-user limit — checked after token is confirmed valid.
-  const userRl = rateLimit({
-    ip,
+  const userRl = userRateLimit({
     userId: userData.user.id,
     scope: 'parent-v2',
-    ipMax: 30,
     userMax: 20,
     windowSecs: 60,
   });

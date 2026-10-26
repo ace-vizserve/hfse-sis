@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
+import {
+  getClientIp,
+  rateLimit,
+  tooManyRequests,
+  userRateLimit,
+} from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 import { getAllStudentsByParentEmail } from '@/lib/supabase/admissions';
 
@@ -89,11 +94,9 @@ export async function POST(request: Request) {
   }
   const email = userData.user.email.trim().toLowerCase();
 
-  const userRl = rateLimit({
-    ip,
+  const userRl = userRateLimit({
     userId: userData.user.id,
     scope: 'parent-v2-evidence',
-    ipMax: 10,
     userMax: 5,
     windowSecs: 60,
   });
