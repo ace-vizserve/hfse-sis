@@ -63,7 +63,11 @@ Approval: `approval_stages.resolver` also allows `subject_head`; the flow is `ma
 - **Oversight** shows one level at a time (`?level=`), filtered on the server; the SOWs tab opens on the first non-empty status. Who sees it: subject heads (their subjects), anyone on a named step of the flow (their half, or everything if unscoped), and the office roles (everything). The grid marks: check = as planned, ! = has a note, circle = not checked and the week is over, dot = not yet, underline = signed. Needs a look lists weeks with a note, weeks that ended unchecked, and two adjusted or delayed weeks in a row.
 - **Caps.** Hours per week 300; textbook pages 500; weekly-check notes and supervisor remarks 1000 typed characters; Return note 300; an Excel import reads at most 60 weeks. The import and the edit forms share the same caps.
 - **Excel.** Import reads the school's template once into a draft (the template's single "activities / assessment" column goes into activities) and shows a preview first; the file is never stored or kept in sync. Download writes the module details and weeks in the same layout with the monitoring block empty. `xlsx` stays on 0.18.5 and the import is bounded (see KD #234).
-- **Grading sheets.** Creating grading sheets for a class that has no approved SOW shows a warning and still creates them.
+- **Grading sheets.** Creating grading sheets for a class that has no approved SOW shows a warning and still creates them. The warning names each class with its level ("P1 Courtesy · Math").
+- **Import size.** An Excel file over **4 MB** is refused, in the drawer and at the route (Vercel turns away a request body over 4.5 MB before the route runs).
+- **Locked weeks, even in a race.** A week update or delete whose SOW is in review or approved is refused by a trigger in migration 198 (`scheme_of_work_weeks_editable`, SQLSTATE 55000) and answered with the usual 423, so a save that lands just after a send cannot change the plan under review.
+- **Deletes elsewhere.** Subject Setup refuses (409) to delete a subject that a SOW or a relief note uses; a subject's heads go with a deleted subject (`subject_heads.subject_id` cascades, snapshotted in the `subject.delete` audit row). Deleting a section is refused (409, "This class is on a scheme of work — take it off the scheme first.") while it is on a SOW or has checks, relief notes or sign-offs, before anything is deleted.
+- **Subject heads who cannot act.** A head whose account was deleted or switched off stays in the setting but is left out of the readiness count, the pool a SOW is filed with, and the pool a waiting step is re-pointed to.
 
 ## Deliberately out
 
@@ -75,7 +79,7 @@ They run on the **local stack only**, with `next dev` on `http://localhost:3000`
 
 - `npm run e2e:sow` runs the whole folder: `phase-1` to `phase-5.local.spec.ts` (one gate per build phase) and `sow.local.spec.ts`, the full walk: a teacher starts a blank SOW and writes Week 1, sends it, the subject head, OIC, Assistant Principal and AEB approve, the teacher checks the week for both classes, the relief teacher records a note, and the subject head signs.
 - `npx playwright test e2e/sow/sow.local.spec.ts` runs just the walk.
-- Each spec arranges its own setup through the local database (approval steps, subject head, a two-class group with two teachers, cover) and removes it afterwards, even after a crash. Screenshots land in `e2e/.results`.
+- Each spec arranges its own setup through the local database (approval steps, subject head, a two-class group with two teachers, cover) and removes it afterwards: in `afterAll` when the run ends, or, if a run was killed before that, in the next run's `beforeAll`. Screenshots land in `e2e/.results`.
 
 ## Before go-live
 

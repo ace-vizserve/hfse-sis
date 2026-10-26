@@ -615,7 +615,8 @@ discipline` made the student name a link, and teachers cannot open Records, so
   term; teachers prepare their level's section; subject head/monitor → OIC
   (Primary or Secondary) → Asst P (Ms Chandana) vet, AEB approves; weekly check
   per class, note required unless "as planned"; relief view of this week;
-  oversight in Classroom; no grading sheet config without an approved SOW) and
+  oversight in Classroom; no grading sheet config without an approved SOW
+  (built as a warning, not a block — KD #234)) and
   the mockup `https://claude.ai/artifact/D9HuZFBVC842AUk5SCYDMH`.
 
 - **T12 — the teachers' dashboard (lesson planning + SOW). New 2026-08-21,

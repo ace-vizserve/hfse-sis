@@ -72,6 +72,16 @@ KD #108 and #110 died because nobody read the SOW; the work fell on the teacher 
 - Grading-sheet creation **warns, never blocks**, when a class has no approved SOW (spec section 7).
 - `xlsx` stays on 0.18.5. The advisories are fixed only on SheetJS's own CDN tarball, and swapping the package source changes the supply chain for every Excel feature in the app. The import is bounded (`sheetRows`, formulas / HTML / styles off, bounded loops, week cap, Content-Length precheck). **Mr Ace's call.**
 
+**Fixed after the whole-branch review (2026-10-27, migration 198 amended in place, local only).**
+
+- `subject_heads.subject_id` **cascades** (a head of a deleted subject means nothing); `schemes_of_work` and `scheme_of_work_relief_notes` stay restrict, and Subject Setup's delete refuses (409) a subject either uses, before deleting anything.
+- Deleting a section is refused (409) while it is on a SOW or has checks, relief notes or sign-offs, before its grading sheets are touched.
+- **A week cannot change once its SOW left draft, even in a race:** a trigger on `scheme_of_work_weeks` (update/delete) reads the parent `for share` and raises SQLSTATE 55000 when it is in review or approved; `lib/sow/edit.ts` answers it with the 423. A trigger, because supabase-js has no transactions and a re-read leaves the same gap.
+- "Approved" is `approved_snapshot is not null` everywhere, copy-from-last-year included (a reopened SOW still copies).
+- The Excel import limit is **4 MB** (Vercel's request body limit is 4.5 MB).
+- A subject head whose account was deleted or switched off counts for nothing: left out of the readiness count, the filed pool and the re-pointed pool. An empty staff list is treated as a failed read, never as "nobody".
+- One `trackOf(classType)` in `lib/sow/access.ts` (null → Standard) for every reader.
+
 **Out, deliberately:** a separate lesson-plan document, any student or parent view, linking SOW assessments to grading-sheet slots, storing the Excel file, a version-history screen, and any outside planner (the Flourish meeting never happened).
 
 **Gates.** `e2e/sow/phase-1..5.local.spec.ts` and the full walk `e2e/sow/sow.local.spec.ts`, all run by `npm run e2e:sow` against the local stack.

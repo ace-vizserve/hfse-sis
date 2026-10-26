@@ -122,21 +122,22 @@ CREATE TABLE subjects (
 
 ### `subject_configs`
 
-Per-subject grading configuration per AY. Weights may change each AY.
+Per-subject grading configuration per AY. Weights may change each AY. There is
+no level on this table: which levels a subject is taught at lives in
+`subject_level_offerings`.
 
 ```sql
 CREATE TABLE subject_configs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   academic_year_id UUID REFERENCES academic_years(id),
   subject_id UUID REFERENCES subjects(id),
-  level_id UUID REFERENCES levels(id),
   ww_weight NUMERIC(4,2) NOT NULL,           -- e.g., 0.40 for Primary Math
   pt_weight NUMERIC(4,2) NOT NULL,           -- e.g., 0.40 for Primary Math
   qa_weight NUMERIC(4,2) NOT NULL,           -- always 0.20
   ww_max_slots SMALLINT DEFAULT 5,           -- max number of written work columns
   pt_max_slots SMALLINT DEFAULT 5,           -- max number of PT columns
   created_at TIMESTAMPTZ DEFAULT now(),
-  UNIQUE(academic_year_id, subject_id, level_id),
+  UNIQUE(academic_year_id, subject_id),
   CHECK (ww_weight + pt_weight + qa_weight = 1.00)
 );
 ```

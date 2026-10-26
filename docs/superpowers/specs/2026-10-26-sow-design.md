@@ -107,6 +107,7 @@ It then offers three ways to start:
 3. **Import from Excel.** For SOWs already written in the school's template this year. The SIS reads the file once, and after that the SOW is edited in the SIS, not in the file.
    - The importer reads the template's layout: header rows, one block per week, and one tab per level, matching the tab to the chosen level.
    - It shows what it read before anything is saved.
+   - A file over 4 MB is refused (Vercel's request body limit is 4.5 MB).
 
 Each way creates a **draft**.
 
@@ -297,7 +298,9 @@ The design agreed in T12 says **"no grading sheet config without an approved SOW
 - `scheme_of_work_checks`: the SOW week, section, teacher, option, and note. One row per teacher per class per week. This is an append-only ledger, and the newest row wins, like `attendance_daily`.
 - `scheme_of_work_relief_notes`: the SOW week (nullable when the class has no SOW), section, date, relief teacher, and note.
 - `scheme_of_work_signoffs`: the SOW week, section, subject head, remarks, and either signed or asked.
-- `subject_heads`: subject, staff user, and optionally a level type.
+- `subject_heads`: subject, staff user, and optionally a level type. A head whose account was deleted or switched off is ignored when a SOW is filed or re-pointed and in the readiness count.
+
+As built (2026-10-27): a SOW or a relief note keeps its subject and its classes from being deleted (Subject Setup and section delete answer 409); a subject's heads go with a deleted subject; a week of a SOW in review or approved cannot be changed, enforced in the database.
 
 **Changes to existing pieces:**
 
