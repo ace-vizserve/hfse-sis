@@ -14,6 +14,10 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
+import { SowTodos } from '@/components/sow/sow-todos';
+import { ThisWeekLessons } from '@/components/sow/this-week-lessons';
+import { loadSowHome, type SowHome } from '@/lib/sow/home';
+import { createServiceClient } from '@/lib/supabase/service';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { loadCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
@@ -55,9 +59,15 @@ export default async function ClassroomListPage({
     role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);
 
-  const [currentAy, ayCodes] = await Promise.all([
+  // The week's lessons and SOW to-dos ride the same wave as the year lookups.
+  // Never the reason the page fails: a failed read just leaves the strip out.
+  const [currentAy, ayCodes, sowHome] = await Promise.all([
     getCurrentAcademicYear(),
     listAyCodes(supabase),
+    loadSowHome(createServiceClient(), userId).catch((e: unknown) => {
+      console.error('[classroom] sow home failed:', e);
+      return { lessons: [], todos: [] } satisfies SowHome;
+    }),
   ]);
   const selectedAyCode =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
@@ -185,6 +195,18 @@ export default async function ClassroomListPage({
       <Suspense fallback={null}>
         <UpcomingCover userId={userId} role={role} className="mt-6" />
       </Suspense>
+
+      {/* Only for someone who teaches a subject this term; renders nothing
+          otherwise, so the class list below is untouched for everyone else. */}
+      {(sowHome.lessons.length > 0 || sowHome.todos.length > 0) && (
+        <div className="flex flex-wrap items-start gap-5">
+          <ThisWeekLessons
+            lessons={sowHome.lessons}
+            className="basis-[560px] grow-[999]"
+          />
+          <SowTodos todos={sowHome.todos} className="basis-[300px] grow" />
+        </div>
+      )}
 
       <div className="@container/main">
         <div className="grid grid-cols-1 gap-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-xs @xl/main:grid-cols-2">

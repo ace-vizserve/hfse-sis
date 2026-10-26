@@ -608,9 +608,9 @@ const fail = (
  * shows them the remarks on the scheme's page until they check again or the
  * week is signed (`openAsk`).
  *
- * TODO(Task 16): an open ask is also a to-do for the class's teachers on
- * their Classroom home (`lib/home/todos.ts`) — read it with `openAsk` over
- * this table. Nothing is sent as a notification.
+ * An open ask is also a to-do for the class's teachers on their Classroom
+ * home (`lib/sow/home.ts`, read with `openAsk` over this table). Nothing is
+ * sent as a notification.
  */
 export async function recordSignoff(
   service: SupabaseClient,
