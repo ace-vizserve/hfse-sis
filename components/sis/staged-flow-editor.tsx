@@ -517,7 +517,7 @@ function StageRow({
                 {approver.displayName}
                 {anyScoped && <ScopeTag scope={approver.appliesToLevelType} />}
                 <Button
-                  variant="ghost"
+                  variant="outline"
                   size="icon"
                   className="size-5"
                   aria-label={
@@ -669,7 +669,7 @@ function StageRow({
           </Button>
         </ButtonGroup>
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
           className="size-8"
           aria-label={`Rename ${stage.label}`}
@@ -682,7 +682,7 @@ function StageRow({
           <Pencil className="size-3.5" />
         </Button>
         <Button
-          variant="ghost"
+          variant="outline"
           size="icon"
           className="size-8 text-destructive hover:text-destructive"
           aria-label={`Remove ${stage.label}`}
@@ -873,9 +873,9 @@ function ScopeStep({
             {person.displayName}
           </p>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="-mt-1 -mr-2 h-7 text-[12px]"
+            className="-mt-1 h-7 text-[12px]"
             onClick={onBack}
           >
             Change

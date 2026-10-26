@@ -7,6 +7,7 @@ import {
   ChevronRight,
   MessageSquareText,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 
 import { formatRange, formatWeekdayDay } from '@/components/sow/format';
@@ -102,6 +103,7 @@ export function WeekChecks({
   revising?: boolean;
 }) {
   const run = useWriteAction();
+  const router = useRouter();
   const { weeks } = checking;
   const lastStarted = [...weeks].reverse().find((w) => w.started);
   const [view, setView] = useState<'week' | 'term'>('week');
@@ -173,6 +175,13 @@ export function WeekChecks({
       async () => {
         // One request per class: each class saves or refuses on its own, and
         // a refusal stops here so the toast names the class it is about.
+        //
+        // ⚠ DRAFTS ARE CLEARED ONLY WHEN EVERY CLASS SAVED. A class that saved
+        // before a later one was refused keeps its draft, and the page is
+        // refreshed: dropping the draft with no refresh showed the OLD server
+        // value for a check the server already holds. After the refresh the
+        // kept draft matches what was saved, so it no longer counts as a
+        // change and is not posted twice.
         for (const { c, d } of toSave) {
           try {
             await apiFetch(
@@ -185,16 +194,19 @@ export function WeekChecks({
               })
             );
           } catch (e) {
+            router.refresh();
             throw new Error(
               `${c.name}: ${e instanceof Error ? e.message : 'Could not save the check.'}`
             );
           }
-          setDrafts((prev) => {
-            const next = { ...prev };
-            delete next[key(w.weekNumber, c.sectionId)];
-            return next;
-          });
         }
+        setDrafts((prev) => {
+          const next = { ...prev };
+          for (const { c } of toSave) {
+            delete next[key(w.weekNumber, c.sectionId)];
+          }
+          return next;
+        });
         return null;
       },
       {
