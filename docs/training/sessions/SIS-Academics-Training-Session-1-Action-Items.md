@@ -30,22 +30,22 @@ rather than being edited into the reply.
 
 ## Status
 
-| #   | Ask                                                   | Who                                                  | Status                                               | Where                                                                            |
-| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                               | KD #177, migration 109                                                           |
-| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                      | KD #178, migrations 110 / 111                                                    |
-| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                               | Records → Academic tab                                                           |
-| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                               | KD #179 (subject) + #182 (adviser)                                               |
-| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                               | KD #181 — Classroom drawer                                                       |
-| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ✅ **DONE 2026-08-31 — end to end, both sides**      | Parent files it + approval ladder + register write; staff can upload too         |
-| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24**  | Five screens. Migrations 120–122. Outcome still nowhere                          |
-| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**         | Principal's List is an ACADEMIC honour, not a competition                        |
-| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                           | Same table as #8 — scoring sheet                                                 |
-| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                              | "Teachers cannot choose the approvers"                                           |
-| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open  |
-| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                          |
-| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                      |
-| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ⏸ **ON HOLD 2026-10-07** — pending 23 Oct vendor mtg | Designed + mocked up (T12); build paused for Flourish / Exponential Learning Lab |
+| #   | Ask                                                   | Who                                                  | Status                                               | Where                                                                           |
+| --- | ----------------------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------- |
+| 1   | Comment on an excused absence                         | Christina (31:07), Melissa (32:44)                   | **Shipped** 2026-08-03                               | KD #177, migration 109                                                          |
+| 2   | House colour                                          | Chandana (23:35)                                     | **Done** — named + list loading                      | KD #178, migrations 110 / 111                                                   |
+| 3   | Whole-year T1→T3 view for one student                 | Christina (57:59)                                    | **Shipped** 2026-08-03                               | Records → Academic tab                                                          |
+| 4   | Flag at-risk students on scores, not just term grades | Koh (55:10)                                          | **Shipped** 2026-08-09                               | KD #179 (subject) + #182 (adviser)                                              |
+| 5   | Teacher-visible student profile                       | Christina (16:08), Melissa (21:53), Chandana (22:36) | **Shipped** 2026-08-09                               | KD #181 — Classroom drawer                                                      |
+| 6   | Upload the medical certificate                        | Christina (31:07)                                    | ✅ **DONE 2026-08-31 — end to end, both sides**      | Parent files it + approval ladder + register write; staff can upload too        |
+| 7   | Disciplinary records / incident reports               | Christina (18:20)                                    | **SHIPPED 2026-08-21, browser-verified 2026-08-24**  | Five screens. Migrations 120–122. Outcome still nowhere                         |
+| 8   | Awards beyond Gold/Silver/Bronze                      | Christina (19:08)                                    | ⚠ **Sample arrived 2026-08-14 — wrong kind**         | Principal's List is an ACADEMIC honour, not a competition                       |
+| 9   | House points                                          | Chandana (23:51)                                     | **Rules known 2026-08-12**                           | Same table as #8 — scoring sheet                                                |
+| 10  | More than two grade-change approvers                  | Wynne (45:30)                                        | **Answered 2026-08-14**                              | "Teachers cannot choose the approvers"                                          |
+| 11  | Second approval route keyed on publication            | Christina (46:04)                                    | ⚠ **FORM ARRIVED 2026-08-27 — and it REFRAMES this** | Not a grade-change form. See _Answers received_. Membership question still open |
+| —   | WW/PT max scores have no home in SIS Admin            | (found in triage)                                    | **Closed** — working as intended                     | KD #176                                                                         |
+| —   | Relief teacher marking another section's register     | Marrie (33:18)                                       | Policy — the school owns it                          | See _Waiting on the school_                                                     |
+| —   | Teachers' dashboard — lesson planning + SOW           | Christina (2026-08-21)                               | ✅ **BUILT 2026-10-26/27** — not yet live            | Built per the agreed design (KD #234); the Flourish meeting never happened      |
 
 Three pre-existing defects surfaced during triage and were fixed first:
 **KD #174** (in-page link reachability), **KD #175** (a missed `SECURITY DEFINER`
@@ -605,6 +605,7 @@ discipline` made the student name a link, and teachers cannot open Records, so
   for it, and it is recorded here only so it is not discovered late. Do not
   build it.
 
+- ✅ **T12 BUILT 2026-10-26/27 — SOW module built per the agreed design below (KD #234, `docs/context/25-sow-module.md`); on the local stack, not yet live.** The vendor meeting on 23 Oct never happened, so the hold ended and the build went ahead. The hold note that follows is kept as history.
 - ⏸ **T12 ON HOLD (Mr Ace, 2026-10-07).** Exponential Learning Lab (product
   "Flourish") pitched Miss Tin three platforms — CCA/ECA tracking, a **teacher's
   portal for planning**, and parent communication. Miss Tin invited Mr Amier and
