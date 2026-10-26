@@ -8,10 +8,16 @@ import { createServiceClient } from '@/lib/supabase/service';
 // POST /api/sow — start a scheme of work for a subject, level and track in a
 // term, blank or copied from last year's approved one.
 //
-// Teachers only: `createSow` checks that the caller holds the subject on a
-// ticked class. Office roles do not start schemes of work.
+// Any role can be a teacher, so the gate admits them all and `createSow`
+// decides: the caller must hold the subject (substantive subject or co-teacher
+// assignment) on a ticked class. Holding no assignment is a 403 there.
 export async function POST(request: Request) {
-  const auth = await requireRole(['teacher']);
+  const auth = await requireRole([
+    'teacher',
+    'academic_coordinator',
+    'school_admin',
+    'superadmin',
+  ]);
   if ('error' in auth) return auth.error;
 
   const body = await request.json().catch(() => null);

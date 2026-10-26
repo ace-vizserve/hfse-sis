@@ -33,6 +33,8 @@ import {
 // Exported so the data-table can build its Action Select options.
 export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sheet.create',
+  // A teacher started a scheme of work (blank or copied from last year).
+  'sow.create',
   'sheet.bulk_create',
   'sheet.delete',
   'sheet.switch_type',

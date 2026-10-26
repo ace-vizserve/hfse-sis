@@ -31,8 +31,6 @@ const SIS_AUDIT_ALLOWLIST = [
   // Subject heads (migration 198) — set on SIS Admin beside Approvers, and
   // just as much configuration: who approves a subject's schemes of work.
   'sow.subject_head.set',
-  // A teacher started a scheme of work (blank or copied from last year).
-  'sow.create',
   // Subject catalog (KD #72)
   'subject.create',
   'subject.rename',

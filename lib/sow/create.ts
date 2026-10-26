@@ -17,8 +17,9 @@ import { loadTermWeeks, reconcileWeeks } from '@/lib/sow/weeks';
 // Creating a scheme of work (SOW), blank or copied from last year.
 //
 // Who may: a teacher who HOLDS the subject (subject teacher or co-teacher, not
-// relief cover) on at least one of the ticked classes. Office roles do not
-// start schemes of work — the teachers own the plan.
+// relief cover) on at least one of the ticked classes. The role does not
+// matter — an office user who also teaches qualifies by the assignment, and
+// one who does not is refused.
 //
 // Dates are never copied. Every week row takes this year's dates from
 // `loadTermWeeks`, and last year's content hangs on the week NUMBER.
@@ -220,6 +221,13 @@ export async function createSow(
   ) {
     return fail(409, DUPLICATE_KEY_MESSAGE);
   }
+  // A race here needs no extra handling: a section has one level and one
+  // class type, and every ticked section was just checked against the key's
+  // level and track, so two schemes that could share a section share the whole
+  // (term, subject, level, track) key. The loser of a race hits that unique key
+  // on the schemes_of_work insert below (23505 -> the duplicate 409), before
+  // any class row is written. scheme_of_work_classes is unique only on
+  // (sow_id, section_id), so it cannot raise a cross-scheme conflict itself.
   if (sameTerm.length > 0) {
     const { data: takenData, error: takenErr } = await service
       .from('scheme_of_work_classes')

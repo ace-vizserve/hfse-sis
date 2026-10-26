@@ -47,6 +47,13 @@ export type SowSnapshotWeek = z.infer<typeof SowSnapshotWeekSchema>;
 
 export const SowSnapshotSchema = z.object({
   module: SowModuleSchema,
-  weeks: z.array(SowSnapshotWeekSchema),
+  // Two entries for one week number would collide on the weeks table's unique
+  // (sow_id, week_number), so a snapshot like that is unreadable, not a crash.
+  weeks: z
+    .array(SowSnapshotWeekSchema)
+    .refine(
+      (weeks) => new Set(weeks.map((w) => w.weekNumber)).size === weeks.length,
+      'Week numbers must be unique.'
+    ),
 });
 export type SowSnapshot = z.infer<typeof SowSnapshotSchema>;

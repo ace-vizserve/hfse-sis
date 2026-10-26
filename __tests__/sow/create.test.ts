@@ -542,6 +542,45 @@ describe('createSow', () => {
   });
 });
 
+describe('createSow by role', () => {
+  const ADMIN = { id: 'u1', email: 'a@x.sg', role: 'school_admin' as const };
+
+  it('a school admin who holds the subject on a class can create', async () => {
+    const { service } = fakeService(world());
+    const res = await createSow(service, ADMIN, {
+      key: KEY,
+      sectionIds: ['s1'],
+      start: 'blank',
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it('a school admin with no assignment is refused', async () => {
+    loadMock.mockResolvedValue([]);
+    const { service } = fakeService(world());
+    const res = await createSow(service, ADMIN, {
+      key: KEY,
+      sectionIds: ['s1'],
+      start: 'blank',
+    });
+    expect(res).toMatchObject({ ok: false, status: 403 });
+  });
+
+  it('a snapshot with a repeated week number cannot be copied (400)', async () => {
+    const t = world();
+    const old = t.schemes_of_work.find((s) => s.id === 'old')!;
+    const snap = old.approved_snapshot as { weeks: Row[] };
+    snap.weeks.push({ ...snap.weeks[0] });
+    const { service } = fakeService(t);
+    const res = await createSow(service, ACTOR, {
+      key: KEY,
+      sectionIds: ['s1'],
+      start: 'copy',
+    });
+    expect(res).toMatchObject({ ok: false, status: 400 });
+  });
+});
+
 describe('findLastYearSow', () => {
   it("finds last year's approved scheme for the same term number", async () => {
     const { service } = fakeService(world());
