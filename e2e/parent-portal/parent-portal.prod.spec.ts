@@ -73,6 +73,16 @@ test('report card: the list loads from the SIS, and a published card opens', asy
   expect((await card).status()).toBe(200);
   await expect(page.getByText('Student Progress Report')).toBeVisible();
   await expect(page.getByText(/unable to load report card/i)).toHaveCount(0);
+  // The letterhead and footer are images; the card is not whole until they have loaded.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Array.from(document.images).every(
+          (img) => img.complete && img.naturalWidth > 0
+        )
+      )
+    )
+    .toBe(true);
   await page.screenshot({
     path: test.info().outputPath('prod-report-card.png'),
     fullPage: true,
