@@ -20,7 +20,7 @@ import {
 } from '@/components/ui/sheet';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
-import type { SowWeekFields } from '@/lib/schemas/sow';
+import { SOW_WEEK_PLAIN_CAPS, type SowWeekFields } from '@/lib/schemas/sow';
 import type { SowView } from '@/lib/sow/read';
 
 // Edit week (board 4): one week's plan. The school calendar's events for the
@@ -194,7 +194,7 @@ function WeekForm({
             <Input
               id="week-topic"
               value={form.topic}
-              maxLength={300}
+              maxLength={SOW_WEEK_PLAIN_CAPS.topic}
               onChange={(e) => set('topic')(e.target.value)}
               autoFocus
             />
@@ -213,7 +213,7 @@ function WeekForm({
             <Input
               id="week-textbook"
               value={form.textbookPages}
-              maxLength={200}
+              maxLength={SOW_WEEK_PLAIN_CAPS.textbookPages}
               onChange={(e) => set('textbookPages')(e.target.value)}
             />
           </Field>
@@ -233,7 +233,7 @@ function WeekForm({
             <Input
               id="week-assessment"
               value={form.assessment}
-              maxLength={500}
+              maxLength={SOW_WEEK_PLAIN_CAPS.assessment}
               onChange={(e) => set('assessment')(e.target.value)}
             />
           </Field>

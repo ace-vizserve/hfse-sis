@@ -2,7 +2,11 @@ import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
 import { CreateSowSchema } from '@/lib/schemas/sow';
-import { createSow } from '@/lib/sow/create';
+import {
+  createSow,
+  holdsSubject,
+  NOT_YOUR_SUBJECT_MESSAGE,
+} from '@/lib/sow/create';
 import { MAX_IMPORT_BYTES, parseSowWorkbook } from '@/lib/sow/excel-import';
 import { loadTermWeeks } from '@/lib/sow/weeks';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -30,6 +34,14 @@ export async function POST(request: Request) {
 
   const bad = (error: string, status = 400) =>
     NextResponse.json({ error }, { status });
+
+  // Turn a too-big upload away before it is read into memory. The multipart
+  // body is a little larger than the file, so allow 64 KB of envelope; the
+  // file's own size is checked again below.
+  const declared = Number(request.headers.get('content-length'));
+  if (Number.isFinite(declared) && declared > MAX_IMPORT_BYTES + 64 * 1024) {
+    return bad('That file is bigger than 5 MB. Choose a smaller Excel file.');
+  }
 
   let form: FormData;
   try {
@@ -69,6 +81,16 @@ export async function POST(request: Request) {
 
   try {
     const service = createServiceClient();
+
+    // Previewing asks the same question as creating: a teacher can only read a
+    // file in for a subject and class they teach.
+    if (
+      !(await holdsSubject(service, auth.user.id, input.key.subjectId, [
+        ...new Set(input.sectionIds),
+      ]))
+    ) {
+      return bad(NOT_YOUR_SUBJECT_MESSAGE, 403);
+    }
 
     // The tab to read is the level's; the term's week count lets the parser
     // say how the file's weeks line up with this term.

@@ -64,16 +64,17 @@ export type SowSnapshot = z.infer<typeof SowSnapshotSchema>;
 const plain = (max: number) =>
   z.string().max(max, `Keep this under ${max} characters.`).nullable();
 // Rich text is stored as sanitised HTML; the cap is on the HTML as sent.
+export const RICH_CAP = 20000;
 const rich = z
   .string()
-  .max(20000, 'This is too long. Please shorten it.')
+  .max(RICH_CAP, 'This is too long. Please shorten it.')
   .nullable();
 
 /** Character caps of the plain-text fields; the Excel import warns on these. */
 export const SOW_MODULE_CAPS = {
   title: 300,
   syllabus: 2000,
-  hoursPerWeek: 50,
+  hoursPerWeek: 300,
   teachingMethods: 2000,
   passRequirement: 1000,
   textbook: 1000,
@@ -82,7 +83,7 @@ export const SOW_MODULE_CAPS = {
 } as const;
 export const SOW_WEEK_PLAIN_CAPS = {
   topic: 300,
-  textbookPages: 200,
+  textbookPages: 500,
   assessment: 500,
 } as const;
 

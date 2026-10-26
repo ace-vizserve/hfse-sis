@@ -7,6 +7,7 @@ import type { Role } from '@/lib/auth/roles';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import {
   type CreateSowInput,
+  SowModuleEditSchema,
   type SowSnapshot,
   SowSnapshotSchema,
 } from '@/lib/schemas/sow';
@@ -150,6 +151,30 @@ const contentColumns = (c: WeekContent | undefined) => ({
   remarks: c?.remarks ?? null,
 });
 
+export const NOT_YOUR_SUBJECT_MESSAGE =
+  'You can only start a scheme of work for a subject you teach, on a class you teach it to.';
+
+/**
+ * Whether the user substantively teaches the subject on at least one of the
+ * classes. Creating, and previewing an import, both ask this.
+ */
+export async function holdsSubject(
+  service: SupabaseClient,
+  userId: string,
+  subjectId: string,
+  sectionIds: string[]
+): Promise<boolean> {
+  const assignments = await loadEffectiveAssignmentsForUser(service, userId);
+  return assignments.some(
+    (a) =>
+      a.via === 'substantive' &&
+      a.teacher_user_id === userId &&
+      isSubjectRole(a.role) &&
+      a.subject_id === subjectId &&
+      sectionIds.includes(a.section_id)
+  );
+}
+
 export async function createSow(
   service: SupabaseClient,
   actor: SowActor,
@@ -161,20 +186,8 @@ export async function createSow(
   const sectionIds = [...new Set(input.sectionIds)];
 
   // 1. Who: a substantive teacher of this subject on at least one ticked class.
-  const assignments = await loadEffectiveAssignmentsForUser(service, actor.id);
-  const holds = assignments.some(
-    (a) =>
-      a.via === 'substantive' &&
-      a.teacher_user_id === actor.id &&
-      isSubjectRole(a.role) &&
-      a.subject_id === key.subjectId &&
-      sectionIds.includes(a.section_id)
-  );
-  if (!holds) {
-    return fail(
-      403,
-      'You can only start a scheme of work for a subject you teach, on a class you teach it to.'
-    );
+  if (!(await holdsSubject(service, actor.id, key.subjectId, sectionIds))) {
+    return fail(403, NOT_YOUR_SUBJECT_MESSAGE);
   }
 
   // 2. The term and the ticked classes.
@@ -315,9 +328,18 @@ export async function createSow(
     if (!imported) {
       return fail(400, 'Choose the Excel file to import.');
     }
+    // The module is written as it stands, so it must be what its own edit
+    // form would accept.
+    const moduleCheck = SowModuleEditSchema.safeParse(imported.sow.module);
+    if (!moduleCheck.success) {
+      return fail(
+        400,
+        'The module details in the file are too long or not in the right form. Check the file and try again.'
+      );
+    }
     // A cell the teacher left empty is a null column, not an empty string.
     source = {
-      module: imported.sow.module,
+      module: moduleCheck.data,
       weeks: imported.sow.weeks.map((w) => ({
         weekNumber: w.weekNumber,
         topic: w.topic || null,

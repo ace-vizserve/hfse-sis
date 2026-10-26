@@ -16,7 +16,7 @@ import {
 } from '@/components/ui/sheet';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
-import type { SowModule } from '@/lib/schemas/sow';
+import { SOW_MODULE_CAPS, type SowModule } from '@/lib/schemas/sow';
 
 // Edit module details: the scheme's header block in the school's template
 // (syllabus, hours, methods, pass requirement, textbook, references).
@@ -30,14 +30,28 @@ export const MODULE_FIELDS: {
   label: string;
   max: number;
 }[] = [
-  { key: 'title', label: 'Module title', max: 300 },
-  { key: 'syllabus', label: 'Syllabus', max: 2000 },
-  { key: 'hoursPerWeek', label: 'Hours per week', max: 50 },
-  { key: 'teachingMethods', label: 'Teaching methods', max: 2000 },
-  { key: 'passRequirement', label: 'Pass requirement', max: 1000 },
-  { key: 'textbook', label: 'Textbook', max: 1000 },
-  { key: 'references', label: 'References', max: 2000 },
-  { key: 'remarks', label: 'Remarks', max: 2000 },
+  // The caps come from the schema, so the form can never offer more than the
+  // server accepts (nor less than an import may have brought in).
+  { key: 'title', label: 'Module title', max: SOW_MODULE_CAPS.title },
+  { key: 'syllabus', label: 'Syllabus', max: SOW_MODULE_CAPS.syllabus },
+  {
+    key: 'hoursPerWeek',
+    label: 'Hours per week',
+    max: SOW_MODULE_CAPS.hoursPerWeek,
+  },
+  {
+    key: 'teachingMethods',
+    label: 'Teaching methods',
+    max: SOW_MODULE_CAPS.teachingMethods,
+  },
+  {
+    key: 'passRequirement',
+    label: 'Pass requirement',
+    max: SOW_MODULE_CAPS.passRequirement,
+  },
+  { key: 'textbook', label: 'Textbook', max: SOW_MODULE_CAPS.textbook },
+  { key: 'references', label: 'References', max: SOW_MODULE_CAPS.references },
+  { key: 'remarks', label: 'Remarks', max: SOW_MODULE_CAPS.remarks },
 ];
 
 type Form = Record<keyof SowModule, string>;

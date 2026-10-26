@@ -677,3 +677,27 @@ describe('createSow — import from Excel', () => {
     expect(res).toMatchObject({ ok: false, status: 400 });
   });
 });
+
+describe('createSow — import module check', () => {
+  it('refuses a module its own edit form would refuse', async () => {
+    const { service, tables } = fakeService(world());
+    const res = await createSow(
+      service,
+      ACTOR,
+      { key: KEY, sectionIds: ['s1'], start: 'import' },
+      {
+        sow: {
+          module: { title: 'x'.repeat(301) },
+          weeks: [],
+          warnings: [],
+        },
+        fileSize: 1,
+        fileName: 'a.xlsx',
+      }
+    );
+    expect(res).toMatchObject({ ok: false, status: 400 });
+    expect(
+      tables.schemes_of_work.some((s) => s.started_from === 'import')
+    ).toBe(false);
+  });
+});

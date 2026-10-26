@@ -1,5 +1,7 @@
+import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
 
+import { SOW_MODULE_CAPS, SOW_WEEK_PLAIN_CAPS } from '@/lib/schemas/sow';
 import { parseSowWorkbook, plainTextToRichHtml } from '@/lib/sow/excel-import';
 
 import { buildTemplate, defaultWeeks } from './fixtures/build-template';
@@ -170,6 +172,94 @@ describe('parseSowWorkbook', () => {
     expect(sow.weeks).toHaveLength(1);
     expect(sow.weeks[0].topic).toBe('First');
     expect(sow.warnings.join(' ')).toContain('Week 1 appears more than once');
+  });
+
+  it('takes hours and textbook pages as long as the real file writes them', () => {
+    const buf = buildTemplate([
+      {
+        name: 'Secondary 1',
+        header: {
+          'No of teaching hours':
+            '5 hours per week × 9 instructional weeks = 45 hours this term; 180 hours for the academic year.',
+        },
+        weeks: [{ number: 1, topic: 'T', pages: 'p'.repeat(400) }],
+      },
+    ]);
+    const sow = ok(parseSowWorkbook(buf, 'Secondary 1'));
+    expect(sow.warnings).toEqual([]);
+    expect(sow.weeks[0].textbookPages).toHaveLength(400);
+  });
+
+  it('an imported module is never longer than its edit form allows', () => {
+    for (const [key, cap] of Object.entries(SOW_MODULE_CAPS)) {
+      expect(cap, key).toBeGreaterThan(0);
+    }
+    // The real sample's hours line (~95 characters) and a long textbook cell.
+    expect(SOW_MODULE_CAPS.hoursPerWeek).toBeGreaterThanOrEqual(300);
+    expect(SOW_WEEK_PLAIN_CAPS.textbookPages).toBeGreaterThanOrEqual(500);
+  });
+
+  it('ignores a week numbered past 60, with a warning', () => {
+    const buf = buildTemplate([
+      {
+        name: 'Secondary 1',
+        weeks: [
+          { number: 1, topic: 'One' },
+          { number: 61, topic: 'Far off' },
+        ],
+      },
+    ]);
+    const sow = ok(parseSowWorkbook(buf, 'Secondary 1'));
+    expect(sow.weeks.map((w) => w.weekNumber)).toEqual([1]);
+    expect(sow.warnings.join(' ')).toContain('Week 61');
+  });
+
+  it('refuses a file with more than 60 weeks', () => {
+    const buf = buildTemplate([
+      { name: 'Secondary 1', weeks: defaultWeeks(61) },
+    ]);
+    expect(parseSowWorkbook(buf, 'Secondary 1')).toEqual({
+      ok: false,
+      error:
+        "This file has more weeks than a term can hold — check it's the right file.",
+    });
+    // 60 is still fine.
+    const sixty = buildTemplate([
+      { name: 'Secondary 1', weeks: defaultWeeks(60) },
+    ]);
+    expect(parseSowWorkbook(sixty, 'Secondary 1').ok).toBe(true);
+  });
+
+  it('reads a very large sheet only within its bounds, and quickly', () => {
+    // 5,000 rows by 300 columns. Only the top-left 1,000 x 30 is ever read, so
+    // week 2 (row 3,000) and the stray "Week 3" (column 200) do not exist.
+    const aoa: (string | null)[][] = Array.from({ length: 5000 }, () =>
+      Array.from({ length: 300 }, () => null)
+    );
+    aoa[4999][299] = 'end'; // stretches the declared range only
+    aoa[0][0] = 'Module Title';
+    aoa[0][1] = 'Science';
+    aoa[2][0] = 'Week';
+    aoa[2][1] = 'Topic in syllabus';
+    aoa[3][0] = 'Week 1';
+    aoa[3][1] = 'One';
+    aoa[3][200] = 'Week 3';
+    aoa[3000][0] = 'Week 2';
+    aoa[3000][1] = 'Too far down';
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(
+      wb,
+      XLSX.utils.aoa_to_sheet(aoa),
+      'Secondary 1'
+    );
+    const buf = XLSX.write(wb, {
+      type: 'array',
+      bookType: 'xlsx',
+    }) as ArrayBuffer;
+    const started = Date.now();
+    const sow = ok(parseSowWorkbook(buf, 'Secondary 1'));
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(sow.weeks.map((w) => w.weekNumber)).toEqual([1]);
   });
 
   it('warns about text longer than its field allows, and keeps it', () => {

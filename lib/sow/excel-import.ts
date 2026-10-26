@@ -1,6 +1,7 @@
 import * as XLSX from 'xlsx';
 
 import {
+  RICH_CAP,
   SOW_MODULE_CAPS,
   SOW_WEEK_PLAIN_CAPS,
   type SowModule,
@@ -80,7 +81,11 @@ export type ParseResult =
 
 export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
 
-const RICH_CAP = 20000;
+// Bounds on untrusted input (see the XLSX.read call): rows and columns scanned,
+// and the most weeks a term can hold.
+const MAX_ROWS = 1000;
+const MAX_COLS = 30;
+const MAX_WEEKS = 60;
 
 // ── Text helpers ────────────────────────────────────────────────────────────
 
@@ -217,7 +222,19 @@ export function parseSowWorkbook(
   }
   let wb: XLSX.WorkBook;
   try {
-    wb = XLSX.read(buf, { type: 'array' });
+    // The file is untrusted, and `xlsx` is pinned at 0.18.5, which carries
+    // CVE-2023-30533 (prototype pollution while reading) and CVE-2024-22363
+    // (ReDoS in a style-parsing path); the fixed releases are not on npm. So
+    // the read is kept narrow: no formulas, HTML or styles are parsed (the
+    // ReDoS path is style parsing), and `sheetRows` stops a huge declared
+    // range from being walked. The size cap lives in the route.
+    wb = XLSX.read(buf, {
+      type: 'array',
+      sheetRows: MAX_ROWS,
+      cellFormula: false,
+      cellHTML: false,
+      cellStyles: false,
+    });
   } catch {
     return { ok: false, error: NOT_XLSX };
   }
@@ -228,12 +245,19 @@ export function parseSowWorkbook(
     return { ok: false, error: `This file has no tab for ${levelLabel}.` };
   }
 
-  const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[tab], {
-    header: 1,
-    raw: false,
-    defval: '',
-    blankrows: true,
-  });
+  const rows = XLSX.utils
+    .sheet_to_json<unknown[]>(wb.Sheets[tab], {
+      header: 1,
+      raw: false,
+      defval: '',
+      blankrows: true,
+      // Only the top-left block is read, whatever range the file declares.
+      range: {
+        s: { r: 0, c: 0 },
+        e: { r: MAX_ROWS - 1, c: MAX_COLS - 1 },
+      },
+    })
+    .map((row) => row.slice(0, MAX_COLS));
   const text = (r: number, c: number) => cellText(rows[r]?.[c]);
 
   // The week table's header row: the one with both "Week" and a "Topic ..."
@@ -319,11 +343,25 @@ export function parseSowWorkbook(
   // columns are read, so the monitoring block beside them is never touched.
   const weeks: ParsedSow['weeks'] = [];
   const seen = new Set<number>();
+  let blocks = 0;
   for (let r = headerRow + 1; r < rows.length; r++) {
     const m = text(r, cols.week).match(/^week\s*(\d+)/i);
     if (!m) continue;
+    if (++blocks > MAX_WEEKS) {
+      return {
+        ok: false,
+        error:
+          "This file has more weeks than a term can hold — check it's the right file.",
+      };
+    }
     const weekNumber = Number(m[1]);
     if (weekNumber < 1) continue;
+    if (weekNumber > MAX_WEEKS) {
+      warnings.push(
+        `"Week ${m[1]}" was left out: a term cannot have more than ${MAX_WEEKS} weeks.`
+      );
+      continue;
+    }
     if (seen.has(weekNumber)) {
       warnings.push(
         `Week ${weekNumber} appears more than once in the file. The first one was used.`
