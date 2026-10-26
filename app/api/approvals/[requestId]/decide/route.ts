@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DecideApprovalSchema } from '@/lib/schemas/approval-flows';
 import { decideApproval } from '@/lib/approvals/decide';
+import { isEmptyRichText } from '@/lib/rich-text';
 import { RETURN_NOTE_REQUIRED, SOW_SUBJECT_TYPE } from '@/lib/sow/approval';
 
 // POST /api/approvals/[requestId]/decide — approve or turn down one step.
@@ -59,9 +60,13 @@ export async function POST(
     // ⚠ The schema's "say why" sentence is written for a parent's filing. A
     // scheme of work is returned to a teacher, so it gets its own words —
     // looked up only on this one failure, so every other refusal is unchanged.
+    // Only the EMPTY-note refusal is reworded; a note over the limit keeps
+    // the schema's own length sentence.
+    const sent = body as { action?: unknown; note?: unknown } | null;
     if (
       issue?.path[0] === 'note' &&
-      (body as { action?: unknown } | null)?.action === 'reject' &&
+      sent?.action === 'reject' &&
+      isEmptyRichText(typeof sent.note === 'string' ? sent.note : '') &&
       (await isSowRequest(requestId))
     ) {
       first = RETURN_NOTE_REQUIRED;

@@ -34,6 +34,8 @@ export const SOW_SUBJECT_TYPE = SOW_APPROVAL_SUBJECT_TYPE;
 
 export const TOPIC_REQUIRED_MESSAGE =
   'Every week needs a topic before it can be sent.';
+export const SURPLUS_WEEKS_MESSAGE =
+  'Merge or delete the extra weeks from last year before sending it.';
 export const NO_STEPS_MESSAGE =
   "Approval steps for schemes of work haven't been set up yet. Ask an SIS administrator.";
 export const RETURN_NOTE_REQUIRED =
@@ -97,7 +99,8 @@ export async function submitSow(
   // ── Every term week has a topic ──────────────────────────────────────────
   //
   // Term weeks only: a surplus week (beyond the term's count, left over from a
-  // copy) is the teacher's to merge or delete, not a week anyone teaches.
+  // copy) is the teacher's to merge or delete, not a week anyone teaches —
+  // and it must be gone before the scheme is sent (checked next).
   const [{ weeks: termWeeks }, weekRes, levelRes] = await Promise.all([
     loadTermWeeks(service, sow.term_id, sow.level_id),
     service
@@ -119,14 +122,23 @@ export async function submitSow(
       (weekRes.data ?? []) as { week_number: number; topic: string | null }[]
     ).map((w) => [w.week_number, w.topic])
   );
-  const missingTopic = termWeeks
-    .filter((w) => w.kind === 'week')
-    .some((w) => {
-      const topic = topicByWeek.get((w as { weekNumber: number }).weekNumber);
-      return !topic || topic.trim() === '';
-    });
+  const termWeekNumbers = new Set(
+    termWeeks.flatMap((w) => (w.kind === 'week' ? [w.weekNumber] : []))
+  );
+  const missingTopic = [...termWeekNumbers].some((n) => {
+    const topic = topicByWeek.get(n);
+    return !topic || topic.trim() === '';
+  });
   if (missingTopic) {
     return { ok: false, status: 422, error: TOPIC_REQUIRED_MESSAGE };
+  }
+
+  // ⚠ NO SURPLUS WEEKS IN WHAT IS SENT. The approved snapshot is taken from
+  // the stored rows, and next year's copy reads it, so a week the term does
+  // not have would be signed off and carried forward (controller ruling,
+  // Task 9 review).
+  if ([...topicByWeek.keys()].some((n) => !termWeekNumbers.has(n))) {
+    return { ok: false, status: 422, error: SURPLUS_WEEKS_MESSAGE };
   }
 
   const rawLevelType = (levelRes.data as { level_type: string | null } | null)

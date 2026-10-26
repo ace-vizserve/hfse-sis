@@ -34,7 +34,28 @@ vi.mock('@/lib/audit/log-action', () => ({
   logActions: vi.fn(() => Promise.resolve()),
 }));
 
-import { SUBJECT_HANDLERS, SUBJECT_PRECHECKS } from '@/lib/approvals/decide';
+// For the decide route's own refusal wording (fix round 1).
+const routeService = vi.hoisted(() => ({ current: null as unknown }));
+vi.mock('@/lib/supabase/service', () => ({
+  createServiceClient: () => routeService.current,
+}));
+vi.mock('@/lib/auth/require-role', () => ({
+  requireRole: vi.fn(() =>
+    Promise.resolve({
+      user: { id: 'head1', email: 'h@x.sg' },
+      role: 'teacher',
+    })
+  ),
+}));
+
+import { POST as decideRoute } from '@/app/api/approvals/[requestId]/decide/route';
+import {
+  decideApproval,
+  SUBJECT_HANDLERS,
+  SUBJECT_PRECHECKS,
+} from '@/lib/approvals/decide';
+import { GRADE_CHANGE_SUBJECT_TYPE } from '@/lib/change-requests/approval-route';
+import { DECLARATION_SUBJECT_TYPE } from '@/lib/declarations/approval';
 import {
   DecideApprovalSchema,
   SOW_APPROVAL_FLOW,
@@ -46,6 +67,7 @@ import {
   reopenSow,
   SOW_SUBJECT_TYPE,
   submitSow,
+  SURPLUS_WEEKS_MESSAGE,
   TOPIC_REQUIRED_MESSAGE,
 } from '@/lib/sow/approval';
 import { sowApprovalHandler } from '@/lib/sow/approval-handler';
@@ -408,6 +430,23 @@ describe('sending a scheme of work for review', () => {
     expect(r).toMatchObject({ ok: true, stalled: true });
   });
 
+  it('sending with extra weeks from last year still there is a 422', async () => {
+    const { service, tables } = world();
+    // Week 3 is beyond the term's two weeks: a surplus week from a copy.
+    tables.scheme_of_work_weeks.push({
+      sow_id: 'sow1',
+      week_number: 3,
+      topic: 'Left over',
+    });
+    const r = await submitSow(service, TEACHER, 'sow1');
+    expect(r).toEqual({ ok: false, status: 422, error: SURPLUS_WEEKS_MESSAGE });
+    expect(SURPLUS_WEEKS_MESSAGE).toBe(
+      'Merge or delete the extra weeks from last year before sending it.'
+    );
+    expect(tables.scheme_of_work_submissions).toHaveLength(0);
+    expect(tables.schemes_of_work[0].state).toBe('draft');
+  });
+
   it('sending with an empty topic is a 422', async () => {
     const { service, tables } = world();
     tables.scheme_of_work_weeks[1].topic = '   ';
@@ -626,5 +665,120 @@ describe('reopening an approved scheme of work', () => {
     expect(
       await reopenSow(draft.service, COORD, 'sow1', 'Why not')
     ).toMatchObject({ ok: false, status: 409 });
+  });
+});
+
+describe('fix round 1 — the week, and the engine around it', () => {
+  it('a return about a week the scheme does not have keeps no week', async () => {
+    const { service, tables } = world();
+    const r = await submitSow(service, TEACHER, 'sow1');
+    if (!r.ok) throw new Error('send failed');
+    decideAs(tables, r.requestId, 'rejected');
+    await sowApprovalHandler(
+      ctxFor(service, r.requestId, r.submissionId, {
+        action: 'reject',
+        outcome: 'rejected',
+        decidedStageOrder: 1,
+        note: 'Look again.',
+        weekNumber: 9,
+      })
+    );
+    expect(tables.scheme_of_work_submissions[0]).toMatchObject({
+      outcome: 'returned',
+      return_note: 'Look again.',
+      return_week_number: null,
+    });
+  });
+
+  /** The request row and the RPC answer, nothing else. */
+  function engineStub(subjectType: string, flow: string) {
+    return {
+      from: () => {
+        const q: Record<string, unknown> = {};
+        Object.assign(q, {
+          select: () => q,
+          eq: () => q,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: {
+                id: 'req-x',
+                flow,
+                subject_type: subjectType,
+                subject_id: 'subj-x',
+                filed_by: 'someone-else',
+              },
+              error: null,
+            }),
+        });
+        return q;
+      },
+      rpc: () =>
+        Promise.resolve({
+          data: [
+            {
+              outcome: 'rejected',
+              request_status: 'rejected',
+              decided_stage_order: 1,
+              next_stage_order: null,
+            },
+          ],
+          error: null,
+        }),
+    } as unknown as SupabaseClient;
+  }
+
+  it.each([
+    [SOW_SUBJECT_TYPE, SOW_APPROVAL_FLOW, true],
+    [DECLARATION_SUBJECT_TYPE, 'attendance.student_declaration', false],
+    [GRADE_CHANGE_SUBJECT_TYPE, 'markbook.grade_change', false],
+  ] as const)(
+    'decideApproval hands the week to %s only when it is a scheme of work',
+    async (subjectType, flow, expectsWeek) => {
+      const spy = vi
+        .spyOn(SUBJECT_HANDLERS, subjectType)
+        .mockResolvedValue({ ok: true, message: 'ok' });
+      try {
+        const result = await decideApproval({
+          service: engineStub(subjectType, flow),
+          actor: { id: 'head1', email: 'h@x.sg', role: 'teacher' },
+          requestId: 'req-x',
+          action: 'reject',
+          note: 'Change week 1.',
+          via: 'in_app',
+          weekNumber: 1,
+        });
+        expect(result.status).toBe(200);
+        expect(spy).toHaveBeenCalledTimes(1);
+        const ctx = spy.mock.calls[0][0];
+        if (expectsWeek) expect(ctx.weekNumber).toBe(1);
+        else expect('weekNumber' in ctx).toBe(false);
+      } finally {
+        spy.mockRestore();
+      }
+    }
+  );
+
+  async function postDecide(body: unknown) {
+    routeService.current = engineStub(SOW_SUBJECT_TYPE, SOW_APPROVAL_FLOW);
+    const res = await decideRoute(
+      new Request('http://x/api/approvals/req-x/decide', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      }),
+      { params: Promise.resolve({ requestId: 'req-x' }) }
+    );
+    if (!res) throw new Error('the route returned nothing');
+    return { status: res.status, body: (await res.json()) as Row };
+  }
+
+  it('the decide route words an empty SOW return for the teacher', async () => {
+    const r = await postDecide({ action: 'reject', note: '<p></p>' });
+    expect(r).toEqual({ status: 400, body: { error: RETURN_NOTE_REQUIRED } });
+  });
+
+  it('a too-long SOW return keeps the length sentence', async () => {
+    const r = await postDecide({ action: 'reject', note: 'x'.repeat(301) });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('Keep the note to 300 characters or fewer.');
   });
 });

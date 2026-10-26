@@ -35,6 +35,7 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { HoverHint } from '@/components/ui/hover-hint';
+import { RichText } from '@/components/ui/rich-text';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { SowView } from '@/lib/sow/read';
@@ -186,9 +187,12 @@ export function SowPage({ view }: { view: SowView }) {
               Returned with a note
             </p>
             {returnNote && (
-              <p className="text-sm text-foreground">
-                &ldquo;{returnNote.note}&rdquo;
-              </p>
+              // The approver writes it in the formatting editor, so it is
+              // stored HTML; RichText is the one sanitising renderer.
+              <RichText
+                html={returnNote.note}
+                className="text-sm text-foreground"
+              />
             )}
             {returnNote?.by && (
               <p className="text-sm text-ink-3">

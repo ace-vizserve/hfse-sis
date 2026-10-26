@@ -7,6 +7,7 @@ import { formatRange } from '@/components/sow/format';
 import { Button } from '@/components/ui/button';
 import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { RichText } from '@/components/ui/rich-text';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import {
   Sheet,
@@ -174,7 +175,9 @@ function WeekForm({
       <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-6 py-6">
         {returnNote && (
           <div className="rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5 text-[13px] text-destructive">
-            Return note: &ldquo;{returnNote}&rdquo;
+            <p className="font-semibold">Return note</p>
+            {/* Stored HTML from the approver's formatting editor. */}
+            <RichText html={returnNote} />
           </div>
         )}
         {conflict && (

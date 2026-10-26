@@ -94,7 +94,19 @@ export const sowApprovalHandler: SubjectHandler = async (
       : Promise.resolve(null),
   ]);
 
-  const weekNumber = ctx.action === 'reject' ? (ctx.weekNumber ?? null) : null;
+  // ⚠ THE WEEK COMES FROM THE APPROVER'S BODY, so it is kept only when this
+  // scheme has that week. A number it does not have would point the teacher's
+  // page at nothing; the return still lands, just without a week.
+  let weekNumber: number | null = null;
+  if (ctx.action === 'reject' && ctx.weekNumber != null && sowId) {
+    const { data: weekRow } = await service
+      .from('scheme_of_work_weeks')
+      .select('week_number')
+      .eq('sow_id', sowId)
+      .eq('week_number', ctx.weekNumber)
+      .maybeSingle();
+    weekNumber = weekRow ? ctx.weekNumber : null;
+  }
 
   const audit = (
     action: 'sow.vet' | 'sow.approve' | 'sow.return',

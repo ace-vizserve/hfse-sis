@@ -199,6 +199,25 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'handler, because only the handler knows which module its subject feeds: ' +
     'lib/declarations/approval-handler.ts busts attendance + records.',
 
+  // ── Scheme of work (migration 198) ──────────────────────────────────────
+  // No unstable_cache loader reads schemes_of_work or any scheme_of_work_*
+  // table (checked 2026-10-26: no file holding unstable_cache names them).
+  // Every SOW screen reads per request with the service client, so there is
+  // no tag to bust. A cached SOW reader added later must add the bust here.
+  'app/api/sow/route.ts':
+    'creates a scheme of work. No cached loader reads the SOW tables.',
+  'app/api/sow/[sowId]/route.ts':
+    'saves module details on schemes_of_work. No cached loader reads it.',
+  'app/api/sow/[sowId]/weeks/[weekNumber]/route.ts':
+    'saves or deletes one scheme_of_work_weeks row. No cached loader reads it.',
+  'app/api/sow/[sowId]/submit/route.ts':
+    'writes a scheme_of_work_submissions row, opens its approval request and ' +
+    'moves schemes_of_work to in review. No cached loader reads those rows; ' +
+    'the approvals inbox reads approval_requests per request.',
+  'app/api/sow/[sowId]/reopen/route.ts':
+    'moves an approved schemes_of_work row back to draft. No cached loader ' +
+    'reads it.',
+
   // ── writes whose surfaces are all per-request ───────────────────────────
   'app/api/parent/v2/declarations/route.ts':
     'creates a PENDING filing. Nothing cached reads pending filings — the staff ' +
