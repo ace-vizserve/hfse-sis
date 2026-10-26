@@ -107,7 +107,12 @@ export type MySowRow = SowKey & {
   classes: { sectionId: string; name: string }[];
   /** The teacher's own sections in this group that are not on the SOW. Empty when there is no SOW yet. */
   myClassesNotOnSow: { sectionId: string; name: string }[];
-  sow: { id: string; state: SowState } | null;
+  sow: {
+    id: string;
+    state: SowState;
+    /** The submission under review or returned — whose ladder names the step. */
+    currentSubmissionId?: string | null;
+  } | null;
 };
 
 type SectionRow = {
@@ -167,7 +172,7 @@ export async function listMySowRows(
     service
       .from('schemes_of_work')
       .select(
-        'id, state, subject_id, level_id, track, scheme_of_work_classes(section_id)'
+        'id, state, current_submission_id, subject_id, level_id, track, scheme_of_work_classes(section_id)'
       )
       .eq('term_id', termId),
   ]);
@@ -237,6 +242,7 @@ export async function listMySowRows(
   type SchemeRow = {
     id: string;
     state: SowState;
+    current_submission_id?: string | null;
     subject_id: string;
     level_id: string;
     track: SowTrack;
@@ -306,7 +312,13 @@ export async function listMySowRows(
       myClassesNotOnSow: scheme
         ? mine.filter((c) => !onSow.has(c.sectionId)).sort(byName)
         : [],
-      sow: scheme ? { id: scheme.id, state: scheme.state } : null,
+      sow: scheme
+        ? {
+            id: scheme.id,
+            state: scheme.state,
+            currentSubmissionId: scheme.current_submission_id ?? null,
+          }
+        : null,
     };
   });
 

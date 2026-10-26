@@ -42,6 +42,7 @@ export function WeekList({
   breaks,
   canEdit,
   returnWeekNumber,
+  currentWeekNumber = null,
   onEdit,
   onDelete,
   deleting,
@@ -51,6 +52,8 @@ export function WeekList({
   canEdit: boolean;
   /** The week a return note points at, flagged on its row. */
   returnWeekNumber: number | null;
+  /** The week today falls in, marked "This week" (an approved scheme). */
+  currentWeekNumber?: number | null;
   onEdit: (weekNumber: number) => void;
   onDelete: (weekNumber: number) => void;
   deleting: number | null;
@@ -110,6 +113,7 @@ export function WeekList({
               week={item.week}
               canEdit={canEdit}
               flagged={item.week.weekNumber === returnWeekNumber}
+              current={item.week.weekNumber === currentWeekNumber}
               onEdit={onEdit}
             />
           )
@@ -134,6 +138,7 @@ function WeekRow({
   week,
   canEdit,
   flagged,
+  current = false,
   onEdit,
   onDelete,
   deleting = false,
@@ -141,6 +146,7 @@ function WeekRow({
   week: Week;
   canEdit: boolean;
   flagged: boolean;
+  current?: boolean;
   onEdit: (weekNumber: number) => void;
   onDelete?: (weekNumber: number) => void;
   deleting?: boolean;
@@ -152,17 +158,34 @@ function WeekRow({
       className={cn(
         ROW,
         flagged && 'border-l-[3px] border-l-destructive bg-destructive/5',
+        current && 'border-l-[3px] border-l-primary bg-accent/50',
         week.isSurplus && 'bg-brand-amber/5'
       )}
+      aria-current={current ? 'date' : undefined}
     >
-      <span className="pt-0.5 font-mono text-[12px] font-semibold text-ink-3">
+      <span
+        className={cn(
+          'pt-0.5 font-mono text-[12px] font-semibold',
+          current ? 'text-primary' : 'text-ink-3'
+        )}
+      >
         WK {week.weekNumber}
       </span>
       <span className="hidden pt-0.5 text-[13px] tabular-nums text-ink-3 sm:block">
         {dates}
+        {current && (
+          <span className="block text-xs font-semibold text-primary">
+            This week
+          </span>
+        )}
       </span>
       <div className="min-w-0 space-y-1">
-        <p className="text-[13px] tabular-nums text-ink-3 sm:hidden">{dates}</p>
+        <p className="text-[13px] tabular-nums text-ink-3 sm:hidden">
+          {dates}
+          {current && (
+            <span className="font-semibold text-primary"> · This week</span>
+          )}
+        </p>
         {week.topic ? (
           <p className="text-sm font-medium text-foreground">{week.topic}</p>
         ) : (

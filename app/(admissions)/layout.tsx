@@ -23,6 +23,7 @@ import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
+  getSowWaitingCount,
   getStagedWaitingCount,
 } from '@/lib/sidebar/notification-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
@@ -114,12 +115,15 @@ export default async function AdmissionsLayout({
   // declaration is decided by whether they are ON a step — a form class adviser
   // holds a plain `teacher` account and the officer in charge does too — so the
   // count answers that itself and returns 0 for everybody else.
-  const [declarationCount, gradeChangeStepCount] = await Promise.all([
-    getDeclarationWaitingCount(service, role, id),
-    // Grade changes decided step by step — the same "on a step" rule, so the
-    // same lack of a role gate.
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-  ]);
+  const [declarationCount, gradeChangeStepCount, sowStepCount] =
+    await Promise.all([
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes decided step by step — the same "on a step" rule, so the
+      // same lack of a role gate.
+      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+      // Schemes of work at a step this person is on — the bell's fourth source.
+      getSowWaitingCount(service, role, id),
+    ]);
 
   // Always empty here, and cheaply so — the only tiles this hides are the ones
   // a subject-teacher-only account cannot use, and the redirect above already
@@ -155,6 +159,7 @@ export default async function AdmissionsLayout({
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
                 initialGradeChangeStepCount={gradeChangeStepCount}
+                initialSowStepCount={sowStepCount}
               />
             </div>
           </div>

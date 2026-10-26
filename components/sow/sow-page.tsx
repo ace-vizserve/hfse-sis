@@ -2,21 +2,33 @@
 
 import {
   BookText,
+  Check,
   ChevronDown,
+  Clock,
   Download,
   Info,
+  RotateCcw,
   Send,
+  TriangleAlert,
   Undo2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
+import { toast } from 'sonner';
 
+import { ApprovalStepRail } from '@/components/approvals/approval-step-rail';
 import {
   EditModuleSheet,
   MODULE_FIELDS,
 } from '@/components/sow/edit-module-sheet';
 import { EditWeekSheet } from '@/components/sow/edit-week-sheet';
-import { formatMoment, formatTermRange } from '@/components/sow/format';
+import {
+  formatMoment,
+  formatRange,
+  formatTermRange,
+} from '@/components/sow/format';
+import { ReopenSowDialog } from '@/components/sow/reopen-sow-dialog';
+import { ReturnSowDialog } from '@/components/sow/return-sow-dialog';
 import { SowStatusBadge } from '@/components/sow/sow-status-badge';
 import { WeekList } from '@/components/sow/week-list';
 import {
@@ -28,7 +40,7 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Collapsible,
   CollapsibleContent,
@@ -36,22 +48,30 @@ import {
 } from '@/components/ui/collapsible';
 import { HoverHint } from '@/components/ui/hover-hint';
 import { RichText } from '@/components/ui/rich-text';
+import { useRefreshTransition } from '@/lib/hooks/use-refresh-transition';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
-import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { ApiError, apiFetch, jsonInit } from '@/lib/query/fetcher';
 import type { SowView } from '@/lib/sow/read';
 
 // The SOW page (board 3 and the SowPage component). One component for every
-// state; this task builds draft and returned, Task 10 adds the review states.
+// state: draft and returned (Task 8/9), and in review, the approver's view
+// and approved (Task 10, boards 5–8).
 //
-// What the caller may do comes from `view.capability` alone: 'edit' shows the
-// edit controls, 'read' shows the same page without them.
+// What the caller may EDIT comes from `view.capability`: 'edit' shows the
+// edit controls, 'read' shows the same page without them. What they may
+// DECIDE comes from `view.review.canDecide` — the live step names them — and
+// the decide route re-checks it inside its lock.
 
 export function SowPage({ view }: { view: SowView }) {
   const run = useWriteAction();
+  const awaitRefresh = useRefreshTransition();
   const [editing, setEditing] = useState<number | null>(null);
   const [moduleOpen, setModuleOpen] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
   const [sending, setSending] = useState(false);
+  const [deciding, setDeciding] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
+  const [reopenOpen, setReopenOpen] = useState(false);
 
   const d = view.display;
   const canEdit = view.capability === 'edit';
@@ -70,6 +90,56 @@ export function SowPage({ view }: { view: SowView }) {
     editing === null
       ? null
       : (view.weeks.find((w) => w.weekNumber === editing) ?? null);
+
+  const review = view.review;
+  const inReview = view.state === 'in_review';
+  const live = inReview ? (review?.live ?? null) : null;
+  // The approver's view (board 5): the live step names this reader.
+  const approver = inReview && review?.canDecide === true && live != null;
+  const decideLabel = live?.isLast ? 'Approve' : 'Vet';
+  const startsOver = view.firstStepLabel
+    ? `the ${view.firstStepLabel}`
+    : 'the first step';
+  const returnWeeks = view.weeks
+    .filter((w) => !w.isSurplus)
+    .map((w) => ({
+      weekNumber: w.weekNumber,
+      label: `Week ${w.weekNumber} · ${formatRange(w.startsOn, w.endsOn)}`,
+    }));
+
+  async function decide() {
+    if (!review) return;
+    setDeciding(true);
+    await run(
+      () =>
+        apiFetch<{ message?: string }>(
+          `/api/approvals/${review.requestId}/decide`,
+          jsonInit('POST', { action: 'approve' })
+        ),
+      {
+        pending: live?.isLast ? 'Approving…' : 'Vetting…',
+        // The handler says what the decision did ("Vetted — it's gone to the
+        // OIC.", "Approved."), which is better news than a fixed word.
+        success: (r) => r?.message ?? (live?.isLast ? 'Approved.' : 'Vetted.'),
+        error: (e) => {
+          // Somebody else on the step decided first. Theirs stands: say so in
+          // the route's words and show the page as it now is.
+          if (e instanceof ApiError && e.status === 409) {
+            const body = (e.body ?? {}) as { error?: string };
+            toast.error('Already decided', {
+              description:
+                body.error ??
+                'Someone on this step decided it a moment ago. The page now shows where it is.',
+            });
+            void awaitRefresh();
+            return null;
+          }
+          return e instanceof Error ? e.message : 'Could not record that.';
+        },
+      }
+    );
+    setDeciding(false);
+  }
 
   async function send() {
     setSending(true);
@@ -118,9 +188,14 @@ export function SowPage({ view }: { view: SowView }) {
           <BreadcrumbSeparator />
           <BreadcrumbItem>
             <BreadcrumbLink asChild>
-              <Link href={`/classroom/sow?term=${d.termNumber}`}>
-                My schemes of work
-              </Link>
+              {/* An approver who does not teach it came from their queue. */}
+              {approver && !view.teachesIt ? (
+                <Link href="/classroom/sow/review">Schemes to review</Link>
+              ) : (
+                <Link href={`/classroom/sow?term=${d.termNumber}`}>
+                  My schemes of work
+                </Link>
+              )}
             </BreadcrumbLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
@@ -146,7 +221,11 @@ export function SowPage({ view }: { view: SowView }) {
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 xl:shrink-0 xl:justify-end">
-          <SowStatusBadge state={view.state} />
+          <SowStatusBadge
+            state={view.state}
+            step={live?.label}
+            mine={approver}
+          />
           {canEdit && (
             <Button variant="outline" onClick={() => setModuleOpen(true)}>
               Edit module details
@@ -160,6 +239,28 @@ export function SowPage({ view }: { view: SowView }) {
               Download Excel
             </Button>
           </HoverHint>
+          {view.state === 'approved' && view.canReopen && (
+            <Button variant="outline" onClick={() => setReopenOpen(true)}>
+              <RotateCcw className="size-4" />
+              Reopen
+            </Button>
+          )}
+          {approver && (
+            <>
+              <Button variant="outline" onClick={() => setReturnOpen(true)}>
+                <Undo2 className="size-4" />
+                Return to teacher
+              </Button>
+              <Button
+                onClick={() => void decide()}
+                loading={deciding}
+                loadingText={live?.isLast ? 'Approving…' : 'Vetting…'}
+              >
+                {!deciding && <Check className="size-4" />}
+                {decideLabel}
+              </Button>
+            </>
+          )}
           {canEdit && (
             // `canEdit` already means draft or returned, so the button is
             // never offered on a scheme that cannot be sent. A refusal (an
@@ -202,10 +303,56 @@ export function SowPage({ view }: { view: SowView }) {
             )}
             <p className="text-sm text-muted-foreground">
               {canEdit
-                ? 'Make the changes, then send it again. It starts over from the subject head.'
-                : 'The teacher makes the changes and sends it again. It starts over from the subject head.'}
+                ? `Make the changes, then send it again. It starts over from ${startsOver}.`
+                : `The teacher makes the changes and sends it again. It starts over from ${startsOver}.`}
             </p>
           </div>
+        </div>
+      )}
+
+      {live?.empty && (
+        // KD #196: a step with nobody on it is a stall, and a stall is said
+        // out loud — never a request that quietly goes nowhere.
+        <div className="flex items-start gap-4 rounded-xl border border-destructive/30 bg-destructive/5 p-5">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-destructive text-white shadow-brand-tile">
+            <TriangleAlert className="size-4" />
+          </div>
+          <div className="flex-1 space-y-1.5">
+            <p className="font-serif text-base font-semibold text-foreground">
+              Waiting — nobody is set for {live.label} yet.
+            </p>
+            <p className="text-sm text-muted-foreground">
+              It can&rsquo;t move on until an SIS administrator adds someone to
+              this step in the approval settings.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {live && !live.empty && approver && (
+        <div className="flex items-start gap-3 rounded-xl border border-brand-indigo-soft/50 bg-accent px-4 py-3 text-sm text-brand-indigo-deep">
+          <Clock className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            Waiting on you
+            {live.since ? ` since ${formatMoment(live.since)}` : ''}. Read the
+            weeks, then {live.isLast ? 'approve it' : 'vet it'} or return it to
+            the teacher with a note.
+          </p>
+        </div>
+      )}
+
+      {live && !live.empty && !approver && (
+        <div className="flex items-start gap-3 rounded-xl border border-border bg-card px-4 py-3 text-sm text-ink-2">
+          <Clock
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+          <p>
+            Waiting on the {live.label}
+            {live.since ? ` since ${formatMoment(live.since)}` : ''}.
+            {view.teachesIt &&
+              " You can't edit it while it's in review. Ask to have it returned if something needs changing."}
+          </p>
         </div>
       )}
 
@@ -231,17 +378,69 @@ export function SowPage({ view }: { view: SowView }) {
         </div>
       )}
 
-      <ModuleDetails module={view.module} />
+      {/* Once it has been sent, the ladder sits beside the plan on a wide
+          screen (above it on a narrow one) — the weeks are what an approver
+          reads, so they keep the width. */}
+      <div
+        className={
+          review
+            ? 'grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_320px] xl:items-start'
+            : 'space-y-6'
+        }
+      >
+        {review && (
+          <Card className="gap-4 xl:sticky xl:top-20 xl:order-last">
+            <CardHeader className="gap-1">
+              <CardTitle className="font-serif text-xl font-semibold tracking-tight">
+                Approval
+              </CardTitle>
+              <p className="text-[13px] text-muted-foreground">
+                Sent{review.sentBy ? ` by ${review.sentBy}` : ''} on{' '}
+                {formatMoment(review.sentAt)}
+              </p>
+            </CardHeader>
+            <CardContent>
+              <ApprovalStepRail
+                stages={review.stages}
+                peopleByStageOrder={review.peopleByStageOrder}
+                decidedByNames={review.decidedByNames}
+                subjectNoun="scheme of work"
+              />
+            </CardContent>
+          </Card>
+        )}
+        <div className="min-w-0 space-y-6">
+          <ModuleDetails module={view.module} />
 
-      <WeekList
-        weeks={view.weeks}
-        breaks={view.breaks}
-        canEdit={canEdit}
-        returnWeekNumber={returnNote?.weekNumber ?? null}
-        onEdit={setEditing}
-        onDelete={deleteWeek}
-        deleting={deleting}
-      />
+          <WeekList
+            weeks={view.weeks}
+            breaks={view.breaks}
+            canEdit={canEdit}
+            returnWeekNumber={returnNote?.weekNumber ?? null}
+            currentWeekNumber={view.thisWeekNumber}
+            onEdit={setEditing}
+            onDelete={deleteWeek}
+            deleting={deleting}
+          />
+        </div>
+      </div>
+
+      {approver && review && (
+        <ReturnSowDialog
+          open={returnOpen}
+          onOpenChange={setReturnOpen}
+          requestId={review.requestId}
+          weeks={returnWeeks}
+          firstStepLabel={view.firstStepLabel}
+        />
+      )}
+      {view.state === 'approved' && view.canReopen && (
+        <ReopenSowDialog
+          open={reopenOpen}
+          onOpenChange={setReopenOpen}
+          sowId={view.id}
+        />
+      )}
 
       {canEdit && (
         <>

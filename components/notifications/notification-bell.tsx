@@ -16,6 +16,7 @@ import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
 import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
+import { SOW_FLOWS } from '@/lib/sow/flows';
 import { ActivityPanel } from '@/components/notifications/activity-panel';
 
 const GATE_ROLES: Role[] = [
@@ -59,6 +60,12 @@ type NotificationBellProps = {
    * Optional for the same reason as the declaration count.
    */
   initialGradeChangeStepCount?: number | null;
+  /**
+   * Scheme-of-work steps waiting for this person to decide (`SOW_FLOWS`).
+   * Its own flow, so it adds to the others without overlap. Optional for the
+   * same reason as the declaration count.
+   */
+  initialSowStepCount?: number | null;
 };
 
 // Surfaces the changeRequests realtime signal outside Markbook's own
@@ -77,6 +84,7 @@ export function NotificationBell({
   initialCount,
   initialDeclarationCount = null,
   initialGradeChangeStepCount = null,
+  initialSowStepCount = null,
 }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const changeRequestCount = useChangeRequestCount(role, userId, initialCount);
@@ -89,6 +97,13 @@ export function NotificationBell({
     GRADE_CHANGE_FLOWS,
     initialGradeChangeStepCount
   );
+  // Schemes of work at a step this person is on — counted for every role for
+  // the same reason: who approves a SOW is the step's people, not a role.
+  const sowStepCount = useStagedApprovalCount(
+    userId,
+    SOW_FLOWS,
+    initialSowStepCount
+  );
 
   // ⚠ `null` means "not tracked", which is not the same as zero — treating it
   // as zero would render a confident "0 pending" for somebody whose count
@@ -96,11 +111,13 @@ export function NotificationBell({
   const count =
     changeRequestCount == null &&
     declarationCount == null &&
-    gradeChangeStepCount == null
+    gradeChangeStepCount == null &&
+    sowStepCount == null
       ? null
       : (changeRequestCount ?? 0) +
         (declarationCount ?? 0) +
-        (gradeChangeStepCount ?? 0);
+        (gradeChangeStepCount ?? 0) +
+        (sowStepCount ?? 0);
 
   if (!role || !GATE_ROLES.includes(role)) return null;
 

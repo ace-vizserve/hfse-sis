@@ -312,6 +312,32 @@ async function loadStagedChangeRequestRows(
   return { rows: data as unknown as RawCrRow[], approvalRequestIdBySubject };
 }
 
+/**
+ * Schemes of work waiting on a step this person is on — one counted row into
+ * the "Waiting for you" queue. The queue's own read, so the row and the page
+ * it opens can never disagree about how many there are.
+ */
+async function sowReviewTodo({
+  userId,
+  role,
+}: TodoContext): Promise<HomeTodoItem | null> {
+  const { listSowReviewQueue } = await import('@/lib/sow/review');
+  const rows = await listSowReviewQueue(createServiceClient(), {
+    userId,
+    role,
+  });
+  const count = rows.length;
+  if (count === 0) return null;
+  return {
+    id: 'classroom-sow-review',
+    module: 'Classroom',
+    text: `${count === 1 ? 'Scheme' : 'Schemes'} of work to review`,
+    count,
+    href: '/classroom/sow/review',
+    kind: 'review',
+  };
+}
+
 async function docValidationTodo({
   ayCode,
 }: TodoContext): Promise<HomeTodoItem | null> {
@@ -519,6 +545,15 @@ export const HOME_TODO_SOURCES: TodoSource[] = [
     // `/markbook/change-requests` admits exactly the people who do.
     roles: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
     load: schoolAdminChangeRequestTodos,
+  },
+  {
+    id: 'classroom-sow-review',
+    href: '/classroom/sow/review',
+    // Every Classroom role, for the reason the change-request row gives: who
+    // approves a scheme of work is the step's people (data), not a role.
+    // Anyone on no step gets no row.
+    roles: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
+    load: sowReviewTodo,
   },
   {
     id: 'admissions-doc-validation',

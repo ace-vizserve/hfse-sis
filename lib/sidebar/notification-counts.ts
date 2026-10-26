@@ -8,6 +8,7 @@ import {
   DECLARATION_APPROVAL_FLOW,
   type StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
+import { SOW_FLOWS } from '@/lib/sow/flows';
 
 /**
  * How many ordered-approval steps (KD #196), across the named flows, are
@@ -60,4 +61,17 @@ export async function getDeclarationWaitingCount(
   return getStagedWaitingCount(service, role, userId, [
     DECLARATION_APPROVAL_FLOW,
   ]);
+}
+
+/**
+ * How many schemes of work are waiting on a step THIS person may decide — the
+ * "Schemes to review" badge and the bell's SOW half. The same rules as
+ * `getStagedWaitingCount`, which it is.
+ */
+export async function getSowWaitingCount(
+  service: SupabaseClient,
+  role: Role,
+  userId: string
+): Promise<number> {
+  return getStagedWaitingCount(service, role, userId, SOW_FLOWS);
 }

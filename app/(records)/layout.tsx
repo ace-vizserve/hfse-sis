@@ -16,6 +16,7 @@ import type { SidebarBadges } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
+  getSowWaitingCount,
   getStagedWaitingCount,
 } from '@/lib/sidebar/notification-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
@@ -76,6 +77,7 @@ export default async function RecordsLayout({
     changeRequestCount,
     declarationCount,
     gradeChangeStepCount,
+    sowStepCount,
   ] = await Promise.all([
     // Current AND upcoming AY — admissions enrol into next year's intake
     // during the early-bird window, and a badge that only counts the live
@@ -87,6 +89,8 @@ export default async function RecordsLayout({
     getDeclarationWaitingCount(service, role, id),
     // Grade changes decided step by step — the bell's third source.
     getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    // Schemes of work at a step this person is on — the bell's fourth source.
+    getSowWaitingCount(service, role, id),
   ]);
   // Both halves of "Levels needing attention" — an unrecognized level name and
   // a level with students waiting but no class.
@@ -138,6 +142,7 @@ export default async function RecordsLayout({
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
                 initialGradeChangeStepCount={gradeChangeStepCount}
+                initialSowStepCount={sowStepCount}
               />
             </div>
           </div>

@@ -13,8 +13,16 @@ import {
   type SowState,
   sowCapability,
 } from '@/lib/sow/access';
+import { sgToday } from '@/lib/dates';
+import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
+import { REOPEN_ROLES } from '@/lib/sow/approval';
 import type { SowActor } from '@/lib/sow/create';
-import { loadTermWeeks } from '@/lib/sow/weeks';
+import {
+  loadFirstSowStepLabel,
+  loadSowReview,
+  type SowReview,
+} from '@/lib/sow/review';
+import { loadTermWeeks, weekForDate } from '@/lib/sow/weeks';
 
 // One scheme of work as the page reads it (Task 8): the module, the classes,
 // every week with the term's events, and what the caller may do with it.
@@ -70,6 +78,20 @@ export type SowView = {
     reopened: { by: string; at: string; note: string | null } | null;
   };
   capability: SowCapability;
+  /**
+   * The current submission's ladder (Task 10) — where it is in review, who
+   * has decided, and whether THIS viewer may decide the live step. Null for a
+   * scheme never sent.
+   */
+  review: SowReview | null;
+  /** The viewer holds one of its classes for the subject (relief excluded). */
+  teachesIt: boolean;
+  /** The viewer may reopen it once approved (the office). */
+  canReopen: boolean;
+  /** While returned or in review: the step a resend starts at, as configured now. */
+  firstStepLabel: string | null;
+  /** While approved: the week today falls in (Singapore), if any. */
+  thisWeekNumber: number | null;
 };
 
 /** The scheme, or null when it does not exist or the caller cannot read it. */
@@ -165,7 +187,29 @@ export async function loadSowView(
     updated_at: string;
   };
 
-  const display = await loadDisplay(service, sow);
+  const [display, review, firstStepLabel] = await Promise.all([
+    loadDisplay(service, sow),
+    sow.state === 'draft'
+      ? Promise.resolve(null)
+      : loadSowReview(service, actor.id, sow.current_submission_id),
+    // Returned: "it starts over from …". In review: the return dialog says
+    // the same before the approver sends it back.
+    sow.state === 'returned' || sow.state === 'in_review'
+      ? loadFirstSowStepLabel(service)
+      : Promise.resolve(null),
+  ]);
+  const teachesIt = assignments.some(
+    (a) =>
+      a.teacher_user_id === actor.id &&
+      a.via === 'substantive' &&
+      isSubjectRole(a.role) &&
+      a.subject_id === sow.subject_id &&
+      sectionIds.includes(a.section_id)
+  );
+  const thisWeekNumber =
+    sow.state === 'approved'
+      ? (weekForDate(termWeeks.weeks, sgToday())?.weekNumber ?? null)
+      : null;
 
   return {
     id: sow.id,
@@ -202,6 +246,11 @@ export async function loadSowView(
       })),
     display,
     capability,
+    review,
+    teachesIt,
+    canReopen: actor.role != null && REOPEN_ROLES.includes(actor.role),
+    firstStepLabel,
+    thisWeekNumber,
   };
 }
 

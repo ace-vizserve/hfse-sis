@@ -106,6 +106,9 @@ export type SidebarBadgeKey =
   // number.
   | 'gradeChangeSteps'
   | 'declarations'
+  // Schemes of work waiting for THIS person's step (the SOW approval flow) —
+  // the "Schemes to review" row, and the same number the bell adds in.
+  | 'sowReviews'
   | 'pendingDocValidation'
   | 'unsyncedStudents'
   | 'pfileAwaitingVerification'
@@ -659,6 +662,22 @@ const CLASSROOM_NAV: NavSection[] = [
           'school_admin',
           'superadmin',
         ],
+      },
+      // Schemes of work waiting on a step the reader is on. Shown to the
+      // same roles as the list above, as Declarations is shown to its whole
+      // module: who approves is data (the step's people), not a role, so a
+      // role list cannot narrow it. Somebody on no step sees an empty queue,
+      // and the badge says how many are waiting before they click.
+      {
+        href: '/classroom/sow/review',
+        label: 'Schemes to review',
+        requiresRoles: [
+          'teacher',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+        badgeKey: 'sowReviews',
       },
       // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
       // this page does not (its own ROUTE_ACCESS row is narrower), so without

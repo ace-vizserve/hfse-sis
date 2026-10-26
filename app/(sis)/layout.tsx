@@ -22,6 +22,7 @@ import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
+  getSowWaitingCount,
   getStagedWaitingCount,
 } from '@/lib/sidebar/notification-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
@@ -117,6 +118,7 @@ export default async function SisLayout({
     // by holding a role, so the count answers that itself and returns 0.
     declarationCount,
     gradeChangeStepCount,
+    sowStepCount,
     // Always empty here, and cheaply so — the only tiles this hides are the
     // ones a subject-teacher-only account cannot use, and `/sis` does not admit
     // a teacher at all. Called anyway so all eight layouts read the same and
@@ -135,6 +137,8 @@ export default async function SisLayout({
     getDeclarationWaitingCount(service, role, id),
     // Grade changes decided step by step — same "on a step" rule.
     getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    // Schemes of work at a step this person is on — the bell's fourth source.
+    getSowWaitingCount(service, role, id),
     resolveHiddenModules(role, id),
   ]);
 
@@ -193,6 +197,7 @@ export default async function SisLayout({
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
                 initialGradeChangeStepCount={gradeChangeStepCount}
+                initialSowStepCount={sowStepCount}
               />
             </div>
           </div>

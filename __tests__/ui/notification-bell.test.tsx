@@ -210,10 +210,28 @@ describe('NotificationBell — grade-change steps', () => {
         initialGradeChangeStepCount={1}
       />
     );
-    expect(stagedFlowsSeen.at(-1)?.sort()).toEqual([
+    // One hook per source (grade changes, schemes of work), so look for the
+    // grade-change call among them rather than assuming it is the last.
+    expect(stagedFlowsSeen.map((f) => [...f].sort())).toContainEqual([
       'markbook.grade_change',
       'markbook.grade_change_aeb',
     ]);
+  });
+
+  it('asks about the scheme-of-work flow and adds it in', () => {
+    stagedFlowsSeen.length = 0;
+    render(
+      <NotificationBell
+        role="teacher"
+        userId="u-1"
+        initialCount={0}
+        initialDeclarationCount={0}
+        initialGradeChangeStepCount={1}
+        initialSowStepCount={2}
+      />
+    );
+    expect(stagedFlowsSeen).toContainEqual(['markbook.scheme_of_work']);
+    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('stays hidden when no source is tracked', () => {

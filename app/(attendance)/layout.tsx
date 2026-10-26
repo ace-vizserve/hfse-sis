@@ -18,6 +18,7 @@ import {
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
+  getSowWaitingCount,
   getStagedWaitingCount,
 } from '@/lib/sidebar/notification-counts';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
@@ -61,13 +62,19 @@ export default async function AttendanceLayout({
   );
 
   const service = createServiceClient();
-  const [changeRequestCount, declarationCount, gradeChangeStepCount] =
-    await Promise.all([
-      getSidebarChangeRequestCount(service, role, id),
-      getDeclarationWaitingCount(service, role, id),
-      // Grade changes decided step by step — the bell's third source.
-      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-    ]);
+  const [
+    changeRequestCount,
+    declarationCount,
+    gradeChangeStepCount,
+    sowStepCount,
+  ] = await Promise.all([
+    getSidebarChangeRequestCount(service, role, id),
+    getDeclarationWaitingCount(service, role, id),
+    // Grade changes decided step by step — the bell's third source.
+    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
+    // Schemes of work at a step this person is on — the bell's fourth source.
+    getSowWaitingCount(service, role, id),
+  ]);
 
   // The Declarations nav item carries the same number the bell adds in — how
   // many are waiting for this person, not how many exist.
@@ -106,6 +113,7 @@ export default async function AttendanceLayout({
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
                 initialGradeChangeStepCount={gradeChangeStepCount}
+                initialSowStepCount={sowStepCount}
               />
             </div>
           </div>

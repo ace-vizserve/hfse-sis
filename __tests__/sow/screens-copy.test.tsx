@@ -97,4 +97,26 @@ describe('MySowsTable', () => {
       within(rowFor('Secondary 5')).getByText('Not started')
     ).toBeInTheDocument();
   });
+
+  it('names the step it waits on, and the step that returned it', () => {
+    render(
+      <MySowsTable
+        rows={[
+          row(
+            'Secondary 1',
+            { id: 'a', state: 'in_review' },
+            { stepLabel: 'OIC' }
+          ),
+          row(
+            'Secondary 2',
+            { id: 'b', state: 'returned' },
+            { stepLabel: 'Subject head' }
+          ),
+        ]}
+        termLabel="Term 2"
+      />
+    );
+    expect(screen.getByText('In review · OIC')).toBeInTheDocument();
+    expect(screen.getByText('Subject head left a note')).toBeInTheDocument();
+  });
 });

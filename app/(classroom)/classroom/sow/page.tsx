@@ -11,6 +11,7 @@ import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
 import { listMySowRows } from '@/lib/sow/access';
 import { findLastYearSow } from '@/lib/sow/create';
+import { loadSowStepLabels } from '@/lib/sow/review';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getSessionUser } from '@/lib/supabase/server';
 
@@ -69,9 +70,25 @@ export default async function MySchemesOfWorkPage({
     class_type: string | null;
   }[];
 
+  // The step each sent scheme waits on, or that returned it — one ladder read
+  // for the whole list.
+  const stepLabels = await loadSowStepLabels(
+    service,
+    base.flatMap((r) =>
+      r.sow &&
+      (r.sow.state === 'in_review' || r.sow.state === 'returned') &&
+      r.sow.currentSubmissionId
+        ? [r.sow.currentSubmissionId]
+        : []
+    )
+  );
+
   const rows: MySowListRow[] = await Promise.all(
     base.map(async (r) => ({
       ...r,
+      stepLabel: r.sow?.currentSubmissionId
+        ? (stepLabels.get(r.sow.currentSubmissionId) ?? null)
+        : null,
       lastYear: r.sow
         ? null
         : await findLastYearSow(service, {

@@ -26,20 +26,29 @@ export type MySowListRow = MySowRow & {
   lastYear: { label: string } | null;
   /** Every class of this level and track this year: the drawer's checkboxes. */
   groupSections: { sectionId: string; name: string }[];
+  /**
+   * The approval step it waits on (in review) or that returned it (returned),
+   * from its current submission's ladder. Absent when it was never sent.
+   */
+  stepLabel?: string | null;
 };
 
 export const rowKey = (r: Pick<MySowRow, 'subjectId' | 'levelId' | 'track'>) =>
   `${r.subjectId}|${r.levelId}|${r.track}`;
 
 /** What the "This week" column says for a row. */
-export function thisWeekText(row: Pick<MySowRow, 'sow'>): string {
+export function thisWeekText(
+  row: Pick<MySowListRow, 'sow' | 'stepLabel'>
+): string {
   switch (row.sow?.state) {
     case 'draft':
       return 'Not sent for review yet';
     case 'in_review':
       return "Can't be checked until approved";
     case 'returned':
-      return 'Returned with a note';
+      return row.stepLabel
+        ? `${row.stepLabel} left a note`
+        : 'Returned with a note';
     default:
       // Approved: the weekly check arrives with the checks themselves.
       return '—';
@@ -115,7 +124,10 @@ export function MySowsTable({
         meta: { label: 'Status' },
         enableSorting: false,
         cell: ({ row }) => (
-          <SowStatusBadge state={row.original.sow?.state ?? null} />
+          <SowStatusBadge
+            state={row.original.sow?.state ?? null}
+            step={row.original.stepLabel}
+          />
         ),
       },
       {

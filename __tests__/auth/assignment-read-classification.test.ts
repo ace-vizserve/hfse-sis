@@ -105,6 +105,10 @@ const CLASSIFIED: Record<string, Category[]> = {
   // but never creates or edits it.
   'lib/sow/access.ts': ['act'],
   'lib/sow/create.ts': ['act'],
+  // Who may edit or send it (edit.ts), and what the SOW page lets the reader
+  // do (read.ts: the capability, and whether they teach it) — same rule.
+  'lib/sow/edit.ts': ['act'],
+  'lib/sow/read.ts': ['act'],
   // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
   // relief-inclusive half of the pair, so the act/name decision is made here
   // rather than deferred to callers — which is why it is `act` and not

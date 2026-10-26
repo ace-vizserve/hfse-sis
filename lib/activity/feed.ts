@@ -175,12 +175,13 @@ export async function loadActivityPage(
   // items too (the badge kept counting them; the pinned block did not show
   // them). Only the EVENTS list below is filtered to the tab, and it is
   // filtered from this one fetch — never a second query per tab.
-  const [declarations, markChanges] = await Promise.allSettled([
+  const [declarations, markChanges, schemes] = await Promise.allSettled([
     loadDeclarationSide(service, scope, nameById),
     loadMarkChangeSide(service, scope, nameById),
+    loadSowSide(service, scope),
   ]);
 
-  const parts = [declarations, markChanges];
+  const parts = [declarations, markChanges, schemes];
   const partial = parts.some((p) => p.status === 'rejected');
   for (const p of parts) {
     if (p.status === 'rejected') {
@@ -232,6 +233,42 @@ export async function loadActivityPage(
     scope.limit
   );
   return { events, nextCursor, waiting, partial, truncated };
+}
+
+// ── Schemes of work ────────────────────────────────────────────────────────
+
+/**
+ * Schemes of work waiting on the reader's step — "Waiting for you" only.
+ *
+ * ⚠ NO EVENTS. The bell counts this flow (`SOW_FLOWS`), so its pinned list
+ * must show what the number counts, or the badge sends somebody to a panel
+ * with nothing in it. The SOW's history lives on its own page.
+ */
+async function loadSowSide(
+  service: SupabaseClient,
+  scope: ActivityScope
+): Promise<{
+  events: ActivityEvent[];
+  waiting: ActivityWaitingItem[];
+  truncated: boolean;
+}> {
+  const { listSowReviewQueue } = await import('@/lib/sow/review');
+  const rows = await listSowReviewQueue(service, {
+    userId: scope.userId,
+    role: scope.role,
+  });
+  return {
+    events: [],
+    waiting: rows.map((r) => ({
+      id: `scheme_of_work:${r.requestId}`,
+      requestId: r.requestId,
+      title: `${r.levelLabel} ${r.subjectName}, Term ${r.termNumber} scheme of work`,
+      subtitle: `${r.step} · ${r.teacher}`,
+      href: `/classroom/sow/${r.sowId}`,
+      initials: initialsFromName(r.teacher),
+    })),
+    truncated: false,
+  };
 }
 
 // ── Declarations ───────────────────────────────────────────────────────────
