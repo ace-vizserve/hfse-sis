@@ -211,6 +211,9 @@ export async function loadTermWeeks(
   if (!term.start_date || !term.end_date) {
     return { weeks: [], eventsByWeek: new Map() };
   }
+  if (levelRes.error) {
+    throw new Error(`levels lookup failed: ${levelRes.error.message}`);
+  }
   const levelCode = (levelRes.data as { code: string } | null)?.code ?? null;
 
   const [calRes, evRes] = await Promise.all([
@@ -265,12 +268,16 @@ export async function loadTermWeeks(
   });
 
   // Section-scoped events do not apply here: a scheme of work is per level.
-  const levelEvents = events.filter((e) =>
-    eventAppliesToSection(
-      { audience: e.audience, levels: e.levels, sectionIds: null },
-      { levelCode, sectionId: null }
-    )
-  );
+  // Dropped BEFORE the level check: a section-only event has levels null and
+  // audience 'all', which would otherwise read as whole-school.
+  const levelEvents = events
+    .filter((e) => !(e.section_ids && e.section_ids.length > 0))
+    .filter((e) =>
+      eventAppliesToSection(
+        { audience: e.audience, levels: e.levels, sectionIds: null },
+        { levelCode, sectionId: null }
+      )
+    );
 
   const eventsByWeek = new Map<number, string[]>();
   const add = (weekNumber: number, label: string) => {

@@ -213,7 +213,7 @@ describe('loadTermWeeks', () => {
       school_calendar: [
         // whole-school: open
         ...['23', '24', '25', '26', '27', '30', '31'].map((d) => ({
-          date: d.length === 2 && +d >= 30 ? `2026-03-${d}` : `2026-03-${d}`,
+          date: `2026-03-${d}`,
           day_type: 'school_day',
           audience: 'all',
           hbl_overlay: false,
@@ -274,6 +274,14 @@ describe('loadTermWeeks', () => {
           levels: ['P6'],
           section_ids: null,
         },
+        {
+          start_date: '2026-03-23',
+          end_date: '2026-04-03',
+          label: 'Section only',
+          audience: 'all',
+          levels: null,
+          section_ids: ['sec-x'],
+        },
       ],
     });
 
@@ -285,5 +293,7 @@ describe('loadTermWeeks', () => {
     expect(weekRows(weeks)[1].schoolDays).not.toContain('2026-04-03');
     expect(eventsByWeek.get(1)).toEqual(['Maths Week']);
     expect(eventsByWeek.get(2)).toEqual(['Good Friday']);
+    // A section-only event never leaks into a level's labels.
+    expect([...eventsByWeek.values()].flat()).not.toContain('Section only');
   });
 });
