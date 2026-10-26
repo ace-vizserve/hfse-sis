@@ -39,8 +39,15 @@ import {
 type Row = Record<string, unknown>;
 type Tables = Record<string, Row[]>;
 
-/** A just-enough chainable fake of the Supabase query builder. */
-function fakeService(tables: Tables) {
+/**
+ * A just-enough chainable fake of the Supabase query builder.
+ *
+ * It also plays migration 198's `scheme_of_work_weeks_editable` trigger: a
+ * week update or delete whose scheme is in review or approved fails with
+ * SQLSTATE 55000. `onWeekRead` runs on each read of the weeks table, which is
+ * where a test lands a send that races the edit.
+ */
+function fakeService(tables: Tables, onWeekRead?: () => void) {
   return {
     from(table: string) {
       const filters: Array<(r: Row) => boolean> = [];
@@ -49,6 +56,24 @@ function fakeService(tables: Tables) {
       const run = () => {
         const rows = (tables[table] ??= []);
         const hit = rows.filter((r) => filters.every((f) => f(r)));
+        if (table === 'scheme_of_work_weeks' && op === 'select') {
+          onWeekRead?.();
+        }
+        if (table === 'scheme_of_work_weeks' && op !== 'select') {
+          const locked = hit.some((w) =>
+            (tables.schemes_of_work ?? []).some(
+              (s) =>
+                s.id === w.sow_id &&
+                (s.state === 'in_review' || s.state === 'approved')
+            )
+          );
+          if (locked) {
+            return {
+              data: null,
+              error: { message: 'scheme_of_work_locked', code: '55000' },
+            };
+          }
+        }
         if (op === 'update') {
           for (const r of hit) Object.assign(r, patch);
           return { data: hit, error: null };
@@ -78,7 +103,7 @@ function fakeService(tables: Tables) {
         maybeSingle: () => {
           const res = run();
           return Promise.resolve({
-            data: (res.data as Row[])[0] ?? null,
+            data: ((res.data ?? []) as Row[])[0] ?? null,
             error: null,
           });
         },
@@ -236,6 +261,31 @@ describe('editing a scheme of work', () => {
     expect(await updateModule(service, ME, 'sow1', {}, T0)).toMatchObject({
       status: 403,
     });
+  });
+
+  // The race: the scheme was a draft when the edit was authorised, then a send
+  // moved it to in review before the week write landed. The write must not
+  // change the plan under review.
+  it('a week save that races a send is a 423 and writes nothing', async () => {
+    const { tables } = world();
+    const service = fakeService(tables, () => {
+      tables.schemes_of_work[0].state = 'in_review';
+    });
+    const r = await updateWeek(service, ME, 'sow1', 1, { topic: 'Late' }, T0);
+    expect(r).toEqual({ ok: false, status: 423, error: LOCKED_MESSAGE });
+    expect(tables.scheme_of_work_weeks[0].topic).toBeNull();
+    expect(logMock).not.toHaveBeenCalled();
+  });
+
+  it('a surplus-week delete that races a send is a 423 and keeps the week', async () => {
+    const { tables } = world();
+    const service = fakeService(tables, () => {
+      tables.schemes_of_work[0].state = 'in_review';
+    });
+    const r = await deleteWeek(service, ME, 'sow1', 3);
+    expect(r).toEqual({ ok: false, status: 423, error: LOCKED_MESSAGE });
+    expect(tables.scheme_of_work_weeks).toHaveLength(3);
+    expect(logMock).not.toHaveBeenCalled();
   });
 
   it('relief cover cannot edit', async () => {

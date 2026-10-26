@@ -85,6 +85,40 @@ create table if not exists public.scheme_of_work_weeks (
 comment on table public.scheme_of_work_weeks is
   'The week-by-week plan of a scheme of work: one row per numbered teaching week, with its topic, outcomes, activities and assessment.';
 
+-- ⚠ A WEEK CHANGES ONLY WHILE ITS SCHEME IS A DRAFT OR RETURNED. The app checks
+-- the state first (lib/sow/edit.ts), but a send can land between that check
+-- and the week write, which would change the plan under review. supabase-js has
+-- no transactions, so the rule lives here: the parent row is read FOR SHARE,
+-- which waits for a send's state update to commit (and makes a send wait for
+-- this write), then the state decides. SQLSTATE 55000 is mapped to a 423.
+-- Inserts are not checked (a scheme's weeks are written when it is made), and
+-- a delete cascading from a deleted scheme finds no parent row and passes.
+create or replace function public.scheme_of_work_weeks_editable()
+returns trigger
+language plpgsql
+as $$
+declare
+  parent_state text;
+begin
+  select s.state into parent_state
+    from public.schemes_of_work s
+   where s.id = old.sow_id
+     for share;
+  if parent_state in ('in_review', 'approved') then
+    raise exception using
+      errcode = '55000',
+      message = 'scheme_of_work_locked',
+      detail  = 'A scheme of work in review or approved cannot have its weeks changed.';
+  end if;
+  return case when tg_op = 'DELETE' then old else new end;
+end;
+$$;
+
+drop trigger if exists scheme_of_work_weeks_editable on public.scheme_of_work_weeks;
+create trigger scheme_of_work_weeks_editable
+  before update or delete on public.scheme_of_work_weeks
+  for each row execute function public.scheme_of_work_weeks_editable();
+
 -- ── 4. Each time it was sent for approval ───────────────────────────────────
 
 create table if not exists public.scheme_of_work_submissions (
@@ -172,9 +206,14 @@ create index if not exists scheme_of_work_signoffs_lookup_idx
 
 -- ── 8. Subject heads ────────────────────────────────────────────────────────
 
+-- ⚠ CASCADE, not restrict: a head of a deleted subject means nothing. The
+-- Subject Setup delete removes the subject LAST, after its setup rows; a
+-- restrict here failed that last step with the setup already gone. (A subject
+-- a scheme of work uses is refused before anything is deleted — the schemes
+-- themselves stay restrict.)
 create table if not exists public.subject_heads (
   id                    uuid primary key default gen_random_uuid(),
-  subject_id            uuid not null references public.subjects (id) on delete restrict,
+  subject_id            uuid not null references public.subjects (id) on delete cascade,
   user_id               uuid not null,
   applies_to_level_type text check (applies_to_level_type in ('primary', 'secondary')),
   created_at            timestamptz not null default now(),

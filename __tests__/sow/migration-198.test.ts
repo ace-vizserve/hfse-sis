@@ -50,6 +50,40 @@ describe('migration 198 — scheme of work tables', () => {
     );
   });
 
+  it('keeps one scheme per term, subject, level and track', () => {
+    expect(sql).toMatch(
+      /constraint schemes_of_work_term_subject_level_track_key\s+unique \(term_id, subject_id, level_id, track\)/
+    );
+  });
+
+  it('lists a head once per subject and scope (all levels included)', () => {
+    expect(sql).toMatch(
+      /create unique index if not exists subject_heads_once\s+on public\.subject_heads \(subject_id, user_id, coalesce\(applies_to_level_type, '\*'\)\)/
+    );
+  });
+
+  it.each(TABLES)('enables row level security on %s', (t) => {
+    expect(sql).toMatch(
+      new RegExp(`alter table public\\.${t}\\s+enable row level security`)
+    );
+  });
+
+  it("drops a deleted subject's heads with it", () => {
+    // The Subject Setup delete removes the subject last; a restrict here would
+    // fail that last step after the setup rows were gone.
+    expect(sql).toMatch(
+      /subject_id\s+uuid not null references public\.subjects \(id\) on delete cascade,\s+user_id/
+    );
+  });
+
+  it('refuses a week edit once the scheme is out of draft (trigger)', () => {
+    expect(sql).toMatch(
+      /create trigger scheme_of_work_weeks_editable\s+before update or delete on public\.scheme_of_work_weeks/
+    );
+    expect(sql).toMatch(/for share/);
+    expect(sql).toMatch(/errcode = '55000'/);
+  });
+
   it('leaves approval_request_stages alone (a subject-head step is stored as named)', () => {
     expect(sql).not.toMatch(/alter table\s+public\.approval_request_stages/i);
   });

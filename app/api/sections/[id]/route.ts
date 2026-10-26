@@ -123,7 +123,8 @@ export async function PATCH(
 // grading sheet, stays undeletable — Rename is the fix for a typo there.
 //
 // `section_students`/`grading_sheets` are RESTRICT foreign keys (won't
-// cascade); everything else that can reference a fresh, student-less
+// cascade), and so are the scheme-of-work tables (198) — a class on one is
+// refused with a 409 below; everything else that can reference a fresh, student-less
 // section (section_subjects, teacher_assignments, evaluation_checklist_
 // items, and the report-card/evaluation tables, all practically empty
 // with no roster) is ON DELETE CASCADE, so deleting grading_sheets then
@@ -174,6 +175,39 @@ export async function DELETE(
         error: `Can't delete — ${studentCount} student${studentCount === 1 ? ' has' : 's have'} been enrolled here. Rename it instead if this was a typo.`,
       },
       { status: 422 }
+    );
+  }
+
+  // ⚠ A CLASS ON A SCHEME OF WORK IS REFUSED BEFORE ANYTHING IS DELETED.
+  // Every SOW table points at `sections` with ON DELETE RESTRICT (migration
+  // 198), so the section delete below would fail AFTER the grading sheets were
+  // already gone. Its checks, relief notes and sign-offs are teaching records;
+  // the scheme is taken off the class by its teacher, not by this delete.
+  const sowTables = [
+    'scheme_of_work_classes',
+    'scheme_of_work_checks',
+    'scheme_of_work_relief_notes',
+    'scheme_of_work_signoffs',
+  ] as const;
+  const sowUse = await Promise.all(
+    sowTables.map((table) =>
+      service
+        .from(table)
+        .select('section_id', { count: 'exact', head: true })
+        .eq('section_id', id)
+    )
+  );
+  const sowErr = sowUse.find((r) => r.error)?.error;
+  if (sowErr) {
+    return NextResponse.json({ error: sowErr.message }, { status: 500 });
+  }
+  if (sowUse.some((r) => (r.count ?? 0) > 0)) {
+    return NextResponse.json(
+      {
+        error:
+          'This class is on a scheme of work — take it off the scheme first.',
+      },
+      { status: 409 }
     );
   }
 

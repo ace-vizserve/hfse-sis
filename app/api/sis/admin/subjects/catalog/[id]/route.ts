@@ -182,20 +182,22 @@ export async function PATCH(
 //
 // Removes a subject NO CLASS uses (2026-09-29, Mr Ace: "in use means a
 // section is using it"). Refused (409) when a class holds anything on it —
-// grading sheets, teacher assignments, evaluation comments, checklist topics
-// or a section_subjects row (lib/sis/subjects/usage.ts::findSectionUse) —
-// because those are per-class / per-student records (Hard Rule #6).
+// grading sheets, teacher assignments, evaluation comments, checklist topics,
+// a scheme of work or a relief-teacher note on one (migration 198), or a
+// section_subjects row (lib/sis/subjects/usage.ts::findSectionUse) — because
+// those are per-class / per-student records (Hard Rule #6) or real teaching
+// content.
 //
 // Otherwise its SETUP goes with it: weights (subject_configs, every year),
-// level offerings, and its subject_report_map rows. A subject reporting under
-// it is re-pointed to report as itself, never deleted.
+// level offerings, its subject_report_map rows and its subject heads. A
+// subject reporting under it is re-pointed to report as itself, never deleted.
 //
 // No transactions in supabase-js, so the order is what keeps a failure safe:
 //   1. snapshot every row about to go into ONE `subject.delete` audit row;
 //   2. re-point other subjects reporting under it (each keeps a mapping);
 //   3. delete subject_level_offerings;
 //   4. delete subject_configs (ON DELETE RESTRICT — must go before 6);
-//   5. delete its own subject_report_map rows;
+//   5. delete its own subject_report_map rows, then its subject_heads;
 //   6. delete the subject itself — LAST, so any failure above leaves it
 //      in the catalog and the request can simply be retried.
 export async function DELETE(
@@ -258,6 +260,7 @@ export async function DELETE(
         })),
         subject_level_offerings: setup.offerings,
         subject_report_map: setup.ownMaps,
+        subject_heads: setup.heads,
       },
       repointed_to_self: setup.reportedUnder,
     },
@@ -294,11 +297,14 @@ export async function DELETE(
     if (error) return fail('report card mapping', error.message);
   }
 
-  // 3–5. The setup rows, then 6. the subject.
+  // 3–5. The setup rows, then 6. the subject. Its subject heads go with the
+  // setup (migration 198 also cascades them; deleting here keeps the order
+  // explicit like the rest).
   const steps: Array<[string, string, string]> = [
     ['levels', 'subject_level_offerings', 'subject_id'],
     ['weights', 'subject_configs', 'subject_id'],
     ['report card mapping', 'subject_report_map', 'subject_id'],
+    ['subject heads', 'subject_heads', 'subject_id'],
     ['subject', 'subjects', 'id'],
   ];
   for (const [step, table, column] of steps) {

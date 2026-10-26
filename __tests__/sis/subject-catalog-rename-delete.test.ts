@@ -408,6 +408,43 @@ describe('DELETE', () => {
   it('404s an unknown subject', async () => {
     expect((await del('nope')).status).toBe(404);
   });
+
+  // A scheme of work is real teaching content (migration 198 restricts it), so
+  // a subject one uses is refused before anything is deleted.
+  it('refuses a subject a scheme of work uses, deleting nothing', async () => {
+    db.schemes_of_work = [{ id: 'sow-1', subject_id: SUBJ }];
+    db.subject_level_offerings = [
+      { id: 'o-1', subject_id: SUBJ, level_id: 'P1', academic_year_id: 'ay-1' },
+    ];
+    const res = await del();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/schemes of work/);
+    expect(db.subjects).toHaveLength(2);
+    expect(db.subject_level_offerings).toHaveLength(1);
+    expect(logAction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a subject a relief-teacher note is about', async () => {
+    db.scheme_of_work_relief_notes = [{ id: 'rn-1', subject_id: SUBJ }];
+    const res = await del();
+    expect(res.status).toBe(409);
+    expect((await res.json()).error).toMatch(/relief-teacher notes/);
+  });
+
+  it('deletes a subject that only has heads, taking the heads with it', async () => {
+    db.subject_heads = [
+      { id: 'sh-1', subject_id: SUBJ, user_id: 'u-head' },
+      { id: 'sh-2', subject_id: OTHER, user_id: 'u-head' },
+    ];
+    const res = await del();
+    expect(res.status).toBe(200);
+    expect(db.subjects.map((s) => s.id)).toEqual([OTHER]);
+    expect(db.subject_heads.map((h) => h.id)).toEqual(['sh-2']);
+    const ctx = logAction.mock.calls[0][0].context as {
+      removed: { subject_heads: Array<{ id: string }> };
+    };
+    expect(ctx.removed.subject_heads.map((h) => h.id)).toEqual(['sh-1']);
+  });
 });
 
 describe('PATCH rename', () => {

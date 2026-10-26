@@ -27,9 +27,14 @@ export type { SubjectSetupSummary } from './setup-summary';
 //
 // The list is every live table with a foreign key to `subjects.id` (grep
 // `references public.subjects` in supabase/migrations; the two template tables
-// were dropped by 089 and the SOW tables by 062/065/066). subject_configs is
+// were dropped by 089 and the OLD SOW tables by 062/065/066). subject_configs is
 // ON DELETE RESTRICT; the rest CASCADE — which is why the route checks and
 // deletes explicitly rather than trusting the database.
+//
+// Migration 198's scheme-of-work tables: `schemes_of_work` and
+// `scheme_of_work_relief_notes` are ON DELETE RESTRICT and are real teaching
+// records, so either one BLOCKS Delete (never cascaded). `subject_heads` is
+// setup: it CASCADES, and the route deletes and snapshots it like the rest.
 //
 // `subject_report_map` is special: every subject is seeded mapped to ITSELF,
 // and that row goes with the subject. It only counts as use (for rename) when
@@ -63,6 +68,16 @@ const CHECKLIST_ITEMS: SubjectReference = {
   column: 'subject_id',
   label: 'evaluation checklist items',
 };
+const SCHEMES_OF_WORK: SubjectReference = {
+  table: 'schemes_of_work',
+  column: 'subject_id',
+  label: 'schemes of work',
+};
+const RELIEF_NOTES: SubjectReference = {
+  table: 'scheme_of_work_relief_notes',
+  column: 'subject_id',
+  label: 'relief-teacher notes',
+};
 
 export const SUBJECT_REFERENCES: readonly SubjectReference[] = [
   {
@@ -79,6 +94,8 @@ export const SUBJECT_REFERENCES: readonly SubjectReference[] = [
   TEACHER_ASSIGNMENTS,
   EVALUATION_COMMENTS,
   CHECKLIST_ITEMS,
+  SCHEMES_OF_WORK,
+  RELIEF_NOTES,
   {
     table: 'subject_report_map',
     column: 'report_subject_id',
@@ -93,6 +110,8 @@ export const SECTION_USE_REFERENCES: readonly SubjectReference[] = [
   TEACHER_ASSIGNMENTS,
   EVALUATION_COMMENTS,
   CHECKLIST_ITEMS,
+  SCHEMES_OF_WORK,
+  RELIEF_NOTES,
 ];
 
 /** `section_subjects` is reached through subject_configs, not subject_id. */
@@ -193,6 +212,8 @@ export type SubjectReportMapRow = {
 export type SubjectSetup = {
   configs: SubjectConfigRow[];
   offerings: SubjectOfferingRow[];
+  /** Who heads it (migration 198) — setup, so it goes with the subject. */
+  heads: Array<Record<string, unknown>>;
   /** This subject's own rows (subject_id = it), self-map included. */
   ownMaps: SubjectReportMapRow[];
   /** Other subjects reporting under this one — re-pointed to themselves. */
@@ -221,27 +242,33 @@ export async function loadSubjectSetup(
   service: SupabaseClient,
   subjectId: string
 ): Promise<SubjectSetup> {
-  const [configsRes, offeringsRes, ownRes, underRes] = await Promise.all([
-    service.from('subject_configs').select('*').eq('subject_id', subjectId),
-    service
-      .from('subject_level_offerings')
-      .select('*')
-      .eq('subject_id', subjectId),
-    service
-      .from('subject_report_map')
-      .select('id, subject_id, report_subject_id')
-      .eq('subject_id', subjectId),
-    service
-      .from('subject_report_map')
-      .select('id, subject_id, report_subject_id')
-      .eq('report_subject_id', subjectId)
-      .neq('subject_id', subjectId),
-  ]);
+  const [configsRes, offeringsRes, ownRes, underRes, headsRes] =
+    await Promise.all([
+      service.from('subject_configs').select('*').eq('subject_id', subjectId),
+      service
+        .from('subject_level_offerings')
+        .select('*')
+        .eq('subject_id', subjectId),
+      service
+        .from('subject_report_map')
+        .select('id, subject_id, report_subject_id')
+        .eq('subject_id', subjectId),
+      service
+        .from('subject_report_map')
+        .select('id, subject_id, report_subject_id')
+        .eq('report_subject_id', subjectId)
+        .neq('subject_id', subjectId),
+      service
+        .from('subject_heads')
+        .select('id, subject_id, user_id, applies_to_level_type')
+        .eq('subject_id', subjectId),
+    ]);
   for (const [table, res] of [
     ['subject_configs', configsRes],
     ['subject_level_offerings', offeringsRes],
     ['subject_report_map', ownRes],
     ['subject_report_map', underRes],
+    ['subject_heads', headsRes],
   ] as const) {
     if (res.error) throw new Error(`${table}: ${res.error.message}`);
   }
@@ -276,6 +303,7 @@ export async function loadSubjectSetup(
   return {
     configs,
     offerings,
+    heads: (headsRes.data ?? []) as Array<Record<string, unknown>>,
     ownMaps,
     reportedUnder: underIds.map((id) => ({
       subject_id: id,

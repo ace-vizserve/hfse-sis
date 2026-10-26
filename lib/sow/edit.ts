@@ -12,14 +12,27 @@ import { loadTermWeeks } from '@/lib/sow/weeks';
 
 // Editing a scheme of work's module details and its weeks.
 //
-// Order of refusals, always: no such scheme (404) -> not yours (403) -> in
-// review or approved (423) -> somebody saved first (409) -> bad input (400).
+// Order of refusals, always: bad input (400) FIRST — the routes validate the
+// body before calling here (KD #234, by ruling) — then no such scheme (404)
+// -> not yours (403) -> in review or approved (423) -> somebody saved first
+// (409). The one 400 decided in here is deleteWeek's "term weeks can't be
+// deleted", which needs the week to exist first.
 //
 // The stale check is part of the UPDATE (`where updated_at = expected`), not a
 // read followed by a write, so two saves that start together cannot both win.
 // A module save checks the scheme's own timestamp and a week save checks that
 // week's, and neither touches the other — two teachers on different weeks
 // never collide.
+//
+// ⚠ A WEEK WRITE THAT RACES A SEND. `authorizeEdit` reads the state, but a send
+// can move the scheme to in review before the week write lands. A module save
+// is safe (a send bumps the scheme's updated_at, so the pinned write misses);
+// a week write pins only the week's own timestamp. So migration 198's trigger
+// `scheme_of_work_weeks_editable` refuses a week update or delete whose scheme
+// is in review or approved, inside the same statement (SQLSTATE 55000), and it
+// is answered here with the same 423. The trigger, not a second read, because
+// supabase-js has no transactions: a re-read before or after the write leaves
+// the same gap.
 
 export type EditResult =
   | { ok: true; updatedAt: string }
@@ -44,6 +57,10 @@ const STALE_WEEK_MESSAGE =
   'Someone else changed this week a moment ago — reload to see it.';
 const NOT_YOURS_MESSAGE =
   'Only the teachers of this subject on its classes can edit this scheme of work.';
+
+/** Migration 198's week trigger: the scheme left draft before the write. */
+const isLockedByTrigger = (error: { code?: string } | null) =>
+  error?.code === '55000';
 
 type SowHead = {
   id: string;
@@ -192,6 +209,7 @@ export async function updateWeek(
     .eq('week_number', weekNumber)
     .eq('updated_at', expectedUpdatedAt)
     .select('id');
+  if (isLockedByTrigger(error)) return refuse(423, LOCKED_MESSAGE);
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return refuse(409, STALE_WEEK_MESSAGE);
 
@@ -251,6 +269,7 @@ export async function deleteWeek(
     .delete()
     .eq('sow_id', sowId)
     .eq('week_number', weekNumber);
+  if (isLockedByTrigger(error)) return refuse(423, LOCKED_MESSAGE);
   if (error) throw new Error(error.message);
 
   await logAction({
