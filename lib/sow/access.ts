@@ -14,6 +14,7 @@ import {
   type EffectiveAssignmentRow,
   loadEffectiveAssignmentsForUser,
 } from '@/lib/auth/teacher-assignments';
+import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { compareLevelLabels } from '@/lib/sis/levels';
 
@@ -43,7 +44,7 @@ export function sowCapability(input: {
   assignments: EffectiveAssignmentRow[];
   sow: { subjectId: string; state: SowState; classSectionIds: string[] };
   /** The caller is in the approver pool of a stage of the SOW's current request. */
-  isOnCurrentApprovalStep?: boolean;
+  isOnCurrentApprovalStep: boolean;
 }): SowCapability {
   const { role, assignments, sow } = input;
 
@@ -83,6 +84,7 @@ export async function isOnCurrentApprovalStep(
   const { data: request, error } = await service
     .from('approval_requests')
     .select('id')
+    .eq('flow', SOW_APPROVAL_FLOW)
     .eq('subject_type', SOW_APPROVAL_SUBJECT_TYPE)
     .eq('subject_id', currentSubmissionId)
     .maybeSingle();
@@ -101,7 +103,10 @@ export async function isOnCurrentApprovalStep(
 export type MySowRow = SowKey & {
   subjectName: string;
   levelLabel: string;
+  /** The SOW's saved classes; for a not-started row, the teacher's own sections (the drawer's pre-ticked boxes). */
   classes: { sectionId: string; name: string }[];
+  /** The teacher's own sections in this group that are not on the SOW. Empty when there is no SOW yet. */
+  myClassesNotOnSow: { sectionId: string; name: string }[];
   sow: { id: string; state: SowState } | null;
 };
 
@@ -161,7 +166,9 @@ export async function listMySowRows(
     service.from('subjects').select('id, name').in('id', subjectIds),
     service
       .from('schemes_of_work')
-      .select('id, state, subject_id, level_id, track')
+      .select(
+        'id, state, subject_id, level_id, track, scheme_of_work_classes(section_id)'
+      )
       .eq('term_id', termId),
   ]);
   for (const r of [sections, configs, offerings, subjects, schemes]) {
@@ -201,6 +208,7 @@ export async function listMySowRows(
     const subjectId = a.subject_id!;
     if (!configured.has(subjectId)) continue;
     if (!offered.has(`${subjectId}|${section.level_id}`)) continue;
+    // A section with no class_type set is a Standard class.
     const track: SowTrack =
       section.class_type === 'Global' ? 'Global' : 'Standard';
     const key = `${subjectId}|${section.level_id}|${track}`;
@@ -226,20 +234,60 @@ export async function listMySowRows(
     ])
   );
 
+  type SchemeRow = {
+    id: string;
+    state: SowState;
+    subject_id: string;
+    level_id: string;
+    track: SowTrack;
+    scheme_of_work_classes: { section_id: string }[] | null;
+  };
   const schemeByKey = new Map(
-    (
-      (schemes.data ?? []) as {
-        id: string;
-        state: SowState;
-        subject_id: string;
-        level_id: string;
-        track: SowTrack;
-      }[]
-    ).map((s) => [`${s.subject_id}|${s.level_id}|${s.track}`, s])
+    ((schemes.data ?? []) as SchemeRow[]).map((s) => [
+      `${s.subject_id}|${s.level_id}|${s.track}`,
+      s,
+    ])
   );
+
+  // Names for the SOW's saved classes, which may not be the teacher's own.
+  const sowSectionIds = [
+    ...new Set(
+      [...groups.keys()].flatMap((key) =>
+        (schemeByKey.get(key)?.scheme_of_work_classes ?? []).map(
+          (c) => c.section_id
+        )
+      )
+    ),
+  ];
+  const sectionNames = new Map<string, string>(
+    [...sectionById.values()].map((s) => [s.id, s.name])
+  );
+  const missing = sowSectionIds.filter((id) => !sectionNames.has(id));
+  if (missing.length > 0) {
+    const { data, error } = await service
+      .from('sections')
+      .select('id, name')
+      .in('id', missing);
+    if (error) throw new Error(error.message);
+    for (const s of (data ?? []) as { id: string; name: string }[]) {
+      sectionNames.set(s.id, s.name);
+    }
+  }
+
+  const byName = (
+    x: { sectionId: string; name: string },
+    y: { sectionId: string; name: string }
+  ) => x.name.localeCompare(y.name);
 
   const rows: MySowRow[] = [...groups.entries()].map(([key, g]) => {
     const scheme = schemeByKey.get(key);
+    const mine = [...g.classes.entries()].map(([sectionId, name]) => ({
+      sectionId,
+      name,
+    }));
+    const onSow = new Set(
+      (scheme?.scheme_of_work_classes ?? []).map((c) => c.section_id)
+    );
     return {
       termId,
       subjectId: g.subjectId,
@@ -247,9 +295,17 @@ export async function listMySowRows(
       track: g.track,
       subjectName: subjectName.get(g.subjectId) ?? '',
       levelLabel: levelLabel.get(g.levelId) ?? '',
-      classes: [...g.classes.entries()]
-        .map(([sectionId, name]) => ({ sectionId, name }))
-        .sort((x, y) => x.name.localeCompare(y.name)),
+      classes: scheme
+        ? [...onSow]
+            .map((sectionId) => ({
+              sectionId,
+              name: sectionNames.get(sectionId) ?? '',
+            }))
+            .sort(byName)
+        : mine.sort(byName),
+      myClassesNotOnSow: scheme
+        ? mine.filter((c) => !onSow.has(c.sectionId)).sort(byName)
+        : [],
       sow: scheme ? { id: scheme.id, state: scheme.state } : null,
     };
   });

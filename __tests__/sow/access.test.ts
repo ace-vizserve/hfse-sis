@@ -19,7 +19,12 @@ vi.mock('@/lib/auth/teacher-assignments', () => ({
 }));
 
 import type { EffectiveAssignmentRow } from '@/lib/auth/teacher-assignments';
-import { listMySowRows, sowCapability, type SowState } from '@/lib/sow/access';
+import {
+  isOnCurrentApprovalStep,
+  listMySowRows,
+  sowCapability,
+  type SowState,
+} from '@/lib/sow/access';
 
 function assignment(
   over: Partial<EffectiveAssignmentRow> = {}
@@ -123,7 +128,8 @@ function fakeService(tables: Tables): SupabaseClient {
     const rows = tables[table] ?? [];
     const chain: Record<string, unknown> = {};
     const result = { data: rows, error: null };
-    for (const m of ['select', 'eq', 'in', 'order']) chain[m] = () => chain;
+    for (const m of ['select', 'eq', 'in', 'order', 'contains', 'limit'])
+      chain[m] = () => chain;
     chain.maybeSingle = async () => ({ data: rows[0] ?? null, error: null });
     chain.then = (res: (v: typeof result) => unknown) => res(result);
     return chain;
@@ -189,6 +195,7 @@ describe('listMySowRows', () => {
         subject_id: 'math',
         level_id: 'p1',
         track: 'Standard',
+        scheme_of_work_classes: [{ section_id: 's1' }, { section_id: 's2' }],
       },
     ];
     const rows = await listMySowRows(fakeService(tables), 'u1', 'term');
@@ -204,6 +211,47 @@ describe('listMySowRows', () => {
       sow: { id: 'w1', state: 'draft' },
     });
     expect(rows[1]).toMatchObject({ track: 'Global', sow: null });
+  });
+
+  it('shows the SOW classes, and flags my sections that are not on it', async () => {
+    loadMock.mockResolvedValue([
+      assignment({ section_id: 's1' }),
+      assignment({ id: 'a2', section_id: 's2' }),
+    ]);
+    const tables = baseTables();
+    tables.schemes_of_work = [
+      {
+        id: 'w1',
+        state: 'draft',
+        subject_id: 'math',
+        level_id: 'p1',
+        track: 'Standard',
+        scheme_of_work_classes: [{ section_id: 's1' }, { section_id: 'sX' }],
+      },
+    ];
+    tables.sections.push({
+      id: 'sX',
+      name: 'P1 Hope',
+      level_id: 'p1',
+      class_type: 'Standard',
+      academic_year_id: 'ay',
+    });
+    const [row] = await listMySowRows(fakeService(tables), 'u1', 'term');
+    expect(row.classes).toEqual([
+      { sectionId: 'sX', name: 'P1 Hope' },
+      { sectionId: 's1', name: 'P1 Patience' },
+    ]);
+    expect(row.myClassesNotOnSow).toEqual([
+      { sectionId: 's2', name: 'P1 Courage' },
+    ]);
+  });
+
+  it('a not-started row has my sections and nothing flagged', async () => {
+    loadMock.mockResolvedValue([assignment({ section_id: 's1' })]);
+    const [row] = await listMySowRows(fakeService(baseTables()), 'u1', 'term');
+    expect(row.sow).toBeNull();
+    expect(row.classes).toEqual([{ sectionId: 's1', name: 'P1 Patience' }]);
+    expect(row.myClassesNotOnSow).toEqual([]);
   });
 
   it('skips a subject with no subject_configs row', async () => {
@@ -224,5 +272,34 @@ describe('listMySowRows', () => {
     ]);
     const rows = await listMySowRows(fakeService(baseTables()), 'u1', 'term');
     expect(rows).toEqual([]);
+  });
+});
+
+describe('isOnCurrentApprovalStep', () => {
+  it('is true when a stage of the current request lists the user', async () => {
+    const service = fakeService({
+      approval_requests: [{ id: 'r1' }],
+      approval_request_stages: [{ id: 'st1' }],
+    });
+    expect(await isOnCurrentApprovalStep(service, 'u1', 'sub1')).toBe(true);
+  });
+
+  it('is false when no stage lists the user, or there is no request', async () => {
+    expect(
+      await isOnCurrentApprovalStep(
+        fakeService({
+          approval_requests: [{ id: 'r1' }],
+          approval_request_stages: [],
+        }),
+        'u1',
+        'sub1'
+      )
+    ).toBe(false);
+    expect(await isOnCurrentApprovalStep(fakeService({}), 'u1', 'sub1')).toBe(
+      false
+    );
+    expect(await isOnCurrentApprovalStep(fakeService({}), 'u1', null)).toBe(
+      false
+    );
   });
 });
