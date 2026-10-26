@@ -283,6 +283,10 @@ export const ALL_AUDIT_ACTIONS = [
   // One row per save of a subject's whole list; the context carries the list
   // before and after, and how many waiting schemes were brought in line.
   'sow.subject_head.set',
+  // A teacher started a scheme of work, blank or copied from last year. The
+  // context carries how it started and how many weeks and classes — never the
+  // content.
+  'sow.create',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
@@ -352,6 +356,7 @@ export type AuditEntityType =
   | 'template_subject_level_offering'
   | 'template_application'
   | 'subject'
+  | 'scheme_of_work'
   | 'school_config'
   | 'user_account'
   | 'evaluation_writeup'

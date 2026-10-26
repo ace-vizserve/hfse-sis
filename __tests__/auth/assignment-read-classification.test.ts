@@ -100,6 +100,11 @@ const CLASSIFIED: Record<string, Category[]> = {
   // Diligence may file for it. The code already used the relief-inclusive
   // loader; this records the rule rather than changing it.
   'lib/declarations/staff-filing.ts': ['act'],
+  // Scheme of work (migration 198): who may start and edit one. Reads the
+  // relief-inclusive loader and then drops relief itself — cover reads a plan
+  // but never creates or edits it.
+  'lib/sow/access.ts': ['act'],
+  'lib/sow/create.ts': ['act'],
   // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
   // relief-inclusive half of the pair, so the act/name decision is made here
   // rather than deferred to callers — which is why it is `act` and not

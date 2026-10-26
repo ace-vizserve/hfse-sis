@@ -302,6 +302,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
 
   // Scheme of work (migration 198)
   'sow.subject_head.set': 'Subject heads changed',
+  'sow.create': 'Scheme of work started',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -982,6 +983,19 @@ function templateSummary(
         );
       if (boolish(ctx.partial) === true)
         parts.push('waiting schemes of work were not brought in line');
+      return joinParts(parts);
+    }
+
+    case 'sow.create': {
+      const parts: string[] = [
+        str(ctx.started_from) === 'copy'
+          ? 'copied from last year'
+          : 'started blank',
+      ];
+      const weeks = numish(ctx.week_count);
+      if (weeks !== null) parts.push(plural(weeks, 'week'));
+      const classes = numish(ctx.class_count);
+      if (classes !== null) parts.push(plural(classes, 'class', 'classes'));
       return joinParts(parts);
     }
 
