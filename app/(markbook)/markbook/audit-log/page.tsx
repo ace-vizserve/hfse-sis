@@ -35,6 +35,8 @@ export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sheet.create',
   // A teacher started a scheme of work (blank or copied from last year).
   'sow.create',
+  // A teacher started one from the school's Excel template.
+  'sow.import',
   // A teacher edited a scheme of work's module details or a week.
   'sow.edit',
   // A scheme of work sent, vetted, approved, returned or reopened.

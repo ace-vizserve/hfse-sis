@@ -206,6 +206,8 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // no tag to bust. A cached SOW reader added later must add the bust here.
   'app/api/sow/route.ts':
     'creates a scheme of work. No cached loader reads the SOW tables.',
+  'app/api/sow/import/route.ts':
+    'creates a scheme of work from an Excel file. No cached loader reads the SOW tables.',
   'app/api/sow/[sowId]/route.ts':
     'saves module details on schemes_of_work. No cached loader reads it.',
   'app/api/sow/[sowId]/weeks/[weekNumber]/route.ts':

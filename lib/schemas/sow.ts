@@ -18,7 +18,8 @@ export const CreateSowSchema = z.object({
     .array(z.string().uuid())
     .min(1, 'Tick at least one class.')
     .max(50),
-  start: z.enum(['blank', 'copy']),
+  // 'import' is only valid through POST /api/sow/import, which carries the file.
+  start: z.enum(['blank', 'copy', 'import']),
 });
 export type CreateSowInput = z.infer<typeof CreateSowSchema>;
 
@@ -68,17 +69,34 @@ const rich = z
   .max(20000, 'This is too long. Please shorten it.')
   .nullable();
 
+/** Character caps of the plain-text fields; the Excel import warns on these. */
+export const SOW_MODULE_CAPS = {
+  title: 300,
+  syllabus: 2000,
+  hoursPerWeek: 50,
+  teachingMethods: 2000,
+  passRequirement: 1000,
+  textbook: 1000,
+  references: 2000,
+  remarks: 2000,
+} as const;
+export const SOW_WEEK_PLAIN_CAPS = {
+  topic: 300,
+  textbookPages: 200,
+  assessment: 500,
+} as const;
+
 /** Module details. Every key is optional: a save sends only what changed. */
 export const SowModuleEditSchema = z
   .object({
-    title: plain(300),
-    syllabus: plain(2000),
-    hoursPerWeek: plain(50),
-    teachingMethods: plain(2000),
-    passRequirement: plain(1000),
-    textbook: plain(1000),
-    references: plain(2000),
-    remarks: plain(2000),
+    title: plain(SOW_MODULE_CAPS.title),
+    syllabus: plain(SOW_MODULE_CAPS.syllabus),
+    hoursPerWeek: plain(SOW_MODULE_CAPS.hoursPerWeek),
+    teachingMethods: plain(SOW_MODULE_CAPS.teachingMethods),
+    passRequirement: plain(SOW_MODULE_CAPS.passRequirement),
+    textbook: plain(SOW_MODULE_CAPS.textbook),
+    references: plain(SOW_MODULE_CAPS.references),
+    remarks: plain(SOW_MODULE_CAPS.remarks),
   })
   .partial()
   .strict();
@@ -87,11 +105,11 @@ export type SowModule = z.infer<typeof SowModuleEditSchema>;
 /** One week's fields. Only the keys sent are written. */
 export const SowWeekFieldsSchema = z
   .object({
-    topic: plain(300),
+    topic: plain(SOW_WEEK_PLAIN_CAPS.topic),
     learningOutcomes: rich,
-    textbookPages: plain(200),
+    textbookPages: plain(SOW_WEEK_PLAIN_CAPS.textbookPages),
     activities: rich,
-    assessment: plain(500),
+    assessment: plain(SOW_WEEK_PLAIN_CAPS.assessment),
     remarks: rich,
   })
   .partial()

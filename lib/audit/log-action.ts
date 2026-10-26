@@ -287,6 +287,10 @@ export const ALL_AUDIT_ACTIONS = [
   // context carries how it started and how many weeks and classes — never the
   // content.
   'sow.create',
+  // A teacher started a scheme of work from the school's Excel template. The
+  // context carries the week and warning counts and the file's size and name —
+  // never what was in it.
+  'sow.import',
   // A teacher saved the module details or one week of a scheme of work, or
   // deleted a surplus week. The context names the fields changed — never the
   // text.

@@ -1,7 +1,8 @@
 'use client';
 
+import { FileSpreadsheet } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 
 import type { MySowListRow } from '@/components/sow/my-sows-table';
 import { Button } from '@/components/ui/button';
@@ -34,12 +35,24 @@ import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
 
 // New SOW (board 2). Starts a draft for one subject x level x track this term,
-// blank or copied from last year's approved scheme, and opens it.
+// blank, copied from last year's approved scheme, or imported once from the
+// school's Excel template, and opens it.
 //
 // Opened from a row ("Start SOW"), the subject, level, track and term are that
 // row's and are shown, not picked. Opened from "New SOW", one select offers
 // the rows not started yet — the only combinations the teacher can create.
-// (The Excel import option is Task 11.)
+//
+// Import reads the file on the server first (`?preview=1`) so the teacher sees
+// what was found before anything is written; "Create draft" then sends the
+// same file again to create it.
+
+type Start = 'copy' | 'blank' | 'import';
+type ImportPreview = {
+  module: { title?: string | null };
+  weeks: unknown[];
+  warnings: string[];
+};
+const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const CHOICE_CLASS =
   'flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5';
@@ -87,7 +100,7 @@ export function NewSowSheet({
 /** A row's defaults: the teacher's own classes, and last year's copy if any. */
 const ticksFor = (r: MySowListRow | null) =>
   new Set(r ? r.classes.map((c) => c.sectionId) : []);
-const startFor = (r: MySowListRow | null): 'copy' | 'blank' =>
+const startFor = (r: MySowListRow | null): Start =>
   r?.lastYear ? 'copy' : 'blank';
 
 function NewSowForm({
@@ -110,9 +123,21 @@ function NewSowForm({
   );
   const row = findRow(key);
   const [ticked, setTicked] = useState<Set<string>>(() => ticksFor(row));
-  const [start, setStart] = useState<'copy' | 'blank'>(() => startFor(row));
+  const [start, setStart] = useState<Start>(() => startFor(row));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
+  const [reading, setReading] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  function clearFile() {
+    setFile(null);
+    setPreview(null);
+    setFileError(null);
+    if (fileInput.current) fileInput.current.value = '';
+  }
 
   function pick(k: string) {
     const next = findRow(k);
@@ -120,6 +145,67 @@ function NewSowForm({
     setTicked(ticksFor(next));
     setStart(startFor(next));
     setError(null);
+    // The tab to read depends on the level, so a chosen file is read again.
+    clearFile();
+  }
+
+  /** What the server sends for a file: the file, and the create input. */
+  function importBody(chosen: File): FormData {
+    const body = new FormData();
+    body.append('file', chosen);
+    body.append(
+      'input',
+      JSON.stringify({
+        key: {
+          termId: row!.termId,
+          subjectId: row!.subjectId,
+          levelId: row!.levelId,
+          track: row!.track,
+        },
+        sectionIds: [...ticked],
+        start: 'import',
+      })
+    );
+    return body;
+  }
+
+  async function chooseFile(chosen: File | null) {
+    if (!chosen || !row) return;
+    setPreview(null);
+    setFileError(null);
+    setFile(chosen);
+    if (!chosen.name.toLowerCase().endsWith('.xlsx')) {
+      setFileError('Only Excel (.xlsx) files can be imported.');
+      return;
+    }
+    if (chosen.size > MAX_FILE_BYTES) {
+      setFileError(
+        'That file is bigger than 5 MB. Choose a smaller Excel file.'
+      );
+      return;
+    }
+    // The preview reads the file for the level's tab, whichever classes are
+    // ticked, so it only needs a class to satisfy the input shape.
+    if (ticked.size === 0) {
+      setFileError('Tick at least one class, then choose the file again.');
+      return;
+    }
+    setReading(true);
+    try {
+      const res = await apiFetch<{ ok: true; preview: ImportPreview }>(
+        '/api/sow/import?preview=1',
+        { method: 'POST', body: importBody(chosen) }
+      );
+      setPreview(res.preview);
+    } catch (e) {
+      setFileError(
+        e instanceof Error && e.message
+          ? e.message
+          : 'Could not read that file. Please try again.'
+      );
+    } finally {
+      setReading(false);
+    }
   }
 
   const sections = row
@@ -135,23 +221,32 @@ function NewSowForm({
       setError('Tick at least one class.');
       return;
     }
+    if (start === 'import' && (!file || !preview)) {
+      setFileError('Choose the Excel file first.');
+      return;
+    }
     setError(null);
     setSaving(true);
     const result = await run(
       () =>
-        apiFetch<{ ok: true; sowId: string }>(
-          '/api/sow',
-          jsonInit('POST', {
-            key: {
-              termId: row.termId,
-              subjectId: row.subjectId,
-              levelId: row.levelId,
-              track: row.track,
-            },
-            sectionIds: [...ticked],
-            start,
-          })
-        ),
+        start === 'import'
+          ? apiFetch<{ ok: true; sowId: string }>('/api/sow/import', {
+              method: 'POST',
+              body: importBody(file!),
+            })
+          : apiFetch<{ ok: true; sowId: string }>(
+              '/api/sow',
+              jsonInit('POST', {
+                key: {
+                  termId: row.termId,
+                  subjectId: row.subjectId,
+                  levelId: row.levelId,
+                  track: row.track,
+                },
+                sectionIds: [...ticked],
+                start,
+              })
+            ),
       {
         pending: 'Creating the draft…',
         success: 'Draft created',
@@ -260,7 +355,7 @@ function NewSowForm({
                 </FieldLegend>
                 <RadioGroup
                   value={start}
-                  onValueChange={(v) => setStart(v as 'copy' | 'blank')}
+                  onValueChange={(v) => setStart(v as Start)}
                   className="gap-2.5"
                 >
                   {row.lastYear && (
@@ -297,8 +392,90 @@ function NewSowForm({
                       </span>
                     </span>
                   </label>
+                  <label htmlFor="new-sow-import" className={CHOICE_CLASS}>
+                    <RadioGroupItem
+                      value="import"
+                      id="new-sow-import"
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-0.5">
+                      <span className="block text-sm font-medium text-foreground">
+                        Import from Excel
+                      </span>
+                      <span className="block text-[13px] text-muted-foreground">
+                        Only for SOWs already written in the template this year.
+                        A one-time step.
+                      </span>
+                    </span>
+                  </label>
                 </RadioGroup>
               </FieldSet>
+
+              {start === 'import' && (
+                <div className="space-y-3 rounded-lg border border-border bg-muted/40 p-3.5">
+                  <input
+                    ref={fileInput}
+                    id="new-sow-file"
+                    type="file"
+                    accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    className="sr-only"
+                    onChange={(e) => chooseFile(e.target.files?.[0] ?? null)}
+                  />
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={reading}
+                      onClick={() => fileInput.current?.click()}
+                    >
+                      <FileSpreadsheet aria-hidden />
+                      {file ? 'Choose another file' : 'Choose Excel file'}
+                    </Button>
+                    {file && (
+                      <span className="min-w-0 truncate text-[13px] text-muted-foreground">
+                        {file.name}
+                      </span>
+                    )}
+                  </div>
+                  {reading && (
+                    <p
+                      className="text-[13px] text-muted-foreground"
+                      role="status"
+                    >
+                      Reading the file…
+                    </p>
+                  )}
+                  {fileError && (
+                    <p role="alert" className="text-sm text-destructive">
+                      {fileError}
+                    </p>
+                  )}
+                  {preview && (
+                    <div className="space-y-2 text-[13px] text-ink-2">
+                      <p className="font-medium text-foreground">
+                        {preview.module.title
+                          ? `${preview.module.title} · `
+                          : ''}
+                        {preview.weeks.length}{' '}
+                        {preview.weeks.length === 1 ? 'week' : 'weeks'} read
+                        from the {row.levelLabel} tab
+                      </p>
+                      {preview.warnings.length > 0 && (
+                        <ul className="list-disc space-y-1 pl-5">
+                          {preview.warnings.map((w) => (
+                            <li key={w}>{w}</li>
+                          ))}
+                        </ul>
+                      )}
+                      <FieldDescription>
+                        Week dates and school events are set from the{' '}
+                        {ayCode ? `${ayCode} ` : ''}calendar, not the file.
+                      </FieldDescription>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {start === 'copy' && row.lastYear && (
                 <div className="space-y-1.5 rounded-lg border border-border bg-muted/40 p-3.5 text-[13px] text-ink-2">
@@ -326,7 +503,7 @@ function NewSowForm({
           </SheetClose>
           <Button
             type="submit"
-            disabled={!row}
+            disabled={!row || (start === 'import' && (!preview || reading))}
             loading={saving}
             loadingText="Creating…"
           >

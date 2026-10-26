@@ -604,3 +604,76 @@ describe('findLastYearSow', () => {
     ).toBeNull();
   });
 });
+
+describe('createSow — import from Excel', () => {
+  const sow = {
+    module: { title: 'Maths' },
+    weeks: [1, 2, 3, 4, 5].map((n) => ({
+      weekNumber: n,
+      topic: `Topic ${n}`,
+      learningOutcomes: n === 2 ? '<p>Add</p>' : '',
+      textbookPages: '',
+      activities: '',
+      assessment: '',
+      remarks: '',
+    })),
+    warnings: ['one'],
+  };
+  const imported = { sow, fileSize: 1234, fileName: 'maths.xlsx' };
+
+  it('hangs the content on week numbers; a fifth week becomes a surplus row', async () => {
+    const { service, tables } = fakeService(world());
+    const res = await createSow(
+      service,
+      ACTOR,
+      { key: KEY, sectionIds: ['s1'], start: 'import' },
+      imported
+    );
+    expect(res.ok).toBe(true);
+    expect(tables.schemes_of_work.at(-1)).toMatchObject({
+      state: 'draft',
+      started_from: 'import',
+      module: { title: 'Maths' },
+    });
+    const weeks = tables.scheme_of_work_weeks;
+    expect(weeks.map((w) => [w.week_number, w.topic, w.starts_on])).toEqual([
+      [1, 'Topic 1', '2026-10-05'],
+      [2, 'Topic 2', '2026-10-12'],
+      [3, 'Topic 3', '2026-10-26'],
+      [4, 'Topic 4', '2026-11-02'],
+      // The term has four weeks; the file's fifth sits after the last.
+      [5, 'Topic 5', '2026-11-02'],
+    ]);
+    // Empty cells are nulls; filled ones are kept.
+    expect(weeks[1].learning_outcomes).toBe('<p>Add</p>');
+    expect(weeks[0].learning_outcomes).toBeNull();
+  });
+
+  it('audits sow.import with counts and the file, never the content', async () => {
+    const { service } = fakeService(world());
+    await createSow(
+      service,
+      ACTOR,
+      { key: KEY, sectionIds: ['s1'], start: 'import' },
+      imported
+    );
+    const call = logMock.mock.calls[0][0];
+    expect(call.action).toBe('sow.import');
+    expect(call.context).toMatchObject({
+      week_count: 5,
+      warnings_count: 1,
+      file_size: 1234,
+    });
+    expect(JSON.stringify(call.context)).not.toContain('Topic');
+  });
+
+  it('refuses an import with no file behind it', async () => {
+    const { service } = fakeService(world());
+    const res = await createSow(service, ACTOR, {
+      key: KEY,
+      sectionIds: ['s1'],
+      start: 'import',
+    });
+    expect(res).toMatchObject({ ok: false, status: 400 });
+  });
+});

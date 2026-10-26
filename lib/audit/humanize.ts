@@ -303,6 +303,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Scheme of work (migration 198)
   'sow.subject_head.set': 'Subject heads changed',
   'sow.create': 'Scheme of work started',
+  'sow.import': 'Scheme of work imported from Excel',
   'sow.edit': 'Scheme of work edited',
   'sow.submit': 'Scheme of work sent for review',
   'sow.vet': 'Scheme of work vetted',
@@ -1002,6 +1003,15 @@ function templateSummary(
       if (weeks !== null) parts.push(plural(weeks, 'week'));
       const classes = numish(ctx.class_count);
       if (classes !== null) parts.push(plural(classes, 'class', 'classes'));
+      return joinParts(parts);
+    }
+
+    case 'sow.import': {
+      const parts: string[] = ['from the Excel template'];
+      const weeks = numish(ctx.week_count);
+      if (weeks !== null) parts.push(plural(weeks, 'week'));
+      const warnings = numish(ctx.warnings_count);
+      if (warnings) parts.push(plural(warnings, 'warning'));
       return joinParts(parts);
     }
 

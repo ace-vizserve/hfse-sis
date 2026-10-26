@@ -12,9 +12,11 @@ import {
 } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import type { SowKey } from '@/lib/sow/access';
+import type { ParsedSow } from '@/lib/sow/excel-import';
 import { loadTermWeeks, reconcileWeeks } from '@/lib/sow/weeks';
 
-// Creating a scheme of work (SOW), blank or copied from last year.
+// Creating a scheme of work (SOW): blank, copied from last year, or imported
+// once from the school's Excel template (`lib/sow/excel-import.ts`).
 //
 // Who may: a teacher who HOLDS the subject (subject teacher or co-teacher, not
 // relief cover) on at least one of the ticked classes. The role does not
@@ -28,6 +30,13 @@ export type SowActor = {
   id: string;
   email: string | null;
   role?: Role | null;
+};
+
+/** A parsed Excel file and the facts about it that the audit row records. */
+export type ImportedFile = {
+  sow: ParsedSow;
+  fileSize: number;
+  fileName: string;
 };
 
 export type CreateSowResult =
@@ -144,7 +153,9 @@ const contentColumns = (c: WeekContent | undefined) => ({
 export async function createSow(
   service: SupabaseClient,
   actor: SowActor,
-  input: CreateSowInput
+  input: CreateSowInput,
+  /** The parsed Excel file, when `input.start` is 'import'. */
+  imported?: ImportedFile
 ): Promise<CreateSowResult> {
   const { key, start } = input;
   const sectionIds = [...new Set(input.sectionIds)];
@@ -276,6 +287,13 @@ export async function createSow(
   };
   let weekRows: WeekRow[];
 
+  // A copy and an import both bring a module and numbered weeks from
+  // somewhere else; either hangs on the week NUMBER.
+  let source: {
+    module: Record<string, unknown>;
+    weeks: SowSnapshot['weeks'];
+  } | null = null;
+
   if (start === 'copy') {
     const last = await loadLastYear(service, key);
     if (!last) {
@@ -291,14 +309,31 @@ export async function createSow(
         "Last year's scheme of work could not be read, so it cannot be copied. Start a blank one instead."
       );
     }
-    const snapshot = parsed.data;
-    module = snapshot.module;
+    source = parsed.data;
     copiedFrom = last.id;
+  } else if (start === 'import') {
+    if (!imported) {
+      return fail(400, 'Choose the Excel file to import.');
+    }
+    // A cell the teacher left empty is a null column, not an empty string.
+    source = {
+      module: imported.sow.module,
+      weeks: imported.sow.weeks.map((w) => ({
+        weekNumber: w.weekNumber,
+        topic: w.topic || null,
+        learningOutcomes: w.learningOutcomes || null,
+        textbookPages: w.textbookPages || null,
+        activities: w.activities || null,
+        assessment: w.assessment || null,
+        remarks: w.remarks || null,
+      })),
+    };
+  }
 
-    const { kept, missing, surplus } = reconcileWeeks(
-      snapshot.weeks,
-      termWeeks
-    );
+  if (source) {
+    module = source.module;
+
+    const { kept, missing, surplus } = reconcileWeeks(source.weeks, termWeeks);
     const lastTermWeek = termWeeks[termWeeks.length - 1];
     weekRows = [
       ...kept.map((w) => ({
@@ -393,15 +428,27 @@ export async function createSow(
   await logAction({
     service,
     actor: { id: actor.id, email: actor.email, role: actor.role ?? null },
-    action: 'sow.create',
+    action: start === 'import' ? 'sow.import' : 'sow.create',
     entityType: 'scheme_of_work',
     entityId: sowId,
-    context: {
-      started_from: start,
-      copied_from_sow_id: copiedFrom,
-      week_count: weekRows.length,
-      class_count: sectionIds.length,
-    },
+    // An import's context says how big the file was and how many warnings it
+    // raised — never what was in it.
+    context:
+      start === 'import' && imported
+        ? {
+            started_from: start,
+            week_count: weekRows.length,
+            class_count: sectionIds.length,
+            warnings_count: imported.sow.warnings.length,
+            file_size: imported.fileSize,
+            file_name: imported.fileName,
+          }
+        : {
+            started_from: start,
+            copied_from_sow_id: copiedFrom,
+            week_count: weekRows.length,
+            class_count: sectionIds.length,
+          },
   });
 
   return { ok: true, sowId };
