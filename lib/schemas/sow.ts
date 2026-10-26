@@ -57,3 +57,55 @@ export const SowSnapshotSchema = z.object({
     ),
 });
 export type SowSnapshot = z.infer<typeof SowSnapshotSchema>;
+
+// ── Editing ─────────────────────────────────────────────────────────────────
+
+const plain = (max: number) =>
+  z.string().max(max, `Keep this under ${max} characters.`).nullable();
+// Rich text is stored as sanitised HTML; the cap is on the HTML as sent.
+const rich = z
+  .string()
+  .max(20000, 'This is too long. Please shorten it.')
+  .nullable();
+
+/** Module details. Every key is optional: a save sends only what changed. */
+export const SowModuleEditSchema = z
+  .object({
+    title: plain(300),
+    syllabus: plain(2000),
+    hoursPerWeek: plain(50),
+    teachingMethods: plain(2000),
+    passRequirement: plain(1000),
+    textbook: plain(1000),
+    references: plain(2000),
+    remarks: plain(2000),
+  })
+  .partial()
+  .strict();
+export type SowModule = z.infer<typeof SowModuleEditSchema>;
+
+/** One week's fields. Only the keys sent are written. */
+export const SowWeekFieldsSchema = z
+  .object({
+    topic: plain(300),
+    learningOutcomes: rich,
+    textbookPages: plain(200),
+    activities: rich,
+    assessment: plain(500),
+    remarks: rich,
+  })
+  .partial()
+  .strict();
+export type SowWeekFields = z.infer<typeof SowWeekFieldsSchema>;
+
+const ExpectedUpdatedAt = z.string().min(1, 'Reload the page and try again.');
+
+export const PatchSowModuleSchema = z.object({
+  module: SowModuleEditSchema,
+  expectedUpdatedAt: ExpectedUpdatedAt,
+});
+
+export const PatchSowWeekSchema = z.object({
+  fields: SowWeekFieldsSchema,
+  expectedUpdatedAt: ExpectedUpdatedAt,
+});

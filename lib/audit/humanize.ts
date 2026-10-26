@@ -303,6 +303,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Scheme of work (migration 198)
   'sow.subject_head.set': 'Subject heads changed',
   'sow.create': 'Scheme of work started',
+  'sow.edit': 'Scheme of work edited',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -996,6 +997,20 @@ function templateSummary(
       if (weeks !== null) parts.push(plural(weeks, 'week'));
       const classes = numish(ctx.class_count);
       if (classes !== null) parts.push(plural(classes, 'class', 'classes'));
+      return joinParts(parts);
+    }
+
+    case 'sow.edit': {
+      const week = numish(ctx.week_number);
+      const parts: string[] = [
+        str(ctx.target) === 'week' && week !== null
+          ? `week ${week}`
+          : 'module details',
+      ];
+      if (boolish(ctx.deleted) === true) parts.push('week deleted');
+      else if (Array.isArray(ctx.fields) && ctx.fields.length > 0) {
+        parts.push(`changed: ${ctx.fields.map(String).join(', ')}`);
+      }
       return joinParts(parts);
     }
 

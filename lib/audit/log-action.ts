@@ -287,6 +287,10 @@ export const ALL_AUDIT_ACTIONS = [
   // context carries how it started and how many weeks and classes — never the
   // content.
   'sow.create',
+  // A teacher saved the module details or one week of a scheme of work, or
+  // deleted a surplus week. The context names the fields changed — never the
+  // text.
+  'sow.edit',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
