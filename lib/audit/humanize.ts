@@ -41,6 +41,7 @@ import {
   STAGED_FLOW_LABELS,
 } from '@/lib/schemas/approval-flows';
 import { APPROVER_FLOW_LABELS } from '@/lib/schemas/approvers';
+import { CHECK_LABELS, isCheckOption } from '@/lib/sow/check-options';
 import {
   ATTENDANCE_STATUS_LABELS,
   EX_REASON_LABELS,
@@ -310,6 +311,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sow.approve': 'Scheme of work approved',
   'sow.return': 'Scheme of work returned',
   'sow.reopen': 'Scheme of work reopened',
+  'sow.check': 'Scheme of work week checked',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -1056,6 +1058,16 @@ function templateSummary(
     case 'sow.reopen': {
       const note = str(ctx.note);
       return note ? `reason: ${note}` : null;
+    }
+
+    case 'sow.check': {
+      const parts: string[] = [];
+      const week = numish(ctx.week_number);
+      if (week !== null) parts.push(`week ${week}`);
+      const option = str(ctx.option);
+      if (isCheckOption(option)) parts.push(CHECK_LABELS[option]);
+      if (boolish(ctx.note_present) === true) parts.push('with a note');
+      return joinParts(parts);
     }
 
     // The older pooled change-request approvers ------------------------------

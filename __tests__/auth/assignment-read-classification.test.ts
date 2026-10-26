@@ -109,6 +109,10 @@ const CLASSIFIED: Record<string, Category[]> = {
   // do (read.ts: the capability, and whether they teach it) — same rule.
   'lib/sow/edit.ts': ['act'],
   'lib/sow/read.ts': ['act'],
+  // The weekly check (Task 13): who may record one (relief-inclusive loader,
+  // then substantive only — cover never checks), and who a class's week waits
+  // on (holders read by `teacher_user_id`, the relief column never consulted).
+  'lib/sow/checks.ts': ['act'],
   // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
   // relief-inclusive half of the pair, so the act/name decision is made here
   // rather than deferred to callers — which is why it is `act` and not

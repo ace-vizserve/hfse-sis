@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { CHECK_OPTIONS } from '@/lib/sow/check-options';
+
 // Scheme of Work — the shapes every SOW route and writer shares.
 
 export const SowTrackSchema = z.enum(['Standard', 'Global']);
@@ -133,6 +135,18 @@ export const ReopenSowSchema = z.object({
     .trim()
     .min(1, 'Say why it is being reopened.')
     .max(300, 'Keep the note to 300 characters or fewer.'),
+});
+
+/**
+ * One class's weekly check (POST /api/sow/[sowId]/checks). Whether a note is
+ * needed, and how long it may be, is `recordCheck`'s to say (422) — the shape
+ * only refuses what no screen sends.
+ */
+export const RecordSowCheckSchema = z.object({
+  weekNumber: z.number().int().min(1),
+  sectionId: z.string().uuid(),
+  option: z.enum(CHECK_OPTIONS),
+  note: z.string().max(20000).nullable(),
 });
 
 export const PatchSowWeekSchema = z.object({

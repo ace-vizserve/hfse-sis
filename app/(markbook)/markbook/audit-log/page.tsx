@@ -45,6 +45,8 @@ export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sow.approve',
   'sow.return',
   'sow.reopen',
+  // A teacher checked how a class's week went.
+  'sow.check',
   'sheet.bulk_create',
   'sheet.delete',
   'sheet.switch_type',

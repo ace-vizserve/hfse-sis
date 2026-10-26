@@ -306,6 +306,11 @@ export const ALL_AUDIT_ACTIONS = [
   'sow.approve',
   'sow.return',
   'sow.reopen',
+  // A teacher said how one class's week went on an approved scheme of work
+  // (As planned / Adjusted / Delayed / Extra activities). The context carries
+  // the week, the class, the option and THAT there was a note — never the
+  // note itself.
+  'sow.check',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',

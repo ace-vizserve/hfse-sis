@@ -30,6 +30,7 @@ import {
 import { ReopenSowDialog } from '@/components/sow/reopen-sow-dialog';
 import { ReturnSowDialog } from '@/components/sow/return-sow-dialog';
 import { SowStatusBadge } from '@/components/sow/sow-status-badge';
+import { WeekChecks } from '@/components/sow/week-checks';
 import { WeekList } from '@/components/sow/week-list';
 import {
   Breadcrumb,
@@ -410,16 +411,29 @@ export function SowPage({ view }: { view: SowView }) {
         <div className="min-w-0 space-y-6">
           <ModuleDetails module={view.module} />
 
-          <WeekList
-            weeks={view.weeks}
-            breaks={view.breaks}
-            canEdit={canEdit}
-            returnWeekNumber={returnNote?.weekNumber ?? null}
-            currentWeekNumber={view.thisWeekNumber}
-            onEdit={setEditing}
-            onDelete={deleteWeek}
-            deleting={deleting}
-          />
+          {/* Approved: the weeks ARE the weekly check (board 7). Being
+              revised after a reopen: the check keeps running on the last
+              approved plan, above the working copy being edited. */}
+          {view.checking && (
+            <WeekChecks
+              sowId={view.id}
+              checking={view.checking}
+              revising={view.state !== 'approved'}
+            />
+          )}
+
+          {(view.state !== 'approved' || !view.checking) && (
+            <WeekList
+              weeks={view.weeks}
+              breaks={view.breaks}
+              canEdit={canEdit}
+              returnWeekNumber={returnNote?.weekNumber ?? null}
+              currentWeekNumber={view.thisWeekNumber}
+              onEdit={setEditing}
+              onDelete={deleteWeek}
+              deleting={deleting}
+            />
+          )}
         </div>
       </div>
 

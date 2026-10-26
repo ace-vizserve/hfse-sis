@@ -16,6 +16,7 @@ import {
 import { sgToday } from '@/lib/dates';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { REOPEN_ROLES } from '@/lib/sow/approval';
+import { loadSowChecking, type SowChecking } from '@/lib/sow/checks';
 import type { SowActor } from '@/lib/sow/create';
 import {
   loadFirstSowStepLabel,
@@ -92,6 +93,12 @@ export type SowView = {
   firstStepLabel: string | null;
   /** While approved: the week today falls in (Singapore), if any. */
   thisWeekNumber: number | null;
+  /**
+   * The weekly check (Task 13), read from the APPROVED snapshot — so it is
+   * set while approved and also while a reopened scheme is being revised.
+   * Null when the scheme has never been approved.
+   */
+  checking: SowChecking | null;
 };
 
 /** The scheme, or null when it does not exist or the caller cannot read it. */
@@ -103,7 +110,7 @@ export async function loadSowView(
   const { data, error } = await service
     .from('schemes_of_work')
     .select(
-      'id, academic_year_id, term_id, subject_id, level_id, track, state, module, updated_at, current_submission_id, copied_from_sow_id'
+      'id, academic_year_id, term_id, subject_id, level_id, track, state, module, updated_at, current_submission_id, copied_from_sow_id, approved_snapshot'
     )
     .eq('id', sowId)
     .maybeSingle();
@@ -121,6 +128,7 @@ export async function loadSowView(
     module: Record<string, unknown> | null;
     updated_at: string;
     current_submission_id: string | null;
+    approved_snapshot: unknown;
   };
 
   const [classRes, weekRes, assignments, onStep, termWeeks] = await Promise.all(
@@ -187,7 +195,7 @@ export async function loadSowView(
     updated_at: string;
   };
 
-  const [display, review, firstStepLabel] = await Promise.all([
+  const [display, review, firstStepLabel, checking] = await Promise.all([
     loadDisplay(service, sow),
     sow.state === 'draft'
       ? Promise.resolve(null)
@@ -197,6 +205,18 @@ export async function loadSowView(
     sow.state === 'returned' || sow.state === 'in_review'
       ? loadFirstSowStepLabel(service)
       : Promise.resolve(null),
+    sow.approved_snapshot == null
+      ? Promise.resolve(null)
+      : loadSowChecking(service, {
+          viewerId: actor.id,
+          sowId: sow.id,
+          subjectId: sow.subject_id,
+          approvedSnapshot: sow.approved_snapshot,
+          termWeeks: termWeeks.weeks,
+          eventsByWeek: termWeeks.eventsByWeek,
+          classes,
+          viewerAssignments: assignments,
+        }),
   ]);
   const teachesIt = assignments.some(
     (a) =>
@@ -251,6 +271,7 @@ export async function loadSowView(
     canReopen: actor.role != null && REOPEN_ROLES.includes(actor.role),
     firstStepLabel,
     thisWeekNumber,
+    checking,
   };
 }
 
