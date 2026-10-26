@@ -2,9 +2,12 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { getStaffDisplayEntries } from '@/lib/auth/staff-list';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import {
   isOnCurrentApprovalStep,
+  SOW_APPROVAL_SUBJECT_TYPE,
   type SowCapability,
   type SowKey,
   type SowState,
@@ -50,8 +53,21 @@ export type SowView = {
     termEnd: string | null;
     /** "AY2025 Term 2 · Secondary 1 Science", when it was copied. */
     copiedFrom: string | null;
-    /** The note it came back with, while it is returned. */
-    returnNote: { note: string; weekNumber: number | null } | null;
+    /**
+     * The note it came back with, while it is returned, and who returned it
+     * when (null when the step's decider cannot be read).
+     */
+    returnNote: {
+      note: string;
+      weekNumber: number | null;
+      by: string | null;
+      at: string | null;
+    } | null;
+    /**
+     * Set while it is a draft again after the office reopened it: who, when,
+     * and the reason they gave (kept on the `sow.reopen` audit row).
+     */
+    reopened: { by: string; at: string; note: string | null } | null;
   };
   capability: SowCapability;
 };
@@ -193,6 +209,7 @@ export async function loadSowView(
 async function loadDisplay(
   service: SupabaseClient,
   sow: {
+    id: string;
     academic_year_id: string;
     term_id: string;
     subject_id: string;
@@ -264,6 +281,19 @@ async function loadDisplay(
     return_week_number: number | null;
   } | null;
 
+  const [returnedBy, reopened] = await Promise.all([
+    s?.return_note && sow.current_submission_id
+      ? loadReturnedBy(service, sow.current_submission_id)
+      : Promise.resolve(null),
+    sow.state === 'draft'
+      ? loadReopened(service, sow.id)
+      : Promise.resolve(null),
+  ]);
+  const needNames = Boolean(returnedBy?.email || reopened);
+  const nameOf = needNames ? await staffNames() : new Map<string, string>();
+  const name = (email: string | null) =>
+    email ? (nameOf.get(email) ?? email) : null;
+
   return {
     subjectName,
     levelLabel,
@@ -273,7 +303,84 @@ async function loadDisplay(
     termEnd: t?.end_date ?? null,
     copiedFrom,
     returnNote: s?.return_note
-      ? { note: s.return_note, weekNumber: s.return_week_number }
+      ? {
+          note: s.return_note,
+          weekNumber: s.return_week_number,
+          by: name(returnedBy?.email ?? null),
+          at: returnedBy?.at ?? null,
+        }
+      : null,
+    reopened: reopened
+      ? {
+          by: name(reopened.email) ?? 'The office',
+          at: reopened.at,
+          note: reopened.note,
+        }
       : null,
   };
+}
+
+/** Who turned down the step that returned this submission, and when. */
+async function loadReturnedBy(
+  service: SupabaseClient,
+  submissionId: string
+): Promise<{ email: string | null; at: string | null } | null> {
+  const { data: request, error } = await service
+    .from('approval_requests')
+    .select('id')
+    .eq('flow', SOW_APPROVAL_FLOW)
+    .eq('subject_type', SOW_APPROVAL_SUBJECT_TYPE)
+    .eq('subject_id', submissionId)
+    .maybeSingle();
+  if (error || !request) return null;
+  const { data: stage } = await service
+    .from('approval_request_stages')
+    .select('decided_by_email, decided_at')
+    .eq('request_id', (request as { id: string }).id)
+    .eq('status', 'rejected')
+    .maybeSingle();
+  const row = stage as {
+    decided_by_email: string | null;
+    decided_at: string | null;
+  } | null;
+  return row ? { email: row.decided_by_email, at: row.decided_at } : null;
+}
+
+/**
+ * The newest reopen of this scheme. Only asked while it is a draft: a reopened
+ * scheme stays a draft until it is sent again, and a scheme that was never
+ * approved has no reopen row to find.
+ */
+async function loadReopened(
+  service: SupabaseClient,
+  sowId: string
+): Promise<{ email: string | null; at: string; note: string | null } | null> {
+  const { data, error } = await service
+    .from('audit_log')
+    .select('actor_email, created_at, context')
+    .eq('action', 'sow.reopen')
+    .eq('entity_id', sowId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return null;
+  const row = data as {
+    actor_email: string | null;
+    created_at: string;
+    context: { note?: unknown } | null;
+  };
+  return {
+    email: row.actor_email,
+    at: row.created_at,
+    note: typeof row.context?.note === 'string' ? row.context.note : null,
+  };
+}
+
+/** Staff names by email. A lookup failure falls back to the email itself. */
+async function staffNames(): Promise<Map<string, string>> {
+  try {
+    return new Map(await getStaffDisplayEntries());
+  } catch {
+    return new Map();
+  }
 }

@@ -291,6 +291,17 @@ export const ALL_AUDIT_ACTIONS = [
   // deleted a surplus week. The context names the fields changed — never the
   // text.
   'sow.edit',
+  // A scheme of work's trip through its approval steps (KD #196). `submit` is
+  // the teacher sending it; `vet` one step passing with another still to go;
+  // `approve` the last step (the snapshot is frozen); `return` a step sending
+  // it back (the context says which week and THAT there was a note, never the
+  // note); `reopen` the office putting an approved one back to draft — its
+  // context carries the reason, which is about the reopening, not the plan.
+  'sow.submit',
+  'sow.vet',
+  'sow.approve',
+  'sow.return',
+  'sow.reopen',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',

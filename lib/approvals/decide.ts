@@ -12,6 +12,11 @@ import {
   gradeChangeApprovalHandler,
   gradeChangeApprovalPrecheck,
 } from '@/lib/change-requests/approval-handler';
+import { SOW_SUBJECT_TYPE } from '@/lib/sow/approval';
+import {
+  sowApprovalHandler,
+  sowApprovalPrecheck,
+} from '@/lib/sow/approval-handler';
 
 /**
  * Deciding one step of an ordered approval ladder (KD #196), for ANY subject.
@@ -94,6 +99,12 @@ export type SubjectHandlerContext = {
    * here — never from `actor`. Absent (or null) on every click.
    */
   closedStepApprover?: { id: string | null; email: string | null } | null;
+  /**
+   * The week a scheme of work is returned about (the SOW's "which week needs
+   * changing"). Handed ONLY to the scheme-of-work handler, and absent on every
+   * other subject — see `decideApproval`.
+   */
+  weekNumber?: number | null;
 };
 
 /**
@@ -128,6 +139,7 @@ export type SubjectHandler = (
 export const SUBJECT_HANDLERS: Record<string, SubjectHandler> = {
   [DECLARATION_SUBJECT_TYPE]: declarationApprovalHandler,
   [GRADE_CHANGE_SUBJECT_TYPE]: gradeChangeApprovalHandler,
+  [SOW_SUBJECT_TYPE]: sowApprovalHandler,
 };
 
 /** What a pre-check sees: the request as filed, and who is trying to decide. */
@@ -139,6 +151,11 @@ export type SubjectPrecheckContext = {
   /** `approval_requests.filed_by`. Null when the filer's account is unknown. */
   filedBy: string | null;
   action: DecideAction;
+  /**
+   * The decision note, trimmed to null when empty. Read by a subject that
+   * words its own "say why" rule (a scheme of work's return).
+   */
+  note: string | null;
 };
 
 /** A refusal the pipeline returns as-is. Nothing has been recorded. */
@@ -170,6 +187,7 @@ export type SubjectPrecheck = (
  */
 export const SUBJECT_PRECHECKS: Record<string, SubjectPrecheck> = {
   [GRADE_CHANGE_SUBJECT_TYPE]: gradeChangeApprovalPrecheck,
+  [SOW_SUBJECT_TYPE]: sowApprovalPrecheck,
 };
 
 // Named `Params`, not `Input`: `DecideApprovalInput` is already the request
@@ -181,6 +199,8 @@ export type DecideApprovalParams = {
   action: DecideAction;
   note: string | null;
   via: DecideVia;
+  /** A scheme of work's return only; ignored for every other subject. */
+  weekNumber?: number | null;
 };
 
 export type DecideApprovalResult =
@@ -280,6 +300,7 @@ export async function decideApproval(
       subjectId: subject.subject_id,
       filedBy: subject.filed_by ?? null,
       action,
+      note,
     });
     if (refusal) {
       return { ok: false, status: refusal.status, body: refusal.body };
@@ -366,6 +387,11 @@ export async function decideApproval(
       nextStageOrder: result.next_stage_order,
       note,
       via,
+      // ⚠ ONLY THE SCHEME OF WORK GETS A WEEK, and only when one was sent.
+      // Every other handler is called with exactly the context it always was.
+      ...(subject.subject_type === SOW_SUBJECT_TYPE && input.weekNumber != null
+        ? { weekNumber: input.weekNumber }
+        : {}),
     });
   } catch (e) {
     console.error(

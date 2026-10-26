@@ -355,9 +355,9 @@ async function repointSubjectHeadSteps(
     // only if somebody still on it has already approved — and on an 'any'
     // step the first yes closes it at once. Should it happen (a step filed
     // 'all' before the refusal existed), the follow-up runs in this admin's
-    // name exactly as `repointWaitingStages` does it; for a scheme of work
-    // that handler arrives with the submit code, and until then
-    // `runSubjectFollowUp` logs that it has none.
+    // name exactly as `repointWaitingStages` does it, and the scheme-of-work
+    // handler (lib/sow/approval-handler.ts) vets or approves it as a click
+    // would, naming the approval the step closed on.
     if (result.outcome === 'advanced' || result.outcome === 'completed') {
       const { runSubjectFollowUp } = await import('@/lib/approvals/decide');
       await runSubjectFollowUp({

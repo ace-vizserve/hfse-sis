@@ -105,6 +105,17 @@ export const PatchSowModuleSchema = z.object({
   expectedUpdatedAt: ExpectedUpdatedAt,
 });
 
+// ── Reopening ───────────────────────────────────────────────────────────────
+
+/** Same 300-character cap as a decision note. */
+export const ReopenSowSchema = z.object({
+  note: z
+    .string()
+    .trim()
+    .min(1, 'Say why it is being reopened.')
+    .max(300, 'Keep the note to 300 characters or fewer.'),
+});
+
 export const PatchSowWeekSchema = z.object({
   fields: SowWeekFieldsSchema,
   expectedUpdatedAt: ExpectedUpdatedAt,

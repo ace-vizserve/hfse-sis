@@ -4,6 +4,7 @@ import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { DecideApprovalSchema } from '@/lib/schemas/approval-flows';
 import { decideApproval } from '@/lib/approvals/decide';
+import { RETURN_NOTE_REQUIRED, SOW_SUBJECT_TYPE } from '@/lib/sow/approval';
 
 // POST /api/approvals/[requestId]/decide — approve or turn down one step.
 //
@@ -53,13 +54,24 @@ export async function POST(
     // approver makes on a real screen, and "Choose approve or turn down" would
     // be nonsense advice to somebody who has already chosen. The generic line
     // stays as the fallback for a genuinely malformed body.
-    const first = parsed.error.issues[0]?.message;
+    const issue = parsed.error.issues[0];
+    let first = issue?.message;
+    // ⚠ The schema's "say why" sentence is written for a parent's filing. A
+    // scheme of work is returned to a teacher, so it gets its own words —
+    // looked up only on this one failure, so every other refusal is unchanged.
+    if (
+      issue?.path[0] === 'note' &&
+      (body as { action?: unknown } | null)?.action === 'reject' &&
+      (await isSowRequest(requestId))
+    ) {
+      first = RETURN_NOTE_REQUIRED;
+    }
     return NextResponse.json(
       { error: first ?? 'Choose approve or turn down.' },
       { status: 400 }
     );
   }
-  const { action, note } = parsed.data;
+  const { action, note, weekNumber } = parsed.data;
 
   const result = await decideApproval({
     service: createServiceClient(),
@@ -68,7 +80,22 @@ export async function POST(
     action,
     note: note && note.length > 0 ? note : null,
     via: 'in_app',
+    // Handed on to a scheme of work's handler only (`decideApproval`).
+    ...(weekNumber != null ? { weekNumber } : {}),
   });
 
   return NextResponse.json(result.body, { status: result.status });
+}
+
+/** Is this request a scheme of work's? False when it cannot be read. */
+async function isSowRequest(requestId: string): Promise<boolean> {
+  const { data } = await createServiceClient()
+    .from('approval_requests')
+    .select('subject_type')
+    .eq('id', requestId)
+    .maybeSingle();
+  return (
+    (data as { subject_type?: string } | null)?.subject_type ===
+    SOW_SUBJECT_TYPE
+  );
 }

@@ -40,6 +40,20 @@ export function formatRange(startIso: string, endIso: string): string {
   return `${a.day} ${a.month} – ${b.day} ${b.month}`;
 }
 
+/**
+ * "26 Oct 2026" for a moment something happened (an ISO timestamp, not a
+ * date), read on Singapore's calendar so a late-evening decision is not shown
+ * as the next or previous day.
+ */
+export function formatMoment(ts: string): string {
+  return new Intl.DateTimeFormat('en-GB', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Asia/Singapore',
+  }).format(new Date(ts));
+}
+
 /** "23 Mar – 29 May" for a term, always naming both months. */
 export function formatTermRange(
   startIso: string | null,

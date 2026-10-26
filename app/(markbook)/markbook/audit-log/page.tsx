@@ -37,6 +37,12 @@ export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sow.create',
   // A teacher edited a scheme of work's module details or a week.
   'sow.edit',
+  // A scheme of work sent, vetted, approved, returned or reopened.
+  'sow.submit',
+  'sow.vet',
+  'sow.approve',
+  'sow.return',
+  'sow.reopen',
   'sheet.bulk_create',
   'sheet.delete',
   'sheet.switch_type',

@@ -304,6 +304,11 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sow.subject_head.set': 'Subject heads changed',
   'sow.create': 'Scheme of work started',
   'sow.edit': 'Scheme of work edited',
+  'sow.submit': 'Scheme of work sent for review',
+  'sow.vet': 'Scheme of work vetted',
+  'sow.approve': 'Scheme of work approved',
+  'sow.return': 'Scheme of work returned',
+  'sow.reopen': 'Scheme of work reopened',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -1012,6 +1017,35 @@ function templateSummary(
         parts.push(`changed: ${ctx.fields.map(String).join(', ')}`);
       }
       return joinParts(parts);
+    }
+
+    case 'sow.submit': {
+      const parts: string[] = [
+        boolish(ctx.resend) === true ? 'sent again after a return' : 'sent',
+      ];
+      if (boolish(ctx.stalled) === true)
+        parts.push('nobody is set for the first step yet');
+      return joinParts(parts);
+    }
+
+    case 'sow.vet':
+    case 'sow.approve':
+    case 'sow.return': {
+      const parts: string[] = [];
+      const stage = str(ctx.stage_label);
+      if (stage) parts.push(stage);
+      const next = str(ctx.next_stage_label);
+      if (action === 'sow.vet' && next) parts.push(`gone to ${next}`);
+      const week = numish(ctx.week_number);
+      if (action === 'sow.return' && week !== null) parts.push(`week ${week}`);
+      if (boolish(ctx.closed_by_step_edit) === true)
+        parts.push('closed by a change to the step');
+      return joinParts(parts);
+    }
+
+    case 'sow.reopen': {
+      const note = str(ctx.note);
+      return note ? `reason: ${note}` : null;
     }
 
     // The older pooled change-request approvers ------------------------------

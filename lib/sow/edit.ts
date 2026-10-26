@@ -54,8 +54,11 @@ type SowHead = {
   module: Record<string, unknown> | null;
 };
 
-/** 404 / 403 / 423, in that order, or the scheme to work on. */
-async function authorizeEdit(
+/**
+ * 404 / 403 / 423, in that order, or the scheme to work on. Sending a scheme
+ * for review (lib/sow/approval.ts) asks the same question.
+ */
+export async function authorizeEdit(
   service: SupabaseClient,
   actor: SowActor,
   sowId: string

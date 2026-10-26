@@ -16,7 +16,7 @@ import {
   MODULE_FIELDS,
 } from '@/components/sow/edit-module-sheet';
 import { EditWeekSheet } from '@/components/sow/edit-week-sheet';
-import { formatTermRange } from '@/components/sow/format';
+import { formatMoment, formatTermRange } from '@/components/sow/format';
 import { SowStatusBadge } from '@/components/sow/sow-status-badge';
 import { WeekList } from '@/components/sow/week-list';
 import {
@@ -50,6 +50,7 @@ export function SowPage({ view }: { view: SowView }) {
   const [editing, setEditing] = useState<number | null>(null);
   const [moduleOpen, setModuleOpen] = useState(false);
   const [deleting, setDeleting] = useState<number | null>(null);
+  const [sending, setSending] = useState(false);
 
   const d = view.display;
   const canEdit = view.capability === 'edit';
@@ -68,6 +69,28 @@ export function SowPage({ view }: { view: SowView }) {
     editing === null
       ? null
       : (view.weeks.find((w) => w.weekNumber === editing) ?? null);
+
+  async function send() {
+    setSending(true);
+    await run(
+      () =>
+        apiFetch<{ stalled: boolean; stalledStep?: string }>(
+          `/api/sow/${view.id}/submit`,
+          jsonInit('POST', {})
+        ),
+      {
+        pending: 'Sending for review…',
+        success: (r) =>
+          r.stalled
+            ? {
+                title: 'Sent for review',
+                description: `Waiting — nobody is set for ${r.stalledStep ?? 'the first step'} yet.`,
+              }
+            : 'Sent for review',
+      }
+    );
+    setSending(false);
+  }
 
   async function deleteWeek(weekNumber: number) {
     setDeleting(weekNumber);
@@ -137,18 +160,18 @@ export function SowPage({ view }: { view: SowView }) {
             </Button>
           </HoverHint>
           {canEdit && (
-            // Sending is the approval flow (Tasks 9–10). Disabled rather than
-            // faked, so nobody believes a scheme was sent when it was not.
-            <HoverHint wrap hint="Coming next">
-              <Button disabled>
-                {returned ? (
-                  <Undo2 className="size-4" />
-                ) : (
-                  <Send className="size-4" />
-                )}
-                {returned ? 'Send for review again' : 'Send for review'}
-              </Button>
-            </HoverHint>
+            // `canEdit` already means draft or returned, so the button is
+            // never offered on a scheme that cannot be sent. A refusal (an
+            // empty topic, no steps set up) comes back as the server's
+            // sentence in the toast.
+            <Button onClick={send} disabled={sending}>
+              {returned ? (
+                <Undo2 className="size-4" />
+              ) : (
+                <Send className="size-4" />
+              )}
+              {returned ? 'Send for review again' : 'Send for review'}
+            </Button>
           )}
         </div>
       </header>
@@ -167,12 +190,28 @@ export function SowPage({ view }: { view: SowView }) {
                 &ldquo;{returnNote.note}&rdquo;
               </p>
             )}
+            {returnNote?.by && (
+              <p className="text-sm text-ink-3">
+                Returned by {returnNote.by}
+                {returnNote.at ? ` on ${formatMoment(returnNote.at)}` : ''}.
+              </p>
+            )}
             <p className="text-sm text-muted-foreground">
               {canEdit
                 ? 'Make the changes, then send it again. It starts over from the subject head.'
                 : 'The teacher makes the changes and sends it again. It starts over from the subject head.'}
             </p>
           </div>
+        </div>
+      )}
+
+      {view.state === 'draft' && d.reopened && (
+        <div className="flex items-start gap-3 rounded-xl border border-brand-indigo-soft/50 bg-accent px-4 py-3 text-sm text-brand-indigo-deep">
+          <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <p>
+            Reopened by {d.reopened.by} on {formatMoment(d.reopened.at)}
+            {d.reopened.note ? `: ${d.reopened.note}` : '.'}
+          </p>
         </div>
       )}
 

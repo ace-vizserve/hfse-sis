@@ -374,6 +374,10 @@ export const DecideApprovalSchema = z
         message: `Keep the note to ${APPROVAL_NOTE_MAX} characters or fewer.`,
       })
       .optional(),
+    // A scheme of work's return names the week that needs changing. Accepted
+    // here for any body; `decideApproval` hands it on to the scheme-of-work
+    // handler alone and ignores it for every other subject.
+    weekNumber: z.number().int().min(1).optional(),
   })
   // ⚠ AND THE "GIVE A REASON" RULE HAS TO ASK THE SAME QUESTION. An approver
   // who clicks into the note box and types nothing leaves `<p></p>` behind —
