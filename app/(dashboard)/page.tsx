@@ -4,7 +4,10 @@ import { CalendarPlus, Sunrise, Sun, Moon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
+import {
+  loadLiveLessonCoverForUser,
+  loadUpcomingCoverForUser,
+} from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
@@ -153,10 +156,16 @@ export default async function Home() {
   // caller's own client against a policy that already scopes it to their own
   // bookings, so a viewer with no cover gets an empty array whatever role is
   // named here.
-  const upcomingCover =
+  // Plus cover running today, for the panel's "See today's lesson" links.
+  const [upcomingCover, liveCover] =
     view === 'teacher'
-      ? await loadUpcomingCoverForUser(await createClient(), userId)
-      : [];
+      ? await createClient().then((c) =>
+          Promise.all([
+            loadUpcomingCoverForUser(c, userId),
+            loadLiveLessonCoverForUser(c, userId),
+          ])
+        )
+      : [[], []];
 
   // Largest count first; single-item rows (change requests) after, in order.
   const todos = sortTodosByCount(
@@ -175,7 +184,11 @@ export default async function Home() {
     <PageShell>
       <Header name={displayName} quickActions={quickActions} />
       {/* Renders nothing when no cover is booked — the ordinary case. */}
-      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
+      <UpcomingCoverPanel
+        covers={upcomingCover}
+        liveCovers={liveCover}
+        className="mt-6"
+      />
       <ModuleLinkRow modules={modules} className="mt-6" />
       {/* ⚠ GRID, NOT FLEX, AND THE RATIO IS EXPLICIT. `flex-[2]` / `flex-1` on
           the children made the split depend on content: "Coming up" with two

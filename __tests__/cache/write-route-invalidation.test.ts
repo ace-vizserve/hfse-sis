@@ -221,6 +221,9 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'reads it.',
   'app/api/sow/[sowId]/checks/route.ts':
     'appends a scheme_of_work_checks row. No cached loader reads it.',
+  'app/api/sow/relief-notes/route.ts':
+    'replaces a relief teacher’s scheme_of_work_relief_notes row for the day. ' +
+    'No cached loader reads it.',
 
   // ── writes whose surfaces are all per-request ───────────────────────────
   'app/api/parent/v2/declarations/route.ts':

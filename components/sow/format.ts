@@ -31,6 +31,20 @@ export function formatDay(iso: string): string {
   return `${p.day} ${p.month}`;
 }
 
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** "Wed 8 Apr". The weekday is read in UTC from the date alone. */
+export function formatWeekdayDay(iso: string): string {
+  const dow = new Date(
+    Date.UTC(
+      Number(iso.slice(0, 4)),
+      Number(iso.slice(5, 7)) - 1,
+      Number(iso.slice(8, 10))
+    )
+  ).getUTCDay();
+  return `${WEEKDAYS[dow]} ${formatDay(iso)}`;
+}
+
 /** "23 – 27 Mar", or "30 Mar – 3 Apr" across a month end. */
 export function formatRange(startIso: string, endIso: string): string {
   const a = parts(startIso);

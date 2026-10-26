@@ -1,12 +1,18 @@
-import { CalendarClock } from 'lucide-react';
+import { BookOpen, CalendarClock } from 'lucide-react';
+import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { formatCoverDate, formatCoverWindow } from '@/lib/relief/display';
-import type { UpcomingCover } from '@/lib/relief/upcoming';
+import type { LiveLessonCover, UpcomingCover } from '@/lib/relief/upcoming';
 
 // "You're covering" — what this teacher is booked to stand in on, before it
 // starts. Appears on home, the Classroom index and the Markbook and Attendance
 // section lists (Mr Ace, 2026-08-24: all of them).
+//
+// The one exception is `liveCovers`, cover running TODAY: those rows link to
+// "See today's lesson" (scheme of work, spec §5.2). Everything below about
+// links and the word "covering" is about the BOOKED rows, and still holds.
 //
 // ⚠ NOTHING HERE IS A LINK, AND THAT IS THE DESIGN. Every class listed is one
 // the reader cannot open yet — the register, the mark sheet and the roster all
@@ -24,14 +30,21 @@ import type { UpcomingCover } from '@/lib/relief/upcoming';
 
 export function UpcomingCoverPanel({
   covers,
+  liveCovers = [],
   className = '',
 }: {
   covers: UpcomingCover[];
+  /**
+   * Subject cover running TODAY (scheme of work, spec §5.2). The one place
+   * the panel links: each row opens "See today's lesson", a page the reader
+   * can open because the cover is live — the page re-checks it all the same.
+   */
+  liveCovers?: LiveLessonCover[];
   className?: string;
 }) {
   // Renders nothing at all when there is nothing booked. An empty state here
   // would be a permanent box on four pages explaining an absence of news.
-  if (covers.length === 0) return null;
+  if (covers.length === 0 && liveCovers.length === 0) return null;
 
   return (
     <section
@@ -47,16 +60,45 @@ export function UpcomingCoverPanel({
           You&rsquo;re covering
         </h2>
         <Badge variant="secondary" className="h-5 tabular-nums">
-          {covers.length}
+          {covers.length + liveCovers.length}
         </Badge>
       </div>
 
-      <p className="pt-1.5 text-sm text-muted-foreground">
-        These classes open on the first day. Until then you can see them here
-        but not mark them.
-      </p>
+      {liveCovers.length > 0 && (
+        <ul className="flex flex-col gap-2 pt-3">
+          {liveCovers.map((c) => (
+            <li
+              key={c.assignmentId}
+              className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border border-brand-indigo-soft bg-accent px-3 py-2 text-brand-indigo-deep"
+            >
+              <span className="text-sm">
+                <b className="font-semibold">
+                  {c.sectionName} · {c.subjectName}
+                </b>{' '}
+                today
+                {c.coveredTeacherName ? ` for ${c.coveredTeacherName}` : ''}
+              </span>
+              <Button asChild variant="outline" size="sm">
+                <Link
+                  href={`/classroom/sow/covering/${c.sectionId}/${c.subjectId}`}
+                >
+                  <BookOpen aria-hidden />
+                  See today&rsquo;s lesson
+                </Link>
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
 
-      <ul className="flex flex-col gap-2 pt-3">
+      {covers.length > 0 && (
+        <p className="pt-1.5 text-sm text-muted-foreground">
+          These classes open on the first day. Until then you can see them here
+          but not mark them.
+        </p>
+      )}
+
+      <ul className="flex flex-col gap-2 pt-3 empty:hidden">
         {covers.map((c) => (
           <li
             key={c.assignmentId}

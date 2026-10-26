@@ -3,7 +3,8 @@
 import { CalendarDays, Check, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 
-import { formatRange } from '@/components/sow/format';
+import { formatRange, formatWeekdayDay } from '@/components/sow/format';
+import { ReliefNoteLine } from '@/components/sow/relief-note-line';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { RichText } from '@/components/ui/rich-text';
@@ -339,6 +340,17 @@ function ClosedWeek({
               {n.name}: &ldquo;{toPlainText(n.note)}&rdquo;
             </span>
           ))}
+          {week.classes.flatMap((c) =>
+            c.reliefNotes.map((r, i) => (
+              <span
+                key={`relief-${c.sectionId}-${i}`}
+                className="block text-xs text-brand-indigo-deep"
+              >
+                Relief, {formatWeekdayDay(r.taughtOn)}, {c.name} ({r.name}):
+                &ldquo;{toPlainText(r.note)}&rdquo;
+              </span>
+            ))
+          )}
         </span>
         <span className="col-span-full flex flex-wrap items-start gap-1.5 sm:col-span-1 sm:max-w-[260px] sm:justify-end">
           {week.started ? (
@@ -442,6 +454,22 @@ function OpenWeek({
                 <RichText html={d.html as string} className="text-[13px]" />
               </div>
             ))}
+          </div>
+        )}
+
+        {week.classes.some((c) => c.reliefNotes.length > 0) && (
+          <div className="space-y-2">
+            {week.classes.flatMap((c) =>
+              c.reliefNotes.map((r, i) => (
+                <ReliefNoteLine
+                  key={`${c.sectionId}-${i}`}
+                  taughtOn={r.taughtOn}
+                  name={r.name}
+                  note={r.note}
+                  classLabel={c.name}
+                />
+              ))
+            )}
           </div>
         )}
 

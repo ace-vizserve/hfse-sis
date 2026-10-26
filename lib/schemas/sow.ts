@@ -149,6 +149,16 @@ export const RecordSowCheckSchema = z.object({
   note: z.string().max(20000).nullable(),
 });
 
+/**
+ * A relief teacher's "What did you cover?" (POST /api/sow/relief-notes).
+ * Whether it is empty or too long is `saveReliefNote`'s to say (422).
+ */
+export const SaveReliefNoteSchema = z.object({
+  sectionId: z.string().uuid(),
+  subjectId: z.string().uuid(),
+  note: z.string().max(20000),
+});
+
 export const PatchSowWeekSchema = z.object({
   fields: SowWeekFieldsSchema,
   expectedUpdatedAt: ExpectedUpdatedAt,

@@ -1,7 +1,10 @@
 import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
+import {
+  loadLiveLessonCoverForUser,
+  loadUpcomingCoverForUser,
+} from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { AySwitcher } from '@/components/admissions/ay-switcher';
@@ -50,10 +53,14 @@ export default async function SectionsListPage({
   // is an optimisation — skip a query that would come back empty — not a gate.
   // Twin of the identical wrapper on app/(classroom)/classroom/page.tsx; the
   // two show the same panel and must not disagree about who sees it.
-  const upcomingCover =
+  // Plus cover running today, for the panel's "See today's lesson" links.
+  const [upcomingCover, liveCover] =
     role === 'teacher' && view
-      ? await loadUpcomingCoverForUser(supabase, view.id)
-      : [];
+      ? await Promise.all([
+          loadUpcomingCoverForUser(supabase, view.id),
+          loadLiveLessonCoverForUser(supabase, view.id),
+        ])
+      : [[], []];
   // One control: the "Manage in SIS Admin" button, which points at
   // `/sis/sections` — a module a teacher cannot open at all.
   const canManage =
@@ -238,7 +245,11 @@ export default async function SectionsListPage({
 
       {/* Cover booked for this teacher that has not started. Not a link and
           never the word "covering" — see components/relief/upcoming-cover.tsx. */}
-      <UpcomingCoverPanel covers={upcomingCover} className="mt-6" />
+      <UpcomingCoverPanel
+        covers={upcomingCover}
+        liveCovers={liveCover}
+        className="mt-6"
+      />
 
       {/* Stats */}
       <div className="@container/main">

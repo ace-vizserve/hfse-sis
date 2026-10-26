@@ -58,6 +58,32 @@ describe('the panel', () => {
     expect(screen.getByText(/P4 Diligence · Form class/)).toBeInTheDocument();
   });
 
+  it("links a cover running today to today's lesson, and only that one", () => {
+    // The scheme of work's relief page (spec §5.2). Booked rows stay links-free.
+    const { container } = render(
+      <UpcomingCoverPanel
+        covers={[cover()]}
+        liveCovers={[
+          {
+            assignmentId: 'a-live',
+            sectionId: 'sec-9',
+            subjectId: 'sub-9',
+            sectionName: 'S1 Discipline 2',
+            subjectName: 'Science',
+            coveredTeacherName: 'Ms Lim',
+          },
+        ]}
+      />
+    );
+    const links = container.querySelectorAll('a');
+    expect(links).toHaveLength(1);
+    expect(links[0].getAttribute('href')).toBe(
+      '/classroom/sow/covering/sec-9/sub-9'
+    );
+    expect(links[0].textContent).toMatch(/See today.s lesson/);
+    expect(container.textContent).toMatch(/today for Ms Lim/);
+  });
+
   it('disappears entirely when nothing is booked', () => {
     // Four pages carry this. An empty state on all four would be a permanent
     // box explaining an absence of news.

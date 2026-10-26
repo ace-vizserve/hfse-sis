@@ -2,9 +2,14 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
+import { isReliefLive } from '@/lib/auth/teacher-assignments';
 import { reliefStatus } from '@/lib/relief/display';
 import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
-import type { AssignmentRole } from '@/lib/schemas/teacher-assignment';
+import {
+  type AssignmentRole,
+  isSubjectRole,
+} from '@/lib/schemas/teacher-assignment';
 
 // "What am I booked to cover?" — the substitute's own heads-up.
 //
@@ -66,6 +71,89 @@ type Raw = {
 
 function one<T>(v: T | T[] | null | undefined): T | null {
   return Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+}
+
+/**
+ * A subject cover that is running TODAY — the "See today's lesson" rows on
+ * the same panel (scheme of work, spec §5.2).
+ *
+ * ⚠ ALSO NOT AN ACCESS ANSWER. It decides only whether to OFFER the link. The
+ * lesson page (`lib/sow/relief.ts`) re-checks the cover itself, with the same
+ * `isReliefLive`, before it shows anything.
+ */
+export type LiveLessonCover = {
+  assignmentId: string;
+  sectionId: string;
+  subjectId: string;
+  /** "P4 Diligence". */
+  sectionName: string;
+  subjectName: string;
+  /** The teacher being covered; null when the name cannot be read. */
+  coveredTeacherName: string | null;
+};
+
+/**
+ * Subject and co-teacher cover this user has live today. Form-class cover is
+ * left out: it has no subject, so no scheme of work and no lesson to show.
+ * Returns `[]` on any failure, like the loader below — never the reason a
+ * page 500s.
+ */
+export async function loadLiveLessonCoverForUser(
+  supabase: SupabaseClient,
+  userId: string
+): Promise<LiveLessonCover[]> {
+  const { data, error } = await supabase
+    .from('teacher_assignments')
+    .select(
+      `id, role, teacher_user_id, relief_started_on, relief_ended_on,
+       section:sections!inner(id, name, academic_year_id, level:levels(code)),
+       subject:subjects(id, name)`
+    )
+    .eq('relief_teacher_user_id', userId);
+  if (error) {
+    console.error('[live-cover] read failed:', error.message);
+    return [];
+  }
+  const rows = (
+    (data ?? []) as unknown as (Raw & { teacher_user_id: string })[]
+  ).filter(
+    (a) =>
+      isSubjectRole(a.role) &&
+      one(a.subject) &&
+      one(a.section) &&
+      // The gate's own predicate (KD #191) — never a copy of it.
+      isReliefLive(a.relief_started_on, a.relief_ended_on)
+  );
+  if (rows.length === 0) return [];
+
+  const [resolveName, names] = await Promise.all([
+    subjectDisplayNameResolver(
+      supabase,
+      rows.map((r) => one(r.section)?.academic_year_id),
+      rows.map((r) => one(r.subject)?.id)
+    ),
+    getStaffDisplayNameById()
+      .then((entries) => new Map(entries))
+      .catch(() => new Map<string, string>()),
+  ]);
+
+  return rows
+    .map((a) => {
+      const section = one(a.section)!;
+      const subject = one(a.subject)!;
+      const level = one(section.level);
+      return {
+        assignmentId: a.id,
+        sectionId: section.id,
+        subjectId: subject.id,
+        sectionName: level?.code
+          ? `${level.code} ${section.name}`
+          : section.name,
+        subjectName: resolveName(section.academic_year_id, subject),
+        coveredTeacherName: names.get(a.teacher_user_id) ?? null,
+      };
+    })
+    .sort((x, y) => x.sectionName.localeCompare(y.sectionName));
 }
 
 /**

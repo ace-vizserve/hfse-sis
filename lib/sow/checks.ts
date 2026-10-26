@@ -3,6 +3,7 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { logAction } from '@/lib/audit/log-action';
+import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import {
   type EffectiveAssignmentRow,
   loadEffectiveAssignmentsForUser,
@@ -268,6 +269,8 @@ export type SowCheckClass = {
   canCheck: boolean;
   /** The viewer's own latest check on it. */
   mine: { option: CheckOption; note: string | null } | null;
+  /** What relief teachers covered in this class that week (Task 14). */
+  reliefNotes: { taughtOn: string; name: string; note: string }[];
 };
 
 export type SowCheckWeek = {
@@ -323,7 +326,7 @@ export async function loadSowChecking(
   const today = input.today ?? sgToday();
   const sectionIds = input.classes.map((c) => c.sectionId);
 
-  const [assignRes, checkRes, signRes] = await Promise.all([
+  const [assignRes, checkRes, signRes, reliefRes] = await Promise.all([
     sectionIds.length > 0
       ? service
           .from('teacher_assignments')
@@ -341,9 +344,51 @@ export async function loadSowChecking(
       .from('scheme_of_work_signoffs')
       .select('week_number, section_id, kind, created_at')
       .eq('sow_id', input.sowId),
+    // Relief notes (lib/sow/relief.ts): shown on their week so the subject
+    // teacher and the supervisor see what the cover taught.
+    service
+      .from('scheme_of_work_relief_notes')
+      .select(
+        'week_number, section_id, taught_on, relief_teacher_user_id, note'
+      )
+      .eq('sow_id', input.sowId),
   ]);
-  for (const r of [assignRes, checkRes, signRes]) {
+  for (const r of [assignRes, checkRes, signRes, reliefRes]) {
     if (r.error) throw new Error(r.error.message);
+  }
+
+  type ReliefRow = {
+    week_number: number | null;
+    section_id: string;
+    taught_on: string;
+    relief_teacher_user_id: string;
+    note: string;
+  };
+  const reliefRows = (reliefRes.data ?? []) as ReliefRow[];
+  // Names only when there is a note to put one on; a failed lookup leaves the
+  // note unattributed rather than failing the page.
+  let staffName = new Map<string, string>();
+  if (reliefRows.length > 0) {
+    try {
+      staffName = new Map(await getStaffDisplayNameById());
+    } catch {
+      staffName = new Map();
+    }
+  }
+  const reliefAt = new Map<string, SowCheckClass['reliefNotes']>();
+  for (const r of [...reliefRows].sort((a, b) =>
+    a.taught_on.localeCompare(b.taught_on)
+  )) {
+    if (r.week_number == null) continue;
+    const k = `${r.week_number}|${r.section_id}`;
+    reliefAt.set(k, [
+      ...(reliefAt.get(k) ?? []),
+      {
+        taughtOn: r.taught_on,
+        name: staffName.get(r.relief_teacher_user_id) ?? 'Relief teacher',
+        note: r.note,
+      },
+    ]);
   }
 
   const teachersOf = new Map<string, Set<string>>();
@@ -424,6 +469,7 @@ export async function loadSowChecking(
               .map((r) => ({ option: r.option, note: r.note as string })),
             canCheck: mineIds.has(c.sectionId),
             mine: own ? { option: own.option, note: own.note } : null,
+            reliefNotes: reliefAt.get(k) ?? [],
           };
         }),
       };

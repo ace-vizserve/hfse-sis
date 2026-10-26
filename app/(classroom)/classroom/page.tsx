@@ -15,7 +15,10 @@ import {
 } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
+import {
+  loadLiveLessonCoverForUser,
+  loadUpcomingCoverForUser,
+} from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { loadEffectiveAssignmentsForUserMemo } from '@/lib/auth/assignments-cache';
 import { resolveClassroomScope } from '@/lib/classroom/scope';
@@ -244,8 +247,18 @@ async function UpcomingCover({
 }) {
   if (role !== 'teacher') return null;
   const supabase = await createClient();
-  const covers = await loadUpcomingCoverForUser(supabase, userId);
-  return <UpcomingCoverPanel covers={covers} className={className} />;
+  // Plus cover running today, for the panel's "See today's lesson" links.
+  const [covers, liveCovers] = await Promise.all([
+    loadUpcomingCoverForUser(supabase, userId),
+    loadLiveLessonCoverForUser(supabase, userId),
+  ]);
+  return (
+    <UpcomingCoverPanel
+      covers={covers}
+      liveCovers={liveCovers}
+      className={className}
+    />
+  );
 }
 
 function SummaryCard({

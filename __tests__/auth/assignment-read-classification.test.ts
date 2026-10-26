@@ -113,6 +113,11 @@ const CLASSIFIED: Record<string, Category[]> = {
   // then substantive only — cover never checks), and who a class's week waits
   // on (holders read by `teacher_user_id`, the relief column never consulted).
   'lib/sow/checks.ts': ['act'],
+  // The relief teacher's lesson page and note (Task 14): reads the caller's
+  // own cover on the class (relief column, `isReliefLive`) to decide whether
+  // they may see the lesson and leave a note — and the holders of that class,
+  // for last week's mark, by `teacher_user_id` only.
+  'lib/sow/relief.ts': ['act'],
   // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
   // relief-inclusive half of the pair, so the act/name decision is made here
   // rather than deferred to callers — which is why it is `act` and not

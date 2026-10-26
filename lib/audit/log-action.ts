@@ -311,6 +311,11 @@ export const ALL_AUDIT_ACTIONS = [
   // the week, the class, the option and THAT there was a note — never the
   // note itself.
   'sow.check',
+  // A relief teacher said what they covered in a class on one day ("What did
+  // you cover?"). Saving again the same day replaces that day's note. The
+  // context carries the class, subject, day, week and THAT there was a note —
+  // never the note itself.
+  'sow.relief_note',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
