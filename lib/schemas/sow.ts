@@ -25,6 +25,16 @@ export const CreateSowSchema = z.object({
 });
 export type CreateSowInput = z.infer<typeof CreateSowSchema>;
 
+// ── The Excel import's size limit ───────────────────────────────────────────
+//
+// 4 MB, not 5: Vercel refuses a request body over 4.5 MB before the route
+// runs, so a bigger limit would promise a file the server can never receive.
+// Here (not in lib/sow/excel-import.ts) so the New SOW drawer can check it
+// without pulling the spreadsheet library into the browser.
+export const SOW_IMPORT_MAX_BYTES = 4 * 1024 * 1024;
+export const SOW_IMPORT_TOO_BIG_MESSAGE =
+  'That file is bigger than 4 MB. Choose a smaller Excel file.';
+
 // ── The approved snapshot ───────────────────────────────────────────────────
 //
 // `schemes_of_work.approved_snapshot` is a frozen copy of the module and the

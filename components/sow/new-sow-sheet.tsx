@@ -33,6 +33,10 @@ import {
 } from '@/components/ui/sheet';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import {
+  SOW_IMPORT_MAX_BYTES,
+  SOW_IMPORT_TOO_BIG_MESSAGE,
+} from '@/lib/schemas/sow';
 
 // New SOW (board 2). Starts a draft for one subject x level x track this term,
 // blank, copied from last year's approved scheme, or imported once from the
@@ -52,7 +56,6 @@ type ImportPreview = {
   weeks: unknown[];
   warnings: string[];
 };
-const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 const CHOICE_CLASS =
   'flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5';
@@ -178,10 +181,8 @@ function NewSowForm({
       setFileError('Only Excel (.xlsx) files can be imported.');
       return;
     }
-    if (chosen.size > MAX_FILE_BYTES) {
-      setFileError(
-        'That file is bigger than 5 MB. Choose a smaller Excel file.'
-      );
+    if (chosen.size > SOW_IMPORT_MAX_BYTES) {
+      setFileError(SOW_IMPORT_TOO_BIG_MESSAGE);
       return;
     }
     // The preview reads the file for the level's tab, whichever classes are

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { requireRole } from '@/lib/auth/require-role';
-import { CreateSowSchema } from '@/lib/schemas/sow';
+import { CreateSowSchema, SOW_IMPORT_TOO_BIG_MESSAGE } from '@/lib/schemas/sow';
 import {
   createSow,
   holdsSubject,
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
   // file's own size is checked again below.
   const declared = Number(request.headers.get('content-length'));
   if (Number.isFinite(declared) && declared > MAX_IMPORT_BYTES + 64 * 1024) {
-    return bad('That file is bigger than 5 MB. Choose a smaller Excel file.');
+    return bad(SOW_IMPORT_TOO_BIG_MESSAGE);
   }
 
   let form: FormData;
@@ -58,7 +58,7 @@ export async function POST(request: Request) {
     return bad('Only Excel (.xlsx) files can be imported.');
   }
   if (file.size > MAX_IMPORT_BYTES) {
-    return bad('That file is bigger than 5 MB. Choose a smaller Excel file.');
+    return bad(SOW_IMPORT_TOO_BIG_MESSAGE);
   }
 
   let rawInput: unknown = null;

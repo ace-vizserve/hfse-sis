@@ -14,10 +14,23 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *   4. Only someone who manages approvers can change the setting.
  */
 
-const { logActionMock, requireCapabilityMock } = vi.hoisted(() => ({
+const { logActionMock, requireCapabilityMock, staffMock } = vi.hoisted(() => ({
   logActionMock: vi.fn(async (_entry: Record<string, unknown>) => undefined),
   requireCapabilityMock: vi.fn(),
+  staffMock: vi.fn(),
 }));
+
+/** A staff account as `listStaffUsers` returns it. */
+const staff = (id: string, disabled = false) => ({
+  id,
+  email: `${id}@hfse.test`,
+  role: 'teacher',
+  roles: ['teacher'],
+  display_name: id,
+  disabled,
+  created_at: '2026-01-01T00:00:00Z',
+  last_sign_in_at: null,
+});
 
 vi.mock('@/lib/audit/log-action', () => ({
   logAction: (entry: Record<string, unknown>) => logActionMock(entry),
@@ -26,7 +39,7 @@ vi.mock('@/lib/auth/require-capability', () => ({
   requireCapability: (...args: unknown[]) => requireCapabilityMock(...args),
 }));
 vi.mock('@/lib/sis/users/queries', () => ({
-  listStaffUsers: vi.fn(async () => []),
+  listStaffUsers: () => staffMock(),
 }));
 vi.mock('next/cache', () => ({ revalidateTag: vi.fn() }));
 vi.mock('@/lib/supabase/service', () => ({
@@ -35,7 +48,9 @@ vi.mock('@/lib/supabase/service', () => ({
   },
 }));
 
+import { loadFlowConfig } from '@/lib/approvals/config';
 import {
+  listActiveSubjectHeads,
   replaceSubjectHeads,
   subjectHeadPool,
   type SubjectHeadRow,
@@ -165,6 +180,90 @@ const ACTOR = { id: 'u-admin', email: 'admin@hfse.test' };
 beforeEach(() => {
   logActionMock.mockClear();
   requireCapabilityMock.mockReset();
+  staffMock.mockReset();
+  staffMock.mockResolvedValue(
+    ['u-admin', 'u-old', 'u-new', 'u-sec', 'u-teacher', 'u-eng'].map((id) =>
+      staff(id)
+    )
+  );
+});
+
+/** A read-only service over fixed tables, for the head readers. */
+function readService(tables: Record<string, Row[]>): SupabaseClient {
+  return {
+    from(table: string) {
+      const rows = tables[table];
+      if (!rows) throw new Error(`unexpected table ${table}`);
+      return query(() => rows, [], table);
+    },
+  } as unknown as SupabaseClient;
+}
+
+const HEAD_ROWS: Row[] = [
+  { subject_id: 'subj-math', user_id: 'u-live', applies_to_level_type: null },
+  // Account deleted: no longer in the staff list.
+  { subject_id: 'subj-math', user_id: 'u-gone', applies_to_level_type: null },
+  // Account switched off.
+  { subject_id: 'subj-math', user_id: 'u-off', applies_to_level_type: null },
+];
+
+describe('heads whose account is gone or switched off', () => {
+  beforeEach(() => {
+    staffMock.mockResolvedValue([staff('u-live'), staff('u-off', true)]);
+  });
+
+  it('listActiveSubjectHeads leaves them out of the pool a SOW is filed with', async () => {
+    const heads = await listActiveSubjectHeads(
+      readService({ subject_heads: HEAD_ROWS })
+    );
+    expect(subjectHeadPool(heads, 'subj-math', 'primary')).toEqual(['u-live']);
+  });
+
+  it('listActiveSubjectHeads refuses to guess when the staff list is empty', async () => {
+    staffMock.mockResolvedValue([]);
+    await expect(
+      listActiveSubjectHeads(readService({ subject_heads: HEAD_ROWS }))
+    ).rejects.toThrow(/staff list/);
+  });
+
+  it('the readiness count counts only heads who can act', async () => {
+    const config = await loadFlowConfig(
+      readService({
+        approval_stages: [
+          {
+            id: 'cfg-head',
+            flow: 'markbook.scheme_of_work',
+            stage_order: 1,
+            label: 'Subject head',
+            resolver: 'subject_head',
+            approval_rule: 'any',
+          },
+        ],
+        approval_stage_approvers: [],
+        subject_heads: HEAD_ROWS,
+      }),
+      'markbook.scheme_of_work'
+    );
+    expect(config.stages[0].subjectHeadCount).toBe(1);
+  });
+
+  it('a re-point leaves a switched-off head out of the waiting step', async () => {
+    staffMock.mockResolvedValue([
+      staff('u-new'),
+      staff('u-off', true),
+      staff('u-teacher'),
+    ]);
+    const fake = makeService();
+    await replaceSubjectHeads(fake.service, ACTOR, 'subj-math', [
+      { userId: 'u-new', appliesToLevelType: null },
+      { userId: 'u-off', appliesToLevelType: null },
+    ]);
+    expect(fake.rpc).toHaveBeenCalledWith('approval_repoint_request_stage', {
+      p_request_stage_id: 'rs-math',
+      p_pool: ['u-new'],
+      p_rule: 'any',
+    });
+  });
 });
 
 describe('subjectHeadPool', () => {

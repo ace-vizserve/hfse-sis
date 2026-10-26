@@ -14,7 +14,10 @@ import {
 import { SOW_APPROVAL_SUBJECT_TYPE } from '@/lib/sow/access';
 import type { SowActor } from '@/lib/sow/create';
 import { authorizeEdit } from '@/lib/sow/edit';
-import { listSubjectHeads, subjectHeadPool } from '@/lib/sow/subject-heads';
+import {
+  listActiveSubjectHeads,
+  subjectHeadPool,
+} from '@/lib/sow/subject-heads';
 import { loadTermWeeks } from '@/lib/sow/weeks';
 
 // Sending a scheme of work for review, and reopening an approved one — the
@@ -168,7 +171,8 @@ export async function submitSow(
   // the next time somebody edits the heads.
   let opened;
   try {
-    const heads = await listSubjectHeads(service);
+    // Heads whose account was deleted or switched off never enter the pool.
+    const heads = await listActiveSubjectHeads(service);
     opened = await openApprovalRequest(service, {
       flow: SOW_APPROVAL_FLOW,
       subjectType: SOW_SUBJECT_TYPE,

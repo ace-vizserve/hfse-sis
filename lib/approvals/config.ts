@@ -158,15 +158,15 @@ export async function loadFlowConfig(
   if (approverErr) throw new Error(approverErr.message);
 
   // ⚠ ASKED ONLY WHEN A SUBJECT HEAD STEP EXISTS, so the other flows read
-  // exactly what they always read. Any row at all counts: the readiness line
-  // is "can this step ever be reached by somebody", and per-subject gaps are
-  // shown on the Subject heads screen.
-  const subjectHeadCount = stages.some((s) => s.resolver === 'subject_head')
-    ? await countSubjectHeads(service)
-    : undefined;
-
+  // exactly what they always read. Any row whose person can act counts: the
+  // readiness line is "can this step ever be reached by somebody", and
+  // per-subject gaps are shown on the Subject heads screen.
   const staff = await listStaffUsers();
   const byId = new Map(staff.map((u) => [u.id, u]));
+
+  const subjectHeadCount = stages.some((s) => s.resolver === 'subject_head')
+    ? await countSubjectHeads(service, byId)
+    : undefined;
 
   const byStage = new Map<string, StageApproverView[]>();
   for (const row of (approverRows ?? []) as unknown as Array<{
@@ -211,13 +211,23 @@ export async function loadFlowConfig(
   };
 }
 
-/** How many people are set in Subject heads, across every subject (migration 198). */
-async function countSubjectHeads(service: SupabaseClient): Promise<number> {
-  const { count, error } = await service
-    .from('subject_heads')
-    .select('id', { count: 'exact', head: true });
+/**
+ * How many Subject heads rows, across every subject, name somebody who can act
+ * (migration 198). A head whose account was deleted (not in the staff list)
+ * or switched off is left out: such a row would read as "set" while no SOW
+ * could ever be approved by them (lib/sow/subject-heads.ts keeps them out of
+ * the pools too).
+ */
+async function countSubjectHeads(
+  service: SupabaseClient,
+  staffById: Map<string, { disabled: boolean }>
+): Promise<number> {
+  const { data, error } = await service.from('subject_heads').select('user_id');
   if (error) throw new Error(error.message);
-  return count ?? 0;
+  return ((data ?? []) as Array<{ user_id: string }>).filter((r) => {
+    const person = staffById.get(r.user_id);
+    return person != null && !person.disabled;
+  }).length;
 }
 
 export async function loadAllFlowConfigs(

@@ -12,7 +12,7 @@ import {
   SowSnapshotSchema,
 } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
-import type { SowKey } from '@/lib/sow/access';
+import { type SowKey, trackOf } from '@/lib/sow/access';
 import type { ParsedSow } from '@/lib/sow/excel-import';
 import { loadTermWeeks, reconcileWeeks } from '@/lib/sow/weeks';
 
@@ -107,7 +107,9 @@ async function loadLastYear(
     .eq('subject_id', key.subjectId)
     .eq('level_id', key.levelId)
     .eq('track', key.track)
-    .eq('state', 'approved')
+    // "Approved" = it has an approved snapshot, as everywhere else: a scheme
+    // reopened for revision is back in draft, but its approved plan stands.
+    .not('approved_snapshot', 'is', null)
     .maybeSingle();
   if (sowErr) throw new Error(sowErr.message);
   if (!sow) return null;
@@ -216,8 +218,7 @@ export async function createSow(
     return fail(400, 'One of the classes you ticked could not be found.');
   }
   for (const s of sections) {
-    // A class with no class type is a Standard class.
-    const track = s.class_type === 'Global' ? 'Global' : 'Standard';
+    const track = trackOf(s.class_type);
     if (
       s.academic_year_id !== ayId ||
       s.level_id !== key.levelId ||
@@ -291,7 +292,8 @@ export async function createSow(
   }
 
   // 5. Work out the rows.
-  let module: Record<string, unknown> = {};
+  // Not named `module` (a Next.js lint rule reserves it).
+  let moduleDetails: Record<string, unknown> = {};
   let copiedFrom: string | null = null;
   type WeekRow = ReturnType<typeof contentColumns> & {
     week_number: number;
@@ -353,7 +355,7 @@ export async function createSow(
   }
 
   if (source) {
-    module = source.module;
+    moduleDetails = source.module;
 
     const { kept, missing, surplus } = reconcileWeeks(source.weeks, termWeeks);
     const lastTermWeek = termWeeks[termWeeks.length - 1];
@@ -407,7 +409,7 @@ export async function createSow(
       level_id: key.levelId,
       track: key.track,
       state: 'draft',
-      module,
+      module: moduleDetails,
       started_from: start,
       copied_from_sow_id: copiedFrom,
       created_by: actor.id,

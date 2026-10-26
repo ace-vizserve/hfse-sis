@@ -2,6 +2,7 @@ import * as XLSX from 'xlsx';
 
 import {
   RICH_CAP,
+  SOW_IMPORT_MAX_BYTES,
   SOW_MODULE_CAPS,
   SOW_WEEK_PLAIN_CAPS,
   type SowModule,
@@ -79,7 +80,8 @@ export type ParseResult =
   | { ok: true; sow: ParsedSow }
   | { ok: false; error: string };
 
-export const MAX_IMPORT_BYTES = 5 * 1024 * 1024;
+/** 4 MB — under Vercel's 4.5 MB request body limit (lib/schemas/sow.ts). */
+export const MAX_IMPORT_BYTES = SOW_IMPORT_MAX_BYTES;
 
 // Bounds on untrusted input (see the XLSX.read call): rows and columns scanned,
 // and the most weeks a term can hold.
@@ -301,7 +303,8 @@ export function parseSowWorkbook(
   const warnings: string[] = [];
 
   // Header block: label in one column, its value to the right.
-  const module: SowModule = {};
+  // Not named `module` (a Next.js lint rule reserves it).
+  const moduleDetails: SowModule = {};
   let labelCol = 0;
   for (let r = 0; r < headerRow; r++) {
     for (let c = 0; c < (rows[r]?.length ?? 0); c++) {
@@ -323,7 +326,7 @@ export function parseSowWorkbook(
     if (field) {
       const v = oneLine(value);
       if (v === '') continue;
-      module[field.key] = v;
+      moduleDetails[field.key] = v;
       if (v.length > SOW_MODULE_CAPS[field.key]) {
         warnings.push(
           `The ${MODULE_FIELD_NAMES[field.key]} in the module details is longer than the ${SOW_MODULE_CAPS[field.key]} characters allowed. It was kept; shorten it before you send the SOW for review.`
@@ -432,5 +435,5 @@ export function parseSowWorkbook(
     }
   }
 
-  return { ok: true, sow: { module, weeks, warnings } };
+  return { ok: true, sow: { module: moduleDetails, weeks, warnings } };
 }

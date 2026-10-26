@@ -34,6 +34,13 @@ vi.mock('@/lib/audit/log-action', () => ({
   logActions: vi.fn(() => Promise.resolve()),
 }));
 
+// Every head in these fixtures has a live staff account; a gone or switched-off
+// head is pinned in subject-heads.test.ts.
+vi.mock('@/lib/sis/users/queries', () => ({
+  listStaffUsers: async () =>
+    ['head1', 'u1', 'coord1'].map((id) => ({ id, disabled: false })),
+}));
+
 // For the decide route's own refusal wording (fix round 1).
 const routeService = vi.hoisted(() => ({ current: null as unknown }));
 vi.mock('@/lib/supabase/service', () => ({

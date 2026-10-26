@@ -118,6 +118,12 @@ function fakeService(tables: Tables, opts: { failInsert?: string } = {}) {
           filters.push((r) => v.includes(r[c]));
           return q;
         },
+        // Only `.not(col, 'is', null)` is used: "the column has a value".
+        not: (c: string, op: string, v: unknown) => {
+          if (op !== 'is' || v !== null) throw new Error(`not(${op})`);
+          filters.push((r) => r[c] != null);
+          return q;
+        },
         order: () => q,
         limit: () => q,
         single: () => {
@@ -602,6 +608,18 @@ describe('findLastYearSow', () => {
     expect(
       await findLastYearSow(service, { ...KEY, termId: 't27b' })
     ).toBeNull();
+  });
+
+  // "Approved" is `approved_snapshot is not null` everywhere else: a scheme
+  // reopened for revision is back in draft, but its approved plan stands.
+  it('finds a reopened scheme by its approved snapshot, not its state', async () => {
+    const t = world();
+    t.schemes_of_work.find((s) => s.id === 'old')!.state = 'draft';
+    const { service } = fakeService(t);
+    expect(await findLastYearSow(service, KEY)).toEqual({
+      id: 'old',
+      label: 'AY2026 Term 2',
+    });
   });
 });
 

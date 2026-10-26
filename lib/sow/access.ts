@@ -21,6 +21,15 @@ import { compareLevelLabels } from '@/lib/sis/levels';
 export type SowState = 'draft' | 'in_review' | 'returned' | 'approved';
 export type SowTrack = 'Standard' | 'Global';
 
+/**
+ * The track a class follows, from its `sections.class_type`. A class with no
+ * class type set (null) is a Standard class. The one rule every SOW reader
+ * uses — keep it here.
+ */
+export function trackOf(classType: string | null | undefined): SowTrack {
+  return classType === 'Global' ? 'Global' : 'Standard';
+}
+
 export type SowKey = {
   termId: string;
   subjectId: string;
@@ -225,9 +234,7 @@ export async function listMySowRows(
     const subjectId = a.subject_id!;
     if (!configured.has(subjectId)) continue;
     if (!offered.has(`${subjectId}|${section.level_id}`)) continue;
-    // A section with no class_type set is a Standard class.
-    const track: SowTrack =
-      section.class_type === 'Global' ? 'Global' : 'Standard';
+    const track = trackOf(section.class_type);
     const key = `${subjectId}|${section.level_id}|${track}`;
     let g = groups.get(key);
     if (!g) {

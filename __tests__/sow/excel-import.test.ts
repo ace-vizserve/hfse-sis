@@ -2,7 +2,11 @@ import * as XLSX from 'xlsx';
 import { describe, expect, it } from 'vitest';
 
 import { SOW_MODULE_CAPS, SOW_WEEK_PLAIN_CAPS } from '@/lib/schemas/sow';
-import { parseSowWorkbook, plainTextToRichHtml } from '@/lib/sow/excel-import';
+import {
+  MAX_IMPORT_BYTES,
+  parseSowWorkbook,
+  plainTextToRichHtml,
+} from '@/lib/sow/excel-import';
 
 import { buildTemplate, defaultWeeks } from './fixtures/build-template';
 
@@ -283,5 +287,14 @@ describe('plainTextToRichHtml', () => {
   it('is empty for nothing', () => {
     expect(plainTextToRichHtml('')).toBe('');
     expect(plainTextToRichHtml('  \n ')).toBe('');
+  });
+});
+
+describe('MAX_IMPORT_BYTES', () => {
+  // Vercel refuses a request body over 4.5 MB before the route runs, so a
+  // bigger limit here would promise a file the server can never receive.
+  it('is 4 MB, under the 4.5 MB request body limit', () => {
+    expect(MAX_IMPORT_BYTES).toBe(4 * 1024 * 1024);
+    expect(MAX_IMPORT_BYTES + 64 * 1024).toBeLessThan(4.5 * 1024 * 1024);
   });
 });

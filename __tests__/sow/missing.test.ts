@@ -87,17 +87,20 @@ const T1 = 'term-1';
 function seed() {
   tables = {
     sections: [
+      // A section's own name carries no level ("Courtesy"); the toast adds it.
       {
         id: 'sec-a',
-        name: 'P1 Patience',
+        name: 'Patience',
         level_id: 'lvl-1',
         academic_year_id: 'ay',
+        level: { code: 'P1' },
       },
       {
         id: 'sec-b',
-        name: 'P1 Courtesy',
+        name: 'Courtesy',
         level_id: 'lvl-1',
         academic_year_id: 'ay',
+        level: { code: 'P1' },
       },
     ],
     subjects: [

@@ -16,7 +16,7 @@ import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { type SowSnapshot, SowSnapshotSchema } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { compareLevelLabels } from '@/lib/sis/levels';
-import type { SowState, SowTrack } from '@/lib/sow/access';
+import { type SowState, type SowTrack, trackOf } from '@/lib/sow/access';
 import {
   type CellMark,
   CHECK_LABELS,
@@ -974,8 +974,6 @@ export async function loadOversight(
       (offeringRes.data ?? []) as { subject_id: string; level_id: string }[]
     ).map((o) => `${o.subject_id}|${o.level_id}`)
   );
-  const trackOf = (s: { class_type: string | null }): SowTrack =>
-    s.class_type === 'Global' ? 'Global' : 'Standard';
   const allSchemeKeys = new Set(
     ((schemeRes.data ?? []) as SchemeRow[]).map(
       (s) => `${s.subject_id}|${s.level_id}|${s.track}`
@@ -995,7 +993,7 @@ export async function loadOversight(
     if (!section || !a.subject_id) continue;
     if (!configured.has(a.subject_id)) continue;
     if (!offered.has(`${a.subject_id}|${section.level_id}`)) continue;
-    const track = trackOf(section);
+    const track = trackOf(section.class_type);
     const key = `${a.subject_id}|${section.level_id}|${track}`;
     const g = groups.get(key) ?? {
       subjectId: a.subject_id,

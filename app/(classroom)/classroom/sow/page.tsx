@@ -9,7 +9,7 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getTermsForAy } from '@/lib/classroom/queries';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import { listMySowRows } from '@/lib/sow/access';
+import { listMySowRows, trackOf } from '@/lib/sow/access';
 import { findLastYearSow } from '@/lib/sow/create';
 import { loadSowStepLabels } from '@/lib/sow/review';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -99,9 +99,7 @@ export default async function MySchemesOfWorkPage({
           }),
       groupSections: sections
         .filter(
-          (s) =>
-            s.level_id === r.levelId &&
-            (s.class_type === 'Global' ? 'Global' : 'Standard') === r.track
+          (s) => s.level_id === r.levelId && trackOf(s.class_type) === r.track
         )
         .map((s) => ({ sectionId: s.id, name: s.name }))
         .sort((a, b) => a.name.localeCompare(b.name)),

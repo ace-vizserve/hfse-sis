@@ -5,9 +5,23 @@ import { fetchInChunks } from '@/lib/supabase/paginate';
 export type ClassWithoutSow = {
   sectionId: string;
   subjectId: string;
+  /** The level and the class, "P1 Courtesy" — a class name alone repeats across levels. */
   sectionName: string;
   subjectName: string;
 };
+
+type LevelCode = { code: string | null };
+type SectionRow = {
+  id: string;
+  name: string;
+  level: LevelCode | LevelCode[] | null;
+};
+
+/** "P1 Courtesy", the way lib/relief/upcoming.ts names a class. */
+function classLabel(s: SectionRow): string {
+  const level = Array.isArray(s.level) ? s.level[0] : s.level;
+  return level?.code ? `${level.code} ${s.name}` : s.name;
+}
 
 /**
  * Of the given (section, subject) pairs, the ones with no approved scheme of
@@ -77,10 +91,10 @@ export async function listClassesWithoutApprovedSow(
       async (slice) => {
         const { data, error } = await service
           .from('sections')
-          .select('id, name')
+          .select('id, name, level:levels(code)')
           .in('id', slice);
         if (error) throw new Error(error.message);
-        return (data ?? []) as { id: string; name: string }[];
+        return (data ?? []) as unknown as SectionRow[];
       }
     ),
     fetchInChunks(
@@ -95,7 +109,7 @@ export async function listClassesWithoutApprovedSow(
       }
     ),
   ]);
-  const sectionName = new Map(sections.map((s) => [s.id, s.name]));
+  const sectionName = new Map(sections.map((s) => [s.id, classLabel(s)]));
   const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
 
   return missing

@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logAction } from '@/lib/audit/log-action';
 import type { Role } from '@/lib/auth/roles';
 import { samePool } from '@/lib/approvals/materialise';
+import { listStaffUsers } from '@/lib/sis/users/queries';
 import {
   SOW_APPROVAL_FLOW,
   type ApprovalRepointOutcome,
@@ -65,6 +66,41 @@ export async function listSubjectHeads(
     userId: r.user_id,
     appliesToLevelType: r.applies_to_level_type ?? null,
   }));
+}
+
+/**
+ * The ids of the staff accounts that can act today: in the staff list (a
+ * deleted account is not) and not switched off.
+ *
+ * ⚠ AN EMPTY STAFF LIST IS A FAILED READ, NOT "NOBODY". `listStaffUsers`
+ * answers [] when it cannot read the accounts, and taking that at its word
+ * would empty every subject-head step it touched. So it throws instead: the
+ * send or the save fails and can be retried.
+ */
+export async function activeStaffIds(): Promise<Set<string>> {
+  const staff = await listStaffUsers();
+  if (staff.length === 0) {
+    throw new Error('the staff list could not be read');
+  }
+  return new Set(staff.filter((u) => !u.disabled).map((u) => u.id));
+}
+
+/**
+ * Every subject head whose account can act — what a SOW is filed with.
+ *
+ * ⚠ A DELETED OR SWITCHED-OFF ACCOUNT STAYS IN `subject_heads` (the setting is
+ * the admin's to change) but never enters a pool: nobody could approve from
+ * it, and on a step it would make a request wait on nobody while looking
+ * staffed.
+ */
+export async function listActiveSubjectHeads(
+  service: SupabaseClient
+): Promise<SubjectHeadRow[]> {
+  const [rows, active] = await Promise.all([
+    listSubjectHeads(service),
+    activeStaffIds(),
+  ]);
+  return rows.filter((r) => active.has(r.userId));
 }
 
 /**
@@ -277,6 +313,10 @@ async function repointSubjectHeadSteps(
     (r) => r.config_stage_id && configIds.includes(r.config_stage_id)
   );
   if (open.length === 0) return 0;
+
+  // Only heads whose account can act go on a step (listActiveSubjectHeads).
+  const active = await activeStaffIds();
+  heads = heads.filter((h) => active.has(h.userId));
 
   const requestOf = (r: OpenStageRow) =>
     Array.isArray(r.approval_requests)
