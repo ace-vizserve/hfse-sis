@@ -104,7 +104,10 @@ async function loadLastYear(
 
   return {
     id: (sow as { id: string }).id,
-    label: `${previous.label} ${(priorTerm as { label: string }).label}`,
+    // "AY2025 Term 2": the year's code and the term number, which is how the
+    // New SOW drawer names it. The stored labels read "Academic Year 2025" and
+    // "Term 2 — AY2025", which together repeat the year.
+    label: `${previous.ay_code} Term ${termNumber}`,
     snapshot: (sow as { approved_snapshot: unknown }).approved_snapshot,
   };
 }

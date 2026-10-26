@@ -646,6 +646,20 @@ const CLASSROOM_NAV: NavSection[] = [
   {
     items: [
       { href: '/classroom', label: 'All classes' },
+      // Schemes of work. Admits the same roles as the module (and its own
+      // ROUTE_ACCESS row says so too), so `requiresRoles` matches the module
+      // list rather than narrowing it — kept explicit so the two rows are
+      // edited together if either changes.
+      {
+        href: '/classroom/sow',
+        label: 'Schemes of work',
+        requiresRoles: [
+          'teacher',
+          'academic_coordinator',
+          'school_admin',
+          'superadmin',
+        ],
+      },
       // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
       // this page does not (its own ROUTE_ACCESS row is narrower), so without
       // this every teacher would see a link that bounces them to `/` — the
@@ -1247,6 +1261,12 @@ export const ROUTE_ACCESS: Array<{
   {
     prefix: '/classroom/audit-log',
     allowed: ['academic_coordinator', 'school_admin', 'superadmin'],
+  },
+  // Schemes of work: the same roles as the CLASSROOM_NAV item. Above
+  // `/classroom` so it stays its own rule if the module's list ever narrows.
+  {
+    prefix: '/classroom/sow',
+    allowed: ['teacher', 'academic_coordinator', 'school_admin', 'superadmin'],
   },
   // Classroom — a section × term workspace for teaching staff. Mandatory
   // row: isRouteAllowed defaults to ALLOW for any prefix with no matching

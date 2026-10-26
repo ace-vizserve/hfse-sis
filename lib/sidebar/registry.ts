@@ -40,6 +40,7 @@ import {
   ListChecks,
   ListTodo,
   MessageSquare,
+  NotebookPen,
   ReceiptText,
   RefreshCw,
   Scale,
@@ -206,6 +207,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
     fallbackIcon: School,
     iconByHref: {
       '/classroom': School,
+      // A teacher's term plan, written week by week.
+      '/classroom/sow': NotebookPen,
       // Incident and disciplinary records. The system records these and
       // decides nothing (KD #189), so the glyph names the register, not a
       // verdict being handed down. Moved here from the records module with

@@ -38,6 +38,21 @@ export type SowView = {
     isSurplus: boolean;
     events: string[];
   }[];
+  /** Weeks of the term with no school day, between the numbered weeks. */
+  breaks: { startsOn: string; endsOn: string; label: string | null }[];
+  /** What the page prints: names for the ids in `key`, and the copy lines. */
+  display: {
+    subjectName: string;
+    levelLabel: string;
+    ayCode: string;
+    termNumber: number;
+    termStart: string | null;
+    termEnd: string | null;
+    /** "AY2025 Term 2 · Secondary 1 Science", when it was copied. */
+    copiedFrom: string | null;
+    /** The note it came back with, while it is returned. */
+    returnNote: { note: string; weekNumber: number | null } | null;
+  };
   capability: SowCapability;
 };
 
@@ -50,7 +65,7 @@ export async function loadSowView(
   const { data, error } = await service
     .from('schemes_of_work')
     .select(
-      'id, term_id, subject_id, level_id, track, state, module, updated_at, current_submission_id'
+      'id, academic_year_id, term_id, subject_id, level_id, track, state, module, updated_at, current_submission_id, copied_from_sow_id'
     )
     .eq('id', sowId)
     .maybeSingle();
@@ -58,6 +73,8 @@ export async function loadSowView(
   if (!data) return null;
   const sow = data as {
     id: string;
+    academic_year_id: string;
+    copied_from_sow_id: string | null;
     term_id: string;
     subject_id: string;
     level_id: string;
@@ -132,6 +149,8 @@ export async function loadSowView(
     updated_at: string;
   };
 
+  const display = await loadDisplay(service, sow);
+
   return {
     id: sow.id,
     key: {
@@ -158,6 +177,103 @@ export async function loadSowView(
       isSurplus: w.week_number > termWeekCount,
       events: termWeeks.eventsByWeek.get(w.week_number) ?? [],
     })),
+    breaks: termWeeks.weeks
+      .filter((w) => w.kind === 'break')
+      .map((w) => ({
+        startsOn: w.startsOn,
+        endsOn: w.endsOn,
+        label: w.kind === 'break' ? w.label : null,
+      })),
+    display,
     capability,
+  };
+}
+
+/** Names and copy lines for the page; one round of reads in parallel. */
+async function loadDisplay(
+  service: SupabaseClient,
+  sow: {
+    academic_year_id: string;
+    term_id: string;
+    subject_id: string;
+    level_id: string;
+    state: SowState;
+    current_submission_id: string | null;
+    copied_from_sow_id: string | null;
+  }
+): Promise<SowView['display']> {
+  const [subject, level, term, ay, copied, submission] = await Promise.all([
+    service.from('subjects').select('name').eq('id', sow.subject_id).single(),
+    service.from('levels').select('label').eq('id', sow.level_id).single(),
+    service
+      .from('terms')
+      .select('term_number, start_date, end_date')
+      .eq('id', sow.term_id)
+      .single(),
+    service
+      .from('academic_years')
+      .select('ay_code')
+      .eq('id', sow.academic_year_id)
+      .single(),
+    sow.copied_from_sow_id
+      ? service
+          .from('schemes_of_work')
+          .select('terms(term_number), academic_years(ay_code)')
+          .eq('id', sow.copied_from_sow_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+    // The note belongs to the submission that was returned, which is still
+    // the current one until the teacher sends it again.
+    sow.state === 'returned' && sow.current_submission_id
+      ? service
+          .from('scheme_of_work_submissions')
+          .select('return_note, return_week_number')
+          .eq('id', sow.current_submission_id)
+          .maybeSingle()
+      : Promise.resolve({ data: null, error: null }),
+  ]);
+  for (const r of [subject, level, term, ay, copied, submission]) {
+    if (r.error) throw new Error(r.error.message);
+  }
+
+  const subjectName = (subject.data as { name: string } | null)?.name ?? '';
+  const levelLabel = (level.data as { label: string } | null)?.label ?? '';
+  const t = term.data as {
+    term_number: number;
+    start_date: string | null;
+    end_date: string | null;
+  } | null;
+
+  // An embedded to-one row can come back as an object or a one-item array
+  // depending on how PostgREST reads the foreign key; accept both.
+  const one = <T>(v: T | T[] | null | undefined): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : (v ?? null);
+  const c = copied.data as {
+    terms: { term_number: number } | { term_number: number }[] | null;
+    academic_years: { ay_code: string } | { ay_code: string }[] | null;
+  } | null;
+  const copiedTerm = one(c?.terms);
+  const copiedAy = one(c?.academic_years);
+  const copiedFrom =
+    copiedTerm && copiedAy
+      ? `${copiedAy.ay_code} Term ${copiedTerm.term_number} · ${levelLabel} ${subjectName}`
+      : null;
+
+  const s = submission.data as {
+    return_note: string | null;
+    return_week_number: number | null;
+  } | null;
+
+  return {
+    subjectName,
+    levelLabel,
+    ayCode: (ay.data as { ay_code: string } | null)?.ay_code ?? '',
+    termNumber: t?.term_number ?? 0,
+    termStart: t?.start_date ?? null,
+    termEnd: t?.end_date ?? null,
+    copiedFrom,
+    returnNote: s?.return_note
+      ? { note: s.return_note, weekNumber: s.return_week_number }
+      : null,
   };
 }
