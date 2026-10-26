@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
+import { warnSowMissing, type SowMissing } from '@/lib/sow/missing-message';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -162,7 +163,7 @@ export function GenerateSheetsDialog({
               term_ids:
                 selectedTermIds.length > 0 ? selectedTermIds : undefined,
             };
-      return apiFetch<{ inserted?: number }>(
+      return apiFetch<{ inserted?: number; sowMissing?: SowMissing[] }>(
         '/api/grading-sheets/bulk-create',
         jsonInit('POST', body)
       );
@@ -181,6 +182,7 @@ export function GenerateSheetsDialog({
       // own neutral tone rather than being reported as work done.
       success: (json) => {
         const inserted = Number(json?.inserted ?? 0);
+        warnSowMissing(json?.sowMissing);
         if (inserted === 0) {
           toast.info(
             'Nothing to generate — every selected sheet already exists.'

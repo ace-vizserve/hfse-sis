@@ -24,6 +24,7 @@ import { BulkActionDialog } from '@/components/ui/bulk-action-dialog';
 import { runExclusively, useBulkAction } from '@/lib/hooks/use-bulk-action';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
+import { warnSowMissing, type SowMissing } from '@/lib/sow/missing-message';
 
 import { AdviserCell } from '@/components/sections/adviser-cell';
 import { SectionRowActions } from '@/components/sections/section-row-actions';
@@ -204,7 +205,7 @@ export function MarkbookSectionsDataTable({
       await runExclusively(() =>
         run(
           () =>
-            apiFetch<{ inserted?: number }>(
+            apiFetch<{ inserted?: number; sowMissing?: SowMissing[] }>(
               '/api/grading-sheets/bulk-create',
               jsonInit('POST', {
                 ay_id: ayId,
@@ -215,6 +216,7 @@ export function MarkbookSectionsDataTable({
             pending: `Generating sheets for ${sections}…`,
             success: (json) => {
               const inserted = Number(json?.inserted ?? 0);
+              warnSowMissing(json?.sowMissing);
               return inserted === 0
                 ? 'Nothing to generate. Every sheet already exists.'
                 : `Generated ${inserted.toLocaleString('en-SG')} ${inserted === 1 ? 'sheet' : 'sheets'} for ${sections}`;

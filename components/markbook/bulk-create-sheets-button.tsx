@@ -19,6 +19,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
+import { warnSowMissing, type SowMissing } from '@/lib/sow/missing-message';
 
 // "Create all sheets for [AY]" — calls the bulk-create RPC for every
 // (section × subject × term) missing in this AY. Idempotent: existing sheets
@@ -37,10 +38,11 @@ export function BulkCreateSheetsButton({
   // fallback is preserved (ApiError.message already resolves to body.error).
   const bulkCreate = useMutation({
     mutationFn: () =>
-      apiFetch<{ inserted?: number; reason?: string }>(
-        '/api/grading-sheets/bulk-create',
-        jsonInit('POST', { ay_id: ayId })
-      ),
+      apiFetch<{
+        inserted?: number;
+        reason?: string;
+        sowMissing?: SowMissing[];
+      }>('/api/grading-sheets/bulk-create', jsonInit('POST', { ay_id: ayId })),
   });
 
   const run = useWriteAction();
@@ -53,6 +55,7 @@ export function BulkCreateSheetsButton({
       success: (body) => {
         const inserted: number = body.inserted ?? 0;
         const reason: string = body.reason ?? 'already_covered';
+        warnSowMissing(body.sowMissing);
 
         if (inserted === 0) {
           if (reason === 'no_sections') {

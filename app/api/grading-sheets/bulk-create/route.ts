@@ -9,6 +9,10 @@ import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 import { createServiceClient } from '@/lib/supabase/service';
 import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 import { loadSheetAuditLabels } from '@/lib/grading/sheet-audit-labels';
+import {
+  listClassesWithoutApprovedSow,
+  type ClassWithoutSow,
+} from '@/lib/sow/missing';
 
 /**
  * Every grading sheet id in (sections × terms). Paginated — a whole year runs
@@ -124,6 +128,7 @@ export async function POST(request: NextRequest) {
   }
 
   let inserted = 0;
+  let sowMissing: ClassWithoutSow[] = [];
   let termIdsInScope: string[] = [];
   let existingBefore: Set<string> | null = null;
 
@@ -154,7 +159,7 @@ export async function POST(request: NextRequest) {
     //    against subject_level_offerings at that point).
     let termsQuery = service
       .from('terms')
-      .select('id')
+      .select('id, is_current')
       .eq('academic_year_id', resolvedAyId);
     if (Array.isArray(body?.term_ids) && body.term_ids.length > 0) {
       termsQuery = termsQuery.in('id', body.term_ids);
@@ -238,6 +243,44 @@ export async function POST(request: NextRequest) {
       );
     }
     inserted = (rpcResult as { inserted?: number } | null)?.inserted ?? 0;
+
+    // A WARNING ONLY — the sheets above are already made and always are.
+    // Which classes have no approved scheme of work this term? "This term" is
+    // the current term when it is among those in scope (a whole-year create
+    // would otherwise flag every future term), else every term in scope.
+    // Any failure here is logged and ignored: SOW must never fail sheet
+    // creation.
+    try {
+      const termRows = terms as { id: string; is_current: boolean | null }[];
+      const current = termRows.filter((t) => t.is_current);
+      const warnTerms = current.length > 0 ? current : termRows;
+      const byKey = new Map<string, ClassWithoutSow>();
+      for (const t of warnTerms) {
+        const seen = new Set<string>();
+        const pairs: { sectionId: string; subjectId: string }[] = [];
+        for (const s of allScopes) {
+          if (s.term_id !== t.id) continue;
+          const k = `${s.section_id}|${s.subject_id}`;
+          if (seen.has(k)) continue;
+          seen.add(k);
+          pairs.push({ sectionId: s.section_id, subjectId: s.subject_id });
+        }
+        for (const m of await listClassesWithoutApprovedSow(
+          service,
+          t.id,
+          pairs
+        )) {
+          byKey.set(`${m.sectionId}|${m.subjectId}`, m);
+        }
+      }
+      sowMissing = [...byKey.values()];
+    } catch (e) {
+      console.error(
+        '[bulk-create] could not check schemes of work:',
+        e instanceof Error ? e.message : String(e)
+      );
+      sowMissing = [];
+    }
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'internal error' },
@@ -250,7 +293,12 @@ export async function POST(request: NextRequest) {
   // everything already exists is a legitimate, common no-op — and logging it
   // made the audit trail imply a second bulk creation.
   if (inserted === 0) {
-    return NextResponse.json({ ok: true, changed: false, inserted: 0 });
+    return NextResponse.json({
+      ok: true,
+      changed: false,
+      inserted: 0,
+      sowMissing,
+    });
   }
 
   // The sheets this run created: everything in scope now, minus what was
@@ -321,5 +369,6 @@ export async function POST(request: NextRequest) {
     ok: true,
     inserted,
     reason: inserted === 0 ? 'already_covered' : 'created',
+    sowMissing,
   });
 }
