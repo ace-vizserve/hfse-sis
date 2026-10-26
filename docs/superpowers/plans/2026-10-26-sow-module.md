@@ -35,6 +35,15 @@
 - **Weekly-check options:** exactly `as_planned | adjusted | delayed | extra`, labelled "As planned", "Adjusted", "Delayed", "Extra activities". A note is required unless the option is `as_planned`.
 - **Week rule:** Monday to Friday. A week with at least one school day gets the next number. A week with none is a break row with no number.
 
+## Phase gates — Playwright (Mr Ace, 2026-10-26)
+
+**Every phase ends with its own Playwright spec on the local stack.** It must pass before the next phase starts:
+
+- Each spec lives at `e2e/sow/phase-<N>.local.spec.ts`. They are written in the style of `e2e/parent-portal/parent-portal.local.spec.ts`, using `localDb()` from `e2e/parent-portal/local-db.ts` for setup only, and each one undoes its own setup.
+- Each spec drives that phase's screens as the real user would. Phase 1: an admin sets a subject head, and the approvers screen offers "Subject head for that subject" on the SOW flow.
+- Run each with `npx playwright test e2e/sow/phase-<N>.local.spec.ts`, against `next dev` on the local stack.
+- Task 18's full walk-through is the Phase 6 spec.
+
 ## Review Focus
 
 Five ways real use could break this that no task's main tests cover. Each one's test is added to the task named:
