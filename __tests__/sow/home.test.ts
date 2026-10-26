@@ -193,7 +193,7 @@ describe('loadSowHome', () => {
     expect(home.lessons[0].topic).toBe(
       'Ch 3.4 Elements, compounds and mixtures'
     );
-    expect(home.lessons[0].state.label).toBe('Check due Fri');
+    expect(home.lessons[0].state?.label).toBe('Check due Fri');
     expect(home.lessons[0].href).toBe('/classroom/sow/sow-sci');
   });
 
@@ -216,8 +216,8 @@ describe('loadSowHome', () => {
       ME,
       TODAY
     );
-    expect(home.lessons[0].state.label).toBe('Checked');
-    expect(home.lessons[1].state.label).toBe('Relief Wed');
+    expect(home.lessons[0].state?.label).toBe('Checked');
+    expect(home.lessons[1].state?.label).toBe('Relief Wed');
   });
 
   it('shows the state of a SOW that has no approved plan', async () => {
@@ -248,7 +248,7 @@ describe('loadSowHome', () => {
       ME,
       TODAY
     );
-    expect(home.lessons.map((l) => [l.topic, l.state.label])).toEqual([
+    expect(home.lessons.map((l) => [l.topic, l.state?.label])).toEqual([
       ['SOW in review, no lessons to show yet', 'In review'],
       ['SOW returned by the subject head', 'Returned'],
     ]);
@@ -348,7 +348,7 @@ describe('loadSowHome', () => {
     );
     // Signed: nothing left for this teacher to check, and no to-do.
     expect(home.todos).toEqual([]);
-    expect(home.lessons[0].state.label).toBe('Checked');
+    expect(home.lessons[0].state?.label).toBe('Checked');
   });
 
   it('a not-started SOW is a to-do', async () => {
@@ -482,6 +482,23 @@ describe('loadSowHome', () => {
     ]);
   });
 
+  it('shows no chip when the week has no plan (the topic line already says so)', async () => {
+    rowsMock.mockResolvedValue([
+      sowRow({
+        classes: [{ sectionId: 'd1', name: 'Discipline 1' }],
+        sow: { id: 'sow-sci', state: 'approved' },
+      }),
+    ]);
+    assignMock.mockResolvedValue([mine('d1')]);
+    // Week 2 is not in the approved plan.
+    const home = await loadSowHome(fakeService(world()), ME, '2026-10-14');
+    expect(home.lessons[0]).toMatchObject({
+      topic: 'Nothing planned for this week',
+      state: null,
+    });
+    expect(home.todos).toEqual([]);
+  });
+
   it('is empty for someone who teaches nothing', async () => {
     rowsMock.mockResolvedValue([]);
     assignMock.mockResolvedValue([]);
@@ -489,30 +506,69 @@ describe('loadSowHome', () => {
     expect(home).toEqual({ lessons: [], todos: [] });
   });
 
-  it('reads in a fixed number of queries however many classes there are', async () => {
-    const many = Array.from({ length: 12 }, (_, i) => ({
-      sectionId: `c${i}`,
-      name: `Class ${i}`,
-    }));
-    rowsMock.mockResolvedValue([
-      sowRow({ classes: many, sow: { id: 'sow-sci', state: 'approved' } }),
-    ]);
-    assignMock.mockResolvedValue(many.map((c) => mine(c.sectionId)));
-    await loadSowHome(fakeService(world()), ME, TODAY);
-    const few = queries;
+  it('runs no query at all when the passed assignments hold no subject seat', async () => {
+    const formAdviser = {
+      id: 'a-fa',
+      teacher_user_id: ME,
+      section_id: 'd1',
+      subject_id: null,
+      role: 'form_adviser',
+      via: 'substantive',
+    };
+    const covering = mine('d2', 'sci', { via: 'relief' });
+    for (const assignments of [[], [formAdviser], [covering]]) {
+      const home = await loadSowHome(fakeService(world()), ME, TODAY, {
+        assignments: assignments as never,
+        ayId: 'ay',
+      });
+      expect(home).toEqual({ lessons: [], todos: [] });
+    }
+    expect(queries).toBe(0);
+    expect(assignMock).not.toHaveBeenCalled();
+    expect(rowsMock).not.toHaveBeenCalled();
+    expect(weeksMock).not.toHaveBeenCalled();
+  });
 
-    queries = 0;
+  it('passed assignments and year are not read again', async () => {
     rowsMock.mockResolvedValue([
-      sowRow({
-        classes: many.slice(0, 2),
-        sow: { id: 'sow-sci', state: 'approved' },
-      }),
+      sowRow({ sow: { id: 'sow-sci', state: 'approved' } }),
     ]);
-    assignMock.mockResolvedValue(
-      many.slice(0, 2).map((c) => mine(c.sectionId))
-    );
-    await loadSowHome(fakeService(world()), ME, TODAY);
-    expect(few).toBe(queries);
-    expect(few).toBeLessThanOrEqual(6);
+    await loadSowHome(fakeService(world()), ME, TODAY, {
+      assignments: [mine('d1'), mine('d2')] as never,
+      ayId: 'ay',
+    });
+    expect(assignMock).not.toHaveBeenCalled();
+    // The rows loader is handed what the page holds, so it reads neither.
+    expect(rowsMock).toHaveBeenCalledTimes(1);
+    expect(rowsMock.mock.calls[0][3]).toMatchObject({ ayId: 'ay' });
+    expect(weeksMock).toHaveBeenCalledTimes(1);
+    // terms, schemes, checks, sign-offs: no academic_years read.
+    expect(queries).toBe(4);
+  });
+
+  it('reads in a fixed number of queries however many classes there are', async () => {
+    const run = async (n: number) => {
+      const cls = Array.from({ length: n }, (_, i) => ({
+        sectionId: `c${i}`,
+        name: `Class ${i}`,
+      }));
+      queries = 0;
+      assignMock.mockClear();
+      rowsMock.mockReset();
+      weeksMock.mockClear();
+      rowsMock.mockResolvedValue([
+        sowRow({ classes: cls, sow: { id: 'sow-sci', state: 'approved' } }),
+      ]);
+      await loadSowHome(fakeService(world()), ME, TODAY, {
+        assignments: cls.map((c) => mine(c.sectionId)) as never,
+        ayId: 'ay',
+      });
+      // Each mocked loader is called once however many classes there are, so
+      // the table count below is the whole of the home's reads.
+      expect(rowsMock).toHaveBeenCalledTimes(1);
+      expect(weeksMock).toHaveBeenCalledTimes(1);
+      return queries;
+    };
+    expect(await run(12)).toBe(await run(2));
   });
 });

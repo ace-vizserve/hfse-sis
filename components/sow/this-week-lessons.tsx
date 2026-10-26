@@ -56,14 +56,16 @@ export function ThisWeekLessons({
                   {l.topic}
                 </span>
               </span>
-              <span
-                className={cn(
-                  'whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold',
-                  CHIP[l.state.tone]
-                )}
-              >
-                {l.state.label}
-              </span>
+              {l.state && (
+                <span
+                  className={cn(
+                    'whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold',
+                    CHIP[l.state.tone]
+                  )}
+                >
+                  {l.state.label}
+                </span>
+              )}
             </Link>
           </li>
         ))}

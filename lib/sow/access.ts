@@ -132,22 +132,34 @@ type SectionRow = {
 export async function listMySowRows(
   service: SupabaseClient,
   userId: string,
-  termId: string
+  termId: string,
+  /**
+   * A caller that already holds the teacher's assignments and the term's year
+   * (the Classroom home) passes them so neither is read again.
+   */
+  known: {
+    assignments?: EffectiveAssignmentRow[];
+    ayId?: string;
+  } = {}
 ): Promise<MySowRow[]> {
   const assignments = (
-    await loadEffectiveAssignmentsForUser(service, userId)
+    known.assignments ??
+    (await loadEffectiveAssignmentsForUser(service, userId))
   ).filter(
     (a) => a.via === 'substantive' && isSubjectRole(a.role) && a.subject_id
   );
   if (assignments.length === 0) return [];
 
-  const { data: term, error: termError } = await service
-    .from('terms')
-    .select('academic_year_id')
-    .eq('id', termId)
-    .maybeSingle();
-  if (termError) throw new Error(termError.message);
-  const ayId = (term as { academic_year_id: string } | null)?.academic_year_id;
+  let ayId = known.ayId;
+  if (!ayId) {
+    const { data: term, error: termError } = await service
+      .from('terms')
+      .select('academic_year_id')
+      .eq('id', termId)
+      .maybeSingle();
+    if (termError) throw new Error(termError.message);
+    ayId = (term as { academic_year_id: string } | null)?.academic_year_id;
+  }
   if (!ayId) return [];
 
   const sectionIds = [...new Set(assignments.map((a) => a.section_id))];

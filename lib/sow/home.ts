@@ -2,7 +2,10 @@ import 'server-only';
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
+import {
+  type EffectiveAssignmentRow,
+  loadEffectiveAssignmentsForUser,
+} from '@/lib/auth/teacher-assignments';
 import { sgToday } from '@/lib/dates';
 import { toPlainText } from '@/lib/rich-text';
 import { SowSnapshotSchema } from '@/lib/schemas/sow';
@@ -50,7 +53,8 @@ export type LessonRow = {
   /** "Week 3", or "Week 4 · next week" on a weekend or a break; null without one. */
   weekLabel: string | null;
   topic: string;
-  state: { label: string; tone: LessonTone };
+  /** Null when there is nothing to say beyond the topic line. */
+  state: { label: string; tone: LessonTone } | null;
   href: string;
 };
 
@@ -122,10 +126,17 @@ function reliefDay(windows: ReliefWindow[], week: NumberedWeek): string | null {
 export async function loadSowHome(
   service: SupabaseClient,
   userId: string,
-  today: string = sgToday()
+  today: string = sgToday(),
+  /**
+   * What the Classroom page already holds: the teacher's assignments (its
+   * memoised read) and the CURRENT academic year's id. Given, neither is read
+   * again; and with no subject seat in the assignments nothing is queried.
+   */
+  known: { assignments?: EffectiveAssignmentRow[]; ayId?: string } = {}
 ): Promise<SowHome> {
   const assignments = (
-    await loadEffectiveAssignmentsForUser(service, userId)
+    known.assignments ??
+    (await loadEffectiveAssignmentsForUser(service, userId))
   ).filter(
     (a) =>
       a.via === 'substantive' &&
@@ -135,17 +146,21 @@ export async function loadSowHome(
   );
   if (assignments.length === 0) return EMPTY;
 
-  const { data: ay, error: ayError } = await service
-    .from('academic_years')
-    .select('id')
-    .eq('is_current', true)
-    .maybeSingle();
-  if (ayError) throw new Error(ayError.message);
-  if (!ay) return EMPTY;
+  let ayId = known.ayId;
+  if (!ayId) {
+    const { data: ay, error: ayError } = await service
+      .from('academic_years')
+      .select('id')
+      .eq('is_current', true)
+      .maybeSingle();
+    if (ayError) throw new Error(ayError.message);
+    ayId = (ay as { id: string } | null)?.id;
+  }
+  if (!ayId) return EMPTY;
   const { data: termRows, error: termError } = await service
     .from('terms')
     .select('id, term_number, start_date, end_date, is_current')
-    .eq('academic_year_id', (ay as { id: string }).id);
+    .eq('academic_year_id', ayId);
   if (termError) throw new Error(termError.message);
   const term = resolveCurrentTerm(
     (termRows ?? []) as {
@@ -159,7 +174,10 @@ export async function loadSowHome(
   );
   if (!term) return EMPTY;
 
-  const rows = await listMySowRows(service, userId, term.id);
+  const rows = await listMySowRows(service, userId, term.id, {
+    assignments,
+    ayId,
+  });
   if (rows.length === 0) return EMPTY;
 
   const sowIds = rows.flatMap((r) => (r.sow ? [r.sow.id] : []));
@@ -384,7 +402,11 @@ export async function loadSowHome(
               tone: 'quiet',
             };
       } else {
-        state = { label: current ? 'This week' : 'Next week', tone: 'muted' };
+        // No plan for the week, or a break: the row already says so, so no chip.
+        state =
+          shown && !current && planned
+            ? { label: 'Next week', tone: 'muted' }
+            : null;
       }
       // The week still has to be checked under a cover (the regular teacher
       // answers for it), so the to-do counts it whatever the chip says.

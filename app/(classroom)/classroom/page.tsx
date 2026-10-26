@@ -16,6 +16,7 @@ import {
 import { PageShell } from '@/components/ui/page-shell';
 import { SowTodos } from '@/components/sow/sow-todos';
 import { ThisWeekLessons } from '@/components/sow/this-week-lessons';
+import type { EffectiveAssignmentRow } from '@/lib/auth/teacher-assignments';
 import { loadSowHome, type SowHome } from '@/lib/sow/home';
 import { createServiceClient } from '@/lib/supabase/service';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
@@ -59,15 +60,9 @@ export default async function ClassroomListPage({
     role === 'teacher' ? await loadEffectiveAssignmentsForUserMemo(userId) : [];
   const scope = resolveClassroomScope(role, assignments);
 
-  // The week's lessons and SOW to-dos ride the same wave as the year lookups.
-  // Never the reason the page fails: a failed read just leaves the strip out.
-  const [currentAy, ayCodes, sowHome] = await Promise.all([
+  const [currentAy, ayCodes] = await Promise.all([
     getCurrentAcademicYear(),
     listAyCodes(supabase),
-    loadSowHome(createServiceClient(), userId).catch((e: unknown) => {
-      console.error('[classroom] sow home failed:', e);
-      return { lessons: [], todos: [] } satisfies SowHome;
-    }),
   ]);
   const selectedAyCode =
     ayParam && ayCodes.includes(ayParam) ? ayParam : currentAy?.ay_code;
@@ -196,16 +191,19 @@ export default async function ClassroomListPage({
         <UpcomingCover userId={userId} role={role} className="mt-6" />
       </Suspense>
 
-      {/* Only for someone who teaches a subject this term; renders nothing
-          otherwise, so the class list below is untouched for everyone else. */}
-      {(sowHome.lessons.length > 0 || sowHome.todos.length > 0) && (
-        <div className="flex flex-wrap items-start gap-5">
-          <ThisWeekLessons
-            lessons={sowHome.lessons}
-            className="basis-[560px] grow-[999]"
+      {/* This week's lessons and SOW to-dos. Behind a boundary like the cover
+          panel, so the class list never waits on it; null fallback because it
+          renders nothing for most readers. Only for the CURRENT year: the
+          lessons are this term's, so picking another year in the switcher
+          hides it. */}
+      {currentAy && ay?.id === currentAy.id && (
+        <Suspense fallback={null}>
+          <SowHomeStrip
+            userId={userId}
+            assignments={assignments}
+            ayId={currentAy.id}
           />
-          <SowTodos todos={sowHome.todos} className="basis-[300px] grow" />
-        </div>
+        </Suspense>
       )}
 
       <div className="@container/main">
@@ -274,6 +272,44 @@ async function UpcomingCover({
       liveCovers={live}
       className={className}
     />
+  );
+}
+
+/**
+ * This week's lessons and SOW to-dos (scheme of work, board 15).
+ *
+ * Takes the page's memoised assignments, so someone with no subject seat —
+ * every non-teacher role, whose page assignments are `[]` — costs no query.
+ * Never the reason the page fails: a failed read renders nothing.
+ */
+async function SowHomeStrip({
+  userId,
+  assignments,
+  ayId,
+}: {
+  userId: string;
+  assignments: EffectiveAssignmentRow[];
+  ayId: string;
+}) {
+  let home: SowHome;
+  try {
+    home = await loadSowHome(createServiceClient(), userId, undefined, {
+      assignments,
+      ayId,
+    });
+  } catch (e) {
+    console.error('[classroom] sow home failed:', e);
+    return null;
+  }
+  if (home.lessons.length === 0 && home.todos.length === 0) return null;
+  return (
+    <div className="flex flex-wrap items-start gap-5">
+      <ThisWeekLessons
+        lessons={home.lessons}
+        className="basis-[560px] grow-[999]"
+      />
+      <SowTodos todos={home.todos} className="basis-[300px] grow" />
+    </div>
   );
 }
 
