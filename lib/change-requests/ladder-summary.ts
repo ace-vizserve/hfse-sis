@@ -5,6 +5,7 @@
 
 import { joinNames } from '@/lib/approvals/readiness';
 import type {
+  ApprovalResolver,
   ApprovalRule,
   ApproverLevelScope,
   GradeChangeApprovalFlow,
@@ -28,7 +29,13 @@ export type GradeChangeFilingRoute = {
 /** One configured step, as `loadConfiguredLadder` returns it. */
 export type ConfiguredLadderStep = {
   label: string;
-  resolver: 'named' | 'form_adviser';
+  /**
+   * ⚠ 'subject_head' never reaches a grade change — only the scheme of work
+   * may have such a step (`createStage`). Typed wide only because
+   * `loadConfiguredLadder` serves every flow; one would summarise as a named
+   * step with nobody on it, and refuse the filing rather than skip the step.
+   */
+  resolver: ApprovalResolver;
   /** Migration 145. Missing reads as 'any'. */
   approval_rule?: ApprovalRule | null;
   approvers: Array<{

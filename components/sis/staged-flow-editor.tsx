@@ -60,7 +60,6 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import {
-  APPROVAL_RESOLVERS,
   APPROVAL_RESOLVER_DESCRIPTIONS,
   APPROVAL_RESOLVER_LABELS,
   APPROVAL_RULES,
@@ -69,7 +68,9 @@ import {
   APPROVER_LEVEL_SCOPE_ANY_LABEL,
   APPROVER_LEVEL_SCOPE_LABELS,
   DECLARATION_APPROVAL_FLOW,
+  SOW_APPROVAL_FLOW,
   STAGE_NAME_EXAMPLES,
+  resolversForFlow,
   STAGED_FLOW_DESCRIPTIONS,
   STAGED_FLOW_LABELS,
   type ApprovalResolver,
@@ -144,12 +145,24 @@ function resolverDescription(
 const ADVISER_STEP_RULE_REASON =
   'Who advises a class changes when someone covers it, so any one adviser approves this step.';
 
+/** The same line for a subject head step (scheme of work only). */
+const SUBJECT_HEAD_STEP_RULE_REASON =
+  'Any one head of the SOW’s subject approves this step.';
+
+/** Why this kind of step is fixed at "any one of them". */
+function fixedRuleReason(resolver: ApprovalResolver): string {
+  return resolver === 'subject_head'
+    ? SUBJECT_HEAD_STEP_RULE_REASON
+    : ADVISER_STEP_RULE_REASON;
+}
+
 /** One sentence under the setting, when there is something worth saying. */
 function ruleNote(
   stage: FlowConfig['stages'][number],
   rule: ApprovalRule
 ): string | null {
-  if (!canRequireEveryone(stage.resolver)) return ADVISER_STEP_RULE_REASON;
+  if (!canRequireEveryone(stage.resolver))
+    return fixedRuleReason(stage.resolver);
   if (rule !== 'all') return null;
   const people = new Set(stage.approvers.map((a) => a.userId)).size;
   // Nobody yet is already said, in red, beside the empty list of names.
@@ -328,11 +341,13 @@ function FlowCard({
             No steps yet
           </p>
           <p className="mx-auto mt-1 max-w-md text-[14px] leading-relaxed text-muted-foreground">
-            {/* Every flow that is not a declaration is a grade change today
-                (STAGED_APPROVAL_FLOWS) — the same split the eyebrow uses. */}
+            {/* Declarations, the scheme of work, and otherwise the two grade
+                change kinds (STAGED_APPROVAL_FLOWS). */}
             {isDeclaration(flow.flow)
               ? 'Add the first step to start. For absence declarations the school asked for the child’s form class adviser, then an officer in charge.'
-              : 'Grade change requests of this kind can’t be filed until at least one step has someone on it.'}
+              : flow.flow === SOW_APPROVAL_FLOW
+                ? 'Add the first step to start. For the scheme of work the school asked for the subject head, then the officer in charge, the assistant principal and the Academic and Examination Board.'
+                : 'Grade change requests of this kind can’t be filed until at least one step has someone on it.'}
           </p>
         </div>
       ) : (
@@ -468,6 +483,17 @@ function StageRow({
             {resolverDescription(stage.flow, stage.resolver, rule)}
           </p>
         </div>
+
+        {/* A subject head step lists nobody here — its people are set per
+            subject in Subject heads. Said in red only when nobody is set there
+            at all, the same voice as an empty named step's line below. */}
+        {stage.resolver === 'subject_head' &&
+          (stage.subjectHeadCount ?? 0) === 0 && (
+            <p className="text-[13px] text-destructive">
+              No subject heads set yet — set them in Subject heads. Nothing can
+              get past this step until then.
+            </p>
+          )}
 
         {isNamed && (
           <div className="flex flex-wrap items-center gap-1.5">
@@ -961,7 +987,9 @@ function AddStageDialog({
             }}
             className="gap-3"
           >
-            {APPROVAL_RESOLVERS.map((option) => (
+            {/* The scheme of work offers "Subject head for that subject" in
+                place of the form adviser; every other flow is unchanged. */}
+            {resolversForFlow(flow).map((option) => (
               <label
                 key={option}
                 className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-3 has-[:checked]:border-brand-indigo-soft has-[:checked]:bg-accent"
@@ -1013,7 +1041,7 @@ function AddStageDialog({
           <FieldDescription>
             {everyoneAllowed
               ? 'Either way, if anyone on the step turns it down, it stops there.'
-              : ADVISER_STEP_RULE_REASON}
+              : fixedRuleReason(resolver)}
           </FieldDescription>
         </Field>
 

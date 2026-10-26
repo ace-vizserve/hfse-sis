@@ -9,8 +9,9 @@ import {
   STAGED_FLOW_LABELS,
 } from '@/lib/schemas/approval-flows';
 import {
-  EVERYONE_NEEDS_NAMED_PEOPLE,
+  STAGE_REFUSALS,
   createStage,
+  everyoneRefusalFor,
   loadAllFlowConfigs,
 } from '@/lib/approvals/config';
 
@@ -58,13 +59,20 @@ export async function POST(request: Request) {
       approval_rule?: unknown;
       resolver?: unknown;
     };
-    const everyoneOnAdviserStep =
-      sent.approval_rule === 'all' && sent.resolver === 'form_adviser';
+    const everyoneOnDerivedStep =
+      sent.approval_rule === 'all' &&
+      (sent.resolver === 'form_adviser' || sent.resolver === 'subject_head');
+    // A subject head step asked of a flow other than the scheme of work.
+    const kindIssue = parsed.error.issues.find(
+      (i) => i.path.join('.') === 'resolver' && i.code === 'custom'
+    );
     return NextResponse.json(
       {
-        error: everyoneOnAdviserStep
-          ? EVERYONE_NEEDS_NAMED_PEOPLE
-          : 'Please check the form.',
+        error: kindIssue
+          ? kindIssue.message
+          : everyoneOnDerivedStep
+            ? everyoneRefusalFor(String(sent.resolver))
+            : 'Please check the form.',
         issues: parsed.error.issues.map((i) => ({
           path: i.path.join('.'),
           message: i.message,
@@ -119,7 +127,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ stage }, { status: 201 });
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
-    if (reason === EVERYONE_NEEDS_NAMED_PEOPLE) {
+    if (STAGE_REFUSALS.includes(reason)) {
       return NextResponse.json({ error: reason }, { status: 400 });
     }
     console.error('[approval-stages] create failed:', reason);

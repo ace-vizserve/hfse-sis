@@ -12,8 +12,8 @@ import {
 } from '@/lib/schemas/approval-flows';
 import {
   ApprovalConfigPartialError,
-  EVERYONE_NEEDS_NAMED_PEOPLE,
   deactivateStage,
+  everyoneRefusalFor,
   moveStage,
   renameStage,
   setStageRule,
@@ -86,7 +86,7 @@ export async function PATCH(
   // step does not half-succeed.
   if (nextRule === 'all' && existing.resolver !== 'named') {
     return NextResponse.json(
-      { error: EVERYONE_NEEDS_NAMED_PEOPLE },
+      { error: everyoneRefusalFor(existing.resolver) },
       { status: 400 }
     );
   }
@@ -172,7 +172,7 @@ export async function PATCH(
         await logPartial('approval_rule', result.reason);
         return result.reason === 'needs_named_people'
           ? NextResponse.json(
-              { error: EVERYONE_NEEDS_NAMED_PEOPLE },
+              { error: everyoneRefusalFor(existing.resolver) },
               { status: 400 }
             )
           : NextResponse.json(

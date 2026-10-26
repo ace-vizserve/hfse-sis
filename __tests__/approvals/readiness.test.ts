@@ -10,6 +10,7 @@ import {
   DECLARATION_APPROVAL_FLOW,
   GRADE_CHANGE_AEB_APPROVAL_FLOW,
   GRADE_CHANGE_APPROVAL_FLOW,
+  SOW_APPROVAL_FLOW,
   type ApproverLevelScope,
 } from '@/lib/schemas/approval-flows';
 
@@ -562,5 +563,66 @@ describe('accounts that cannot act', () => {
         /disabled|banned|resolver|pool|null|stage|rule/i
       );
     }
+  });
+});
+
+describe('subject-head steps (scheme of work)', () => {
+  const subjectHead = (subjectHeadCount?: number) => ({
+    label: 'Subject head',
+    resolver: 'subject_head' as const,
+    approvers: [],
+    subjectHeadCount,
+  });
+
+  it('readiness flags a subject-head step with no heads at all', () => {
+    const result = classifyStagedFlowReadiness(
+      [subjectHead(0), named(1)],
+      undefined,
+      SOW_APPROVAL_FLOW
+    );
+    expect(result.tone).toBe('destructive');
+    expect(result.label).toBe('No subject heads set yet');
+    expect(result.warning).toContain(
+      'No subject heads set yet — set them in Subject heads'
+    );
+    expect(result.warning).toContain('Subject head');
+  });
+
+  it('flags it too when the caller did not count the heads', () => {
+    expect(classifyStagedFlowReadiness([subjectHead()]).tone).toBe(
+      'destructive'
+    );
+  });
+
+  it('is ready once at least one subject head is set', () => {
+    const result = classifyStagedFlowReadiness(
+      [subjectHead(1), named(1)],
+      BOTH_HALVES,
+      SOW_APPROVAL_FLOW
+    );
+    expect(result.tone).toBe('mint');
+    expect(result.warning).toBeNull();
+  });
+
+  it('is never offered "everyone must approve"', () => {
+    expect(canRequireEveryone('subject_head')).toBe(false);
+  });
+
+  it('reads as its name in the steps line, marked when nobody is set', () => {
+    expect(
+      describeStepsInOrder([
+        { ...subjectHead(0), approvers: [] },
+        { ...subjectHead(2), approvers: [] },
+      ])
+    ).toEqual([
+      { text: 'Subject head', empty: true },
+      { text: 'Subject head', empty: false },
+    ]);
+  });
+
+  it('speaks plainly', () => {
+    const result = classifyStagedFlowReadiness([subjectHead(0)]);
+    const text = `${result.label} ${result.warning ?? ''}`;
+    expect(text).not.toMatch(/resolver|pool|null|subject_head|rule/i);
   });
 });

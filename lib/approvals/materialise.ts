@@ -18,6 +18,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { DecideActor } from '@/lib/approvals/decide';
 import type {
   ApprovalRepointOutcome,
+  ApprovalResolver,
   ApprovalRule,
   ApproverLevelScope,
   StagedApprovalFlow,
@@ -78,6 +79,21 @@ export type OpenApprovalRequestInput = {
    * (`SUBJECT_PRECHECKS` in lib/approvals/decide.ts).
    */
   excludeUserIds?: readonly string[];
+  /**
+   * Who heads the subject this request is about, for this half of the school
+   * — worked out by the caller from the subject-heads setting (migration 198).
+   * Frozen into every `subject_head` step of the ladder.
+   *
+   * ⚠ A SUBJECT HEAD STEP IS FILED AS A NAMED STEP. `approval_request_stages`
+   * only knows 'named' and 'form_adviser', and `approval_advance` decides a
+   * named step from its frozen pool, so the new kind of step needs nothing new
+   * from the decide RPC.
+   *
+   * ⚠ OMITTED OR EMPTY STILL FILES. The step stalls, visibly, with nobody on
+   * it — exactly as an empty named step does (KD #196: a stall is never a
+   * skip). The subject-heads setting re-points it once somebody is named.
+   */
+  subjectHeadPool?: readonly string[];
 };
 
 export type OpenApprovalRequestResult =
@@ -90,7 +106,8 @@ type ConfiguredStage = {
   id: string;
   stage_order: number;
   label: string;
-  resolver: 'named' | 'form_adviser';
+  /** 'subject_head' only on the scheme-of-work flow (migration 198). */
+  resolver: ApprovalResolver;
   /** Migration 145. Missing reads as 'any'. */
   approval_rule?: ApprovalRule | null;
 };
@@ -129,7 +146,7 @@ export function poolForLevelType(
  * line migration 145's CHECK draws — so anything else reads as 'any'.
  */
 export function ruleForFiling(stage: {
-  resolver: 'named' | 'form_adviser';
+  resolver: ApprovalResolver;
   approval_rule?: ApprovalRule | null;
 }): ApprovalRule {
   return stage.resolver === 'named' && stage.approval_rule === 'all'
@@ -234,6 +251,14 @@ export async function openApprovalRequest(
   const requestId = (created as unknown as { id: string }).id;
   const excluded = new Set(input.excludeUserIds ?? []);
 
+  // ⚠ THE FILER IS LEFT OUT OF A SUBJECT HEAD POOL WHETHER OR NOT THE CALLER
+  // ASKED. A teacher who heads their own subject must not vet their own SOW;
+  // the step goes to the subject's other head, or stalls visibly if there is
+  // none. Deduped by person, as `poolForLevelType` does for a named step.
+  const subjectHeadPool = [...new Set(input.subjectHeadPool ?? [])].filter(
+    (id) => !excluded.has(id) && id !== input.filedBy
+  );
+
   // ⚠ Renumbered 1..n rather than copying the configuration's own numbers. A
   // deactivated stage leaves a gap in the configuration, and the ladder is a
   // snapshot with no reason to inherit it.
@@ -241,7 +266,9 @@ export async function openApprovalRequest(
     request_id: requestId,
     stage_order: index + 1,
     label: stage.label,
-    resolver: stage.resolver,
+    // ⚠ A subject head step is filed as 'named' (see `subjectHeadPool`): the
+    // request table's resolver CHECK knows only 'named' and 'form_adviser'.
+    resolver: stage.resolver === 'form_adviser' ? 'form_adviser' : 'named',
     // ⚠ Which configured step this is a copy of (migration 146), so a later
     // change to that step's people or rule still finds this row after the
     // step is renamed. `repointWaitingStages` matched by label alone before,
@@ -261,7 +288,9 @@ export async function openApprovalRequest(
         ? poolForLevelType(stage.approvers, input.levelType).filter(
             (id) => !excluded.has(id)
           )
-        : [],
+        : stage.resolver === 'subject_head'
+          ? subjectHeadPool
+          : [],
     section_id: stage.resolver === 'form_adviser' ? input.sectionId : null,
     // ⚠ Stamped on EVERY row, derived or named, so the pool of a request
     // already waiting can be rebuilt when the school changes who holds the
@@ -361,11 +390,17 @@ export async function repointWaitingStages(
     flow: string;
     stage_order: number;
     label: string;
-    resolver: 'named' | 'form_adviser';
+    resolver: ApprovalResolver;
     approval_rule?: ApprovalRule | null;
   };
   // A derived step works its people out at decision time and holds no pool —
   // and can only ever be 'any', so there is no rule to carry either.
+  //
+  // ⚠ A SUBJECT HEAD STEP IS SKIPPED TOO, though its copies are 'named' rows
+  // with a pool. Their people come from the subject-heads setting, per SOW
+  // subject, not from this step's (always empty) approver list — rebuilding
+  // them from here would empty every one. The subject-heads setting re-points
+  // them when it changes.
   if (cfg.resolver !== 'named') return 0;
   const configuredRule = ruleForFiling(cfg);
 

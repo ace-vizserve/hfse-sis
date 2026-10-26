@@ -7,6 +7,9 @@ import { repointWaitingStages } from '@/lib/approvals/materialise';
 import {
   APPROVAL_RULE_ALL_NEEDS_NAMED,
   STAGED_APPROVAL_FLOWS,
+  STEP_KIND_NOT_OFFERED,
+  SUBJECT_HEAD_ONLY_ON_SOW,
+  stepKindRefusal,
   type ApprovalResolver,
   type ApprovalRule,
   type ApproverLevelScope,
@@ -77,6 +80,24 @@ async function repointAfterCommit<T extends Record<string, unknown>>(
 /** The sentence for the one refusal a superadmin can act on. */
 export const EVERYONE_NEEDS_NAMED_PEOPLE = `${APPROVAL_RULE_ALL_NEEDS_NAMED} Who advises a class changes when someone covers it, so on that step any one adviser approves.`;
 
+/** The same refusal, said of a subject head step (migration 198). */
+export const EVERYONE_NEEDS_NAMED_PEOPLE_SUBJECT_HEAD = `${APPROVAL_RULE_ALL_NEEDS_NAMED} On a subject head step, any one head of that subject approves.`;
+
+/** Which of the two sentences fits a step of this kind. */
+export function everyoneRefusalFor(resolver: string): string {
+  return resolver === 'subject_head'
+    ? EVERYONE_NEEDS_NAMED_PEOPLE_SUBJECT_HEAD
+    : EVERYONE_NEEDS_NAMED_PEOPLE;
+}
+
+/** Every sentence `createStage` refuses with — a route answers these with a 400. */
+export const STAGE_REFUSALS: readonly string[] = [
+  EVERYONE_NEEDS_NAMED_PEOPLE,
+  EVERYONE_NEEDS_NAMED_PEOPLE_SUBJECT_HEAD,
+  SUBJECT_HEAD_ONLY_ON_SOW,
+  STEP_KIND_NOT_OFFERED,
+];
+
 /**
  * Reading and editing the steps of a staged approval flow.
  *
@@ -136,6 +157,14 @@ export async function loadFlowConfig(
     .order('created_at', { ascending: true });
   if (approverErr) throw new Error(approverErr.message);
 
+  // ⚠ ASKED ONLY WHEN A SUBJECT HEAD STEP EXISTS, so the other flows read
+  // exactly what they always read. Any row at all counts: the readiness line
+  // is "can this step ever be reached by somebody", and per-subject gaps are
+  // shown on the Subject heads screen.
+  const subjectHeadCount = stages.some((s) => s.resolver === 'subject_head')
+    ? await countSubjectHeads(service)
+    : undefined;
+
   const staff = await listStaffUsers();
   const byId = new Map(staff.map((u) => [u.id, u]));
 
@@ -177,8 +206,18 @@ export async function loadFlowConfig(
       // a read that races the migration.
       approvalRule: s.approval_rule ?? 'any',
       approvers: byStage.get(s.id) ?? [],
+      ...(s.resolver === 'subject_head' ? { subjectHeadCount } : {}),
     })),
   };
+}
+
+/** How many people are set in Subject heads, across every subject (migration 198). */
+async function countSubjectHeads(service: SupabaseClient): Promise<number> {
+  const { count, error } = await service
+    .from('subject_heads')
+    .select('id', { count: 'exact', head: true });
+  if (error) throw new Error(error.message);
+  return count ?? 0;
 }
 
 export async function loadAllFlowConfigs(
@@ -312,10 +351,16 @@ export async function createStage(
   }
 ): Promise<StageView> {
   const approvalRule = input.approvalRule ?? 'any';
+  // ⚠ A subject head step belongs to the scheme of work alone (migration 198
+  // lets the column hold it on any flow, so this is where the line is drawn).
+  // A declaration or a grade change has no subject head to find.
+  const kindRefusal = stepKindRefusal(input.flow, input.resolver);
+  if (kindRefusal) throw new Error(kindRefusal);
   // The schema refuses this first; this is the rule, restated where the write
-  // happens, so no other caller can get round it.
+  // happens, so no other caller can get round it. Migration 145's CHECK is
+  // behind both, and would answer with a database error instead of a reason.
   if (approvalRule === 'all' && !canRequireEveryone(input.resolver)) {
-    throw new Error(EVERYONE_NEEDS_NAMED_PEOPLE);
+    throw new Error(everyoneRefusalFor(input.resolver));
   }
 
   const { data: existing, error: readErr } = await service

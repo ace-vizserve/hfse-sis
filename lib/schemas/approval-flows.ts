@@ -25,8 +25,18 @@ export const STAGED_APPROVAL_FLOWS = [
   'attendance.student_declaration',
   'markbook.grade_change',
   'markbook.grade_change_aeb',
+  'markbook.scheme_of_work',
 ] as const;
 export type StagedApprovalFlow = (typeof STAGED_APPROVAL_FLOWS)[number];
+
+/**
+ * A teacher's Scheme of Work for a term (migration 198). The only flow whose
+ * steps may be "the subject head for that subject" — see `resolversForFlow`.
+ *
+ * Same reason as `DECLARATION_APPROVAL_FLOW` for living here: client
+ * components read it to count and label work.
+ */
+export const SOW_APPROVAL_FLOW: StagedApprovalFlow = 'markbook.scheme_of_work';
 
 /**
  * The absence-and-travel flow, named once.
@@ -66,6 +76,7 @@ export const STAGED_FLOW_LABELS: Record<StagedApprovalFlow, string> = {
     'Grade changes — before the report card is published',
   'markbook.grade_change_aeb':
     'Grade changes — after the report card is published (Academic and Examination Board)',
+  'markbook.scheme_of_work': 'Classroom · Scheme of work approval',
 };
 
 export const STAGED_FLOW_DESCRIPTIONS: Record<StagedApprovalFlow, string> = {
@@ -75,6 +86,8 @@ export const STAGED_FLOW_DESCRIPTIONS: Record<StagedApprovalFlow, string> = {
     'When a teacher asks to change a grade on a locked sheet, and parents have not yet seen that grade on a report card, these people approve it in this order. Each step needs one of its people to approve, unless it is set to need all of them. If anyone turns it down, the grade stays as it is and the teacher is told.',
   'markbook.grade_change_aeb':
     'When a teacher asks to change a grade that parents have already been able to see on a report card, the Academic and Examination Board approves it, in this order. Each step needs one of its people to approve, unless it is set to need all of them. If anyone turns it down, the grade stays as it is and the teacher is told.',
+  'markbook.scheme_of_work':
+    'Each SOW goes through these steps in order. If someone returns it, it goes back to the teacher and starts again from step 1.',
 };
 
 /**
@@ -102,12 +115,60 @@ export const STAGE_NAME_EXAMPLES: Record<StagedApprovalFlow, string> = {
   'attendance.student_declaration': 'Officer in charge',
   'markbook.grade_change': 'Grade change approvers',
   'markbook.grade_change_aeb': 'Academic coordinator',
+  'markbook.scheme_of_work': 'Officer in charge',
 };
 
 // ── How a stage finds its people ────────────────────────────────────────────
+//
+// ⚠ 'subject_head' IS A CONFIGURATION WORD ONLY (migration 198). It may sit on
+// `approval_stages`, never on `approval_request_stages`: when a SOW is sent,
+// the step is filed as a 'named' step whose pool is frozen from the
+// subject-heads setting (`openApprovalRequest`'s `subjectHeadPool`). So the
+// decide RPC, the inbox and the rail keep reading only 'named' and
+// 'form_adviser' on a request.
 
-export const APPROVAL_RESOLVERS = ['named', 'form_adviser'] as const;
+export const APPROVAL_RESOLVERS = [
+  'named',
+  'form_adviser',
+  'subject_head',
+] as const;
 export type ApprovalResolver = (typeof APPROVAL_RESOLVERS)[number];
+
+/**
+ * Which kinds of step a flow may have.
+ *
+ * ⚠ THE SUBJECT HEAD STEP IS THE SCHEME OF WORK'S ALONE. Only a SOW belongs to
+ * one subject; a declaration or a grade change filed onto it would have no
+ * subject head to find. The form adviser step is left off the SOW's picker in
+ * turn: a SOW is a teacher's plan for a subject, not a request about one
+ * child, so "the child's form class adviser" has nobody to name.
+ */
+export function resolversForFlow(
+  flow: StagedApprovalFlow
+): readonly ApprovalResolver[] {
+  return flow === SOW_APPROVAL_FLOW
+    ? ['named', 'subject_head']
+    : ['named', 'form_adviser'];
+}
+
+/** Said when a subject head step is asked of any other flow. */
+export const SUBJECT_HEAD_ONLY_ON_SOW =
+  'Only the scheme of work approval can have a subject head step.';
+
+/** Said when any other kind of step is asked of a flow that does not offer it. */
+export const STEP_KIND_NOT_OFFERED =
+  'That kind of step is not offered for this approval.';
+
+/** The plain sentence for a step kind this flow does not offer, or null. */
+export function stepKindRefusal(
+  flow: StagedApprovalFlow,
+  resolver: ApprovalResolver
+): string | null {
+  if (resolversForFlow(flow).includes(resolver)) return null;
+  return resolver === 'subject_head'
+    ? SUBJECT_HEAD_ONLY_ON_SOW
+    : STEP_KIND_NOT_OFFERED;
+}
 
 /**
  * Written for the superadmin choosing between them, not for a developer.
@@ -121,6 +182,7 @@ export type ApprovalResolver = (typeof APPROVAL_RESOLVERS)[number];
 export const APPROVAL_RESOLVER_LABELS: Record<ApprovalResolver, string> = {
   named: 'Specific people',
   form_adviser: "The child's form class adviser",
+  subject_head: 'Subject head for that subject',
 };
 
 export const APPROVAL_RESOLVER_DESCRIPTIONS: Record<ApprovalResolver, string> =
@@ -129,6 +191,8 @@ export const APPROVAL_RESOLVER_DESCRIPTIONS: Record<ApprovalResolver, string> =
       'You choose who. Anyone you add here will be able to open the whole filing, including any medical certificate attached to it.',
     form_adviser:
       'Worked out automatically for each child — whoever advises their class at the time, including a co-adviser and anyone covering the class that week. Nobody has to keep a list up to date.',
+    subject_head:
+      'Worked out for each SOW from Subject heads — whoever heads that subject, for that half of the school. Any one of them can approve this step.',
   };
 
 // ── How many of a step's people must approve (migration 145) ───────────────
@@ -339,6 +403,14 @@ export const CreateApprovalStageSchema = z
     approval_rule: z.enum(APPROVAL_RULES).optional(),
   })
   .superRefine((v, ctx) => {
+    const kindRefusal = stepKindRefusal(v.flow, v.resolver);
+    if (kindRefusal) {
+      ctx.addIssue({
+        code: 'custom',
+        message: kindRefusal,
+        path: ['resolver'],
+      });
+    }
     if (v.approval_rule === 'all' && v.resolver !== 'named') {
       ctx.addIssue({
         code: 'custom',

@@ -54,6 +54,12 @@ export type StageView = {
    */
   approvalRule: ApprovalRule;
   approvers: StageApproverView[];
+  /**
+   * On a subject head step only: how many people are set in Subject heads,
+   * across every subject. Such a step never has approvers of its own — its
+   * people are worked out per SOW from that setting (migration 198).
+   */
+  subjectHeadCount?: number;
 };
 
 /**
@@ -64,6 +70,9 @@ export type StageView = {
  * so "everyone" would be a list that changes under a request while it waits.
  * The database refuses it too (migration 145); this is what lets the screen
  * say so before the click rather than after.
+ *
+ * A subject head step is refused for the same reason by the same CHECK: its
+ * people are whoever heads the SOW's subject, worked out per SOW.
  */
 export function canRequireEveryone(resolver: ApprovalResolver): boolean {
   return resolver === 'named';
@@ -95,7 +104,19 @@ export type ReadinessStage = {
     /** The account no longer exists as a staff account. Omitted reads as false. */
     removed?: boolean;
   }>;
+  /** Subject head steps only. Omitted reads as nobody set. */
+  subjectHeadCount?: number;
 };
+
+/** A subject head step with nobody at all set in Subject heads. */
+function hasNoSubjectHeads(stage: {
+  resolver: ApprovalResolver;
+  subjectHeadCount?: number;
+}): boolean {
+  return (
+    stage.resolver === 'subject_head' && (stage.subjectHeadCount ?? 0) === 0
+  );
+}
 
 /**
  * Is this one of the two grade-change flows?
@@ -177,6 +198,23 @@ export function classifyStagedFlowReadiness(
       warning: gradeChange
         ? `Nobody is on ${names}, so teachers can’t file this kind of grade change request until you add someone.`
         : `Nothing can get past ${names} until you add someone. Requests will reach that step and stop there.`,
+    };
+  }
+
+  // ⚠ A SUBJECT HEAD STEP HAS NOBODY LISTED ON PURPOSE — its people come from
+  // Subject heads, per SOW subject — so the empty-step check above passes it.
+  // With nobody set there at all, every SOW reaches the step and stalls
+  // (KD #196: never a skip), and the fix is on another screen, so say which.
+  //
+  // ⚠ "AT LEAST ONE SUBJECT HEAD ANYWHERE" IS THE WHOLE TEST. A subject with no
+  // head of its own still stalls at the step; that is for the Subject heads
+  // screen to show, subject by subject, not for this one-line summary.
+  const headless = stages.find(hasNoSubjectHeads);
+  if (headless) {
+    return {
+      tone: 'destructive',
+      label: 'No subject heads set yet',
+      warning: `No subject heads set yet — set them in Subject heads. Until then, nothing can get past “${headless.label}”.`,
     };
   }
 
@@ -318,11 +356,14 @@ export function describeStepsInOrder(
       displayName: string;
       appliesToLevelType?: ApproverLevelScope | null;
     }>;
+    subjectHeadCount?: number;
   }>
 ): Array<{ text: string; empty: boolean }> {
   const MAX_NAMES = 3;
   return stages.map((stage) => {
-    if (stage.resolver !== 'named') return { text: stage.label, empty: false };
+    if (stage.resolver !== 'named') {
+      return { text: stage.label, empty: hasNoSubjectHeads(stage) };
+    }
     if (stage.approvers.length === 0) return { text: stage.label, empty: true };
 
     const scoped = stage.approvers.some((a) => a.appliesToLevelType);
