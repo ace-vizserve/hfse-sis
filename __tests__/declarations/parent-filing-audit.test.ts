@@ -27,6 +27,7 @@ vi.mock('@/lib/audit/log-action', () => ({
 vi.mock('@/lib/rate-limit', () => ({
   getClientIp: () => '127.0.0.1',
   rateLimit: () => ({ limited: false }),
+  userRateLimit: () => ({ limited: false }),
   tooManyRequests: vi.fn(),
 }));
 vi.mock('@/lib/cors', () => ({ corsHeaders: () => ({}) }));

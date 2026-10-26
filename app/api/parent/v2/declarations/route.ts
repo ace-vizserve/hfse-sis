@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import { randomUUID } from 'node:crypto';
 
 import { createServiceClient } from '@/lib/supabase/service';
-import { getClientIp, rateLimit, tooManyRequests } from '@/lib/rate-limit';
+import {
+  getClientIp,
+  rateLimit,
+  tooManyRequests,
+  userRateLimit,
+} from '@/lib/rate-limit';
 import { corsHeaders } from '@/lib/cors';
 import { sgToday } from '@/lib/dates';
 import { logActions } from '@/lib/audit/log-action';
@@ -65,7 +70,9 @@ export async function OPTIONS(request: Request) {
 async function authenticate(
   request: Request,
   cors: Record<string, string>,
-  limits: { ipMax: number; userMax: number }
+  // ⚠ Reading and filing count separately: on one shared scope, a parent who
+  // opened their list a few times was refused when they then tried to file.
+  limits: { scope: string; ipMax: number; userMax: number }
 ): Promise<
   | { ok: true; email: string; userId: string; students: LinkedStudent[] }
   | { ok: false; response: NextResponse }
@@ -73,7 +80,7 @@ async function authenticate(
   const ip = getClientIp(request);
   const ipRl = rateLimit({
     ip,
-    scope: 'parent-v2-declarations',
+    scope: limits.scope,
     ipMax: limits.ipMax,
     windowSecs: 60,
   });
@@ -109,11 +116,9 @@ async function authenticate(
   }
   const email = userData.user.email.trim().toLowerCase();
 
-  const userRl = rateLimit({
-    ip,
+  const userRl = userRateLimit({
     userId: userData.user.id,
-    scope: 'parent-v2-declarations',
-    ipMax: limits.ipMax,
+    scope: limits.scope,
     userMax: limits.userMax,
     windowSecs: 60,
   });
@@ -127,7 +132,11 @@ async function authenticate(
 
 export async function GET(request: Request) {
   const cors = corsHeaders(request.headers.get('origin'), CORS_METHODS);
-  const auth = await authenticate(request, cors, { ipMax: 30, userMax: 20 });
+  const auth = await authenticate(request, cors, {
+    scope: 'parent-v2-declarations-read',
+    ipMax: 30,
+    userMax: 20,
+  });
   if (!auth.ok) return auth.response;
 
   const url = new URL(request.url);
@@ -155,7 +164,11 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const cors = corsHeaders(request.headers.get('origin'), CORS_METHODS);
   // Tighter than the read limits — this writes.
-  const auth = await authenticate(request, cors, { ipMax: 10, userMax: 5 });
+  const auth = await authenticate(request, cors, {
+    scope: 'parent-v2-declarations-file',
+    ipMax: 10,
+    userMax: 5,
+  });
   if (!auth.ok) return auth.response;
 
   let body: unknown;

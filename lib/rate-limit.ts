@@ -65,6 +65,26 @@ export function rateLimit({
   return { limited: false };
 }
 
+/**
+ * The per-user limit on its own, for the second check after a token is
+ * verified. ⚠ Not `rateLimit({ ip, userId, … })` there: that re-runs the IP
+ * check, so every request was counted twice against the IP and a parent was
+ * refused at half the stated limit.
+ */
+export function userRateLimit({
+  userId,
+  scope,
+  userMax,
+  windowSecs,
+}: {
+  userId: string;
+  scope: string;
+  userMax: number;
+  windowSecs: number;
+}): RateLimitResult {
+  return checkLimit(`${scope}:user:${userId}`, userMax, windowSecs);
+}
+
 /** Extract caller IP from Vercel's x-forwarded-for header. */
 export function getClientIp(request: {
   headers: { get(h: string): string | null };
