@@ -279,6 +279,10 @@ export const ALL_AUDIT_ACTIONS = [
   'approval_stage.delete',
   'approval_stage.approver.assign',
   'approval_stage.approver.revoke',
+  // Who heads a subject, and so approves its schemes of work (migration 198).
+  // One row per save of a subject's whole list; the context carries the list
+  // before and after, and how many waiting schemes were brought in line.
+  'sow.subject_head.set',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',

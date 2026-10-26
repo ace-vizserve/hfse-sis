@@ -582,10 +582,13 @@ describe('subject-head steps (scheme of work)', () => {
     );
     expect(result.tone).toBe('destructive');
     expect(result.label).toBe('No subject heads set yet');
-    expect(result.warning).toContain(
-      'No subject heads set yet — set them in Subject heads'
-    );
-    expect(result.warning).toContain('Subject head');
+    // The warning never repeats the label; the link says where to fix it.
+    expect(result.warning).not.toContain('No subject heads set yet');
+    expect(result.warning).toContain('“Subject head”');
+    expect(result.link).toEqual({
+      href: '/sis/admin/subject-heads',
+      label: 'Set subject heads',
+    });
   });
 
   it('flags it too when the caller did not count the heads', () => {

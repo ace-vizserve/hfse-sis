@@ -128,8 +128,9 @@ export function buildAttentionRows(input: {
       // state go first; the full sentence is on the approvers screen.
       // Only the first letter drops: "Nobody covers Secondary" keeps its half.
       text: `${label}: ${readiness.label.charAt(0).toLowerCase()}${readiness.label.slice(1)}`,
-      href: '/sis/admin/approvers',
-      actionLabel: 'Set up steps',
+      // A fix on another screen (Subject heads) is linked straight to it.
+      href: readiness.link?.href ?? '/sis/admin/approvers',
+      actionLabel: readiness.link ? 'Set heads' : 'Set up steps',
     });
   }
 

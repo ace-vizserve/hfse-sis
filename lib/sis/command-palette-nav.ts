@@ -347,6 +347,12 @@ export const NAV_ENTRIES: NavEntry[] = [
     icon: UsersIcon,
   },
   {
+    href: '/sis/admin/subject-heads',
+    label: 'Subject heads',
+    group: 'Admin',
+    icon: UsersIcon,
+  },
+  {
     href: '/sis/audit-log',
     label: 'Audit Log',
     group: 'Admin',

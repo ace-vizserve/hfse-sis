@@ -868,6 +868,13 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: ['superadmin'],
       },
       {
+        // Beside Approvers: a subject head step lists nobody on that screen,
+        // because its people are set here, subject by subject.
+        href: '/sis/admin/subject-heads',
+        label: 'Subject heads',
+        requiresRoles: ['superadmin'],
+      },
+      {
         href: '/sis/admin/roles',
         label: 'Role permissions',
         requiresRoles: ['superadmin'],
@@ -1106,6 +1113,9 @@ export const ROUTE_ACCESS: Array<{
   exact?: boolean;
 }> = [
   { prefix: '/sis/admin/approvers', allowed: ['superadmin'] },
+  // Who heads each subject, and so approves its schemes of work (migration
+  // 198). The same power as naming an approver, so the same gate.
+  { prefix: '/sis/admin/subject-heads', allowed: ['superadmin'] },
   // Who may edit what each role is allowed to do. Superadmin only, and
   // deliberately gated on the ROLE rather than on a capability: a capability
   // controlling access to the capability editor could be revoked, locking the

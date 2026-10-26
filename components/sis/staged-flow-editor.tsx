@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useState } from 'react';
 import {
   ArrowDown,
@@ -331,6 +332,17 @@ function FlowCard({
         {readiness.warning && (
           <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
             {readiness.warning}
+            {readiness.link && (
+              <>
+                {' '}
+                <Link
+                  href={readiness.link.href}
+                  className="font-medium text-brand-indigo underline-offset-4 hover:underline"
+                >
+                  {readiness.link.label}
+                </Link>
+              </>
+            )}
           </p>
         )}
       </div>
@@ -700,7 +712,7 @@ function StageRow({
             />
           </Field>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setRenaming(false)}>
+            <Button variant="outline" onClick={() => setRenaming(false)}>
               Cancel
             </Button>
             <Button
@@ -1046,7 +1058,7 @@ function AddStageDialog({
         </Field>
 
         <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
           <Button

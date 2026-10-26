@@ -9,7 +9,8 @@ import { STAGED_APPROVAL_FLOWS } from '@/lib/schemas/approval-flows';
  * page changes.
  *
  * Counts are not guesses: the page renders one card per entry in
- * `STAGED_APPROVAL_FLOWS` (declarations and the two grade-change kinds), and
+ * `STAGED_APPROVAL_FLOWS` (declarations, the two grade-change kinds and the
+ * scheme of work), and
  * the rules panel holds exactly four rules. The two-approver pool's readiness
  * card and table were removed from the page, so their placeholders went too.
  */

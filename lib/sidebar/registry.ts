@@ -8,6 +8,7 @@ import {
   ArrowRightLeft,
   Award,
   BookOpen,
+  BookUser,
   Building2,
   CalendarCheck,
   CalendarClock,
@@ -493,6 +494,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/admission-options': ICON_ADMISSION_OPTIONS,
       '/sis/admin/subjects': ICON_SUBJECT_WEIGHTS,
       '/sis/admin/approvers': ShieldCheck,
+      // A person against a subject: who heads it.
+      '/sis/admin/subject-heads': BookUser,
       // Who may do what. Approvers (above) is a named list of people;
       // this is the grant table behind every role, hence a key.
       '/sis/admin/roles': KeyRound,

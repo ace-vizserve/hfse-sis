@@ -300,6 +300,9 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'approval_stage.approver.assign': 'Person added to an approval step',
   'approval_stage.approver.revoke': 'Person removed from an approval step',
 
+  // Scheme of work (migration 198)
+  'sow.subject_head.set': 'Subject heads changed',
+
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
   'subject_config.create': 'Subject weights set',
@@ -947,6 +950,38 @@ function templateSummary(
       const repointed = numish(ctx.repointed_waiting);
       if (repointed !== null && repointed > 0)
         parts.push(`${plural(repointed, 'waiting request')} brought in line`);
+      return joinParts(parts);
+    }
+
+    // Subject heads (migration 198) -----------------------------------------
+    case 'sow.subject_head.set': {
+      const parts: string[] = [];
+      const subject = str(ctx.subject_name);
+      if (subject) parts.push(subject);
+      const heads = Array.isArray(ctx.heads)
+        ? (ctx.heads as Array<Record<string, unknown>>)
+        : null;
+      if (heads) {
+        if (heads.length === 0) parts.push('no subject heads');
+        else {
+          const names = heads.map((h) => {
+            const who =
+              str(h.display_name) || str(h.email) || 'a removed account';
+            const scope = (
+              APPROVER_LEVEL_SCOPE_LABELS as Record<string, string>
+            )[str(h.applies_to_level_type)];
+            return scope ? `${who} (${scope})` : who;
+          });
+          parts.push(`heads: ${names.join(', ')}`);
+        }
+      }
+      const repointed = numish(ctx.repointed_waiting);
+      if (repointed !== null && repointed > 0)
+        parts.push(
+          `${plural(repointed, 'waiting scheme of work', 'waiting schemes of work')} brought in line`
+        );
+      if (boolish(ctx.partial) === true)
+        parts.push('waiting schemes of work were not brought in line');
       return joinParts(parts);
     }
 

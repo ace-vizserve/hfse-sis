@@ -28,6 +28,9 @@ const SIS_AUDIT_ALLOWLIST = [
   'approval_stage.delete',
   'approval_stage.approver.assign',
   'approval_stage.approver.revoke',
+  // Subject heads (migration 198) — set on SIS Admin beside Approvers, and
+  // just as much configuration: who approves a subject's schemes of work.
+  'sow.subject_head.set',
   // Subject catalog (KD #72)
   'subject.create',
   'subject.rename',

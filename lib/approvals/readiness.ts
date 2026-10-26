@@ -87,7 +87,15 @@ export type StagedFlowReadiness = {
   tone: 'mint' | 'destructive';
   label: string;
   warning: string | null;
+  /**
+   * Where the fix is, when it is on another screen (a subject head step's
+   * people are set in Subject heads). Absent when the fix is right here.
+   */
+  link?: { href: string; label: string };
 };
+
+/** Where a subject head step's people are set. */
+export const SUBJECT_HEADS_HREF = '/sis/admin/subject-heads';
 
 /** The minimum a readiness check needs to know about one step. */
 export type ReadinessStage = {
@@ -214,7 +222,10 @@ export function classifyStagedFlowReadiness(
     return {
       tone: 'destructive',
       label: 'No subject heads set yet',
-      warning: `No subject heads set yet — set them in Subject heads. Until then, nothing can get past “${headless.label}”.`,
+      // The label already says "none set"; the warning says what that does
+      // and the link says where to fix it, so neither repeats the other.
+      warning: `Every scheme of work stops at “${headless.label}” until its subject has a head.`,
+      link: { href: SUBJECT_HEADS_HREF, label: 'Set subject heads' },
     };
   }
 

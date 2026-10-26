@@ -614,9 +614,19 @@ export async function assignStageApprover(
     if (error.code === '23505')
       return { alreadyAssigned: true, id: null, repointed: 0 };
     // The composite FK refuses a person on a derived step. Say what that means.
+    // ⚠ Two kinds of step refuse a person, and they get their people from
+    // different places — so which sentence is true depends on the step.
+    // (Both start "That step": the route passes those through as a 400.)
     if (error.code === '23503') {
+      const { data: refusing } = await service
+        .from('approval_stages')
+        .select('resolver')
+        .eq('id', input.stageId)
+        .maybeSingle();
       throw new Error(
-        'That step works out its own people from the class, so nobody can be added to it by hand.'
+        (refusing as { resolver?: string } | null)?.resolver === 'subject_head'
+          ? 'That step takes its people from Subject heads, so nobody can be added to it here.'
+          : 'That step works out its own people from the class, so nobody can be added to it by hand.'
       );
     }
     throw new Error(error.message);
