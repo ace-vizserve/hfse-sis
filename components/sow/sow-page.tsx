@@ -46,7 +46,6 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import { HoverHint } from '@/components/ui/hover-hint';
 import { RichText } from '@/components/ui/rich-text';
 import { useRefreshTransition } from '@/lib/hooks/use-refresh-transition';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -231,14 +230,13 @@ export function SowPage({ view }: { view: SowView }) {
               Edit module details
             </Button>
           )}
-          {/* Task 12 builds the export; shown now so the page's actions don't
-              move when it arrives. */}
-          <HoverHint wrap hint="Available soon">
-            <Button variant="outline" disabled>
+          {/* A plain link: the route builds the file and the browser saves it. */}
+          <Button variant="outline" asChild>
+            <a href={`/api/sow/${view.id}/excel`} download>
               <Download className="size-4" />
               Download Excel
-            </Button>
-          </HoverHint>
+            </a>
+          </Button>
           {view.state === 'approved' && view.canReopen && (
             <Button variant="outline" onClick={() => setReopenOpen(true)}>
               <RotateCcw className="size-4" />
