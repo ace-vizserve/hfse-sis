@@ -38,6 +38,10 @@ export const LOCKED_MESSAGE =
 const STALE_MESSAGE =
   'Someone else saved changes to this first. Reload to see them, then make your change again.';
 const NOT_FOUND_MESSAGE = 'That scheme of work could not be found.';
+// The week drawer keeps what was typed, so its message says which part moved
+// (spec: two teachers saving the same week).
+const STALE_WEEK_MESSAGE =
+  'Someone else changed this week a moment ago — reload to see it.';
 const NOT_YOURS_MESSAGE =
   'Only the teachers of this subject on its classes can edit this scheme of work.';
 
@@ -186,7 +190,7 @@ export async function updateWeek(
     .eq('updated_at', expectedUpdatedAt)
     .select('id');
   if (error) throw new Error(error.message);
-  if (!data || data.length === 0) return refuse(409, STALE_MESSAGE);
+  if (!data || data.length === 0) return refuse(409, STALE_WEEK_MESSAGE);
 
   await logAction({
     service,
