@@ -17,7 +17,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e:parent": "playwright test e2e/parent-portal/parent-portal.local.spec.ts",
-    "e2e:parent:prod": "playwright test e2e/parent-portal/parent-portal.prod.spec.ts"
+    "e2e:parent:prod": "playwright test e2e/parent-portal/parent-portal.prod.spec.ts",
+    "e2e:sow": "playwright test e2e/sow"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
