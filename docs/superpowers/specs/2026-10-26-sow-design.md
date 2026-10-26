@@ -1,6 +1,6 @@
 # Scheme of Work (SOW) — design
 
-**Date:** 2026-10-26 · **Status:** draft for Mr Ace's approval
+**Date:** 2026-10-26 · **Status:** approved by Mr Ace 2026-10-26 (§10 defaults accepted)
 **Sources:** Christina's process + sample (`docs/training/sessions/SIS-Academics-Training-Session-1-Action-Items.md`, _Christina — the SOW process, and a sample · 2026-10-05_), the design agreed 2026-10-05/06 (same file, T12 hold note), the 18-board mockup `https://claude.ai/artifact/D9HuZFBVC842AUk5SCYDMH`, the sample workbook `AY2026 Term 2 Science SOW Secondary.xlsx` (repo root, not committed).
 
 Calls marked **(our call)** were made while writing this and are open to change. Everything else is what the school or Mr Ace said.
@@ -155,7 +155,7 @@ The staff picker lists real accounts only, with no free-text entry.
 
 `approval_requests` is unique on (flow, subject_type, subject_id), so a second request for the same SOW id would come back as "already open". **(our call)** Each send therefore creates a `scheme_of_work_submissions` row, and that row is the request's subject. This also keeps the full history of rounds.
 
-**Waiting for you** appears in the approver's existing approvals inbox, and their bell shows it. **(our call)** No new email; it uses the same notifications as the other flows.
+**Waiting for you.** Each approval flow has its own queue in its module: declarations at `/attendance/declarations`, grade changes at `/markbook/change-requests`. **(our call)** SOWs get theirs as a **"Waiting for you"** tab on the Scheme of work page in Classroom. It also shows in the approver's home to-dos and the sidebar count, as the other flows do. No new email.
 
 ### 4.4 Changing an approved SOW
 
@@ -285,7 +285,7 @@ A row is listed for every subject × level × track the teacher is assigned to, 
 
 ## 7. Grading sheets
 
-The design agreed in T12 says **"no grading sheet config without an approved SOW"**. What exactly that blocks is open; see §10, Q1.
+The design agreed in T12 says **"no grading sheet config without an approved SOW"**. **Decided 2026-10-26: a warning only, never a block.** When grading sheets are created for a term, any class × subject without an approved SOW is listed in a warning, and the sheets are still created.
 
 ## 8. Data (sketch, the builder decides the details)
 
@@ -317,17 +317,9 @@ The design agreed in T12 says **"no grading sheet config without an approved SOW
 - Copy-from-last-year becomes useful from the second year on.
 - The subject heads and the approval steps must be set in SIS Admin before the first SOW can be approved. The readiness check on `/sis/admin/approvers` flags any step with nobody on it.
 
-## 10. Open — Mr Ace to answer
+## 10. Decided — Mr Ace, 2026-10-26 ("go with your defaults")
 
-1. **What does "no grading sheet config without an approved SOW" block?** Options: creating a term's grading sheets for that class × subject; changing a subject's setup for that level; or only a warning.
-   - It matters because a hard block on grading sheets stops grading for every subject or level that has no SOW yet.
-   - That includes Primary until question 2 is settled, and any subject the school doesn't write SOWs for.
-2. **Primary.** Only the Secondary Science sample has been seen. Christina said she emailed "samples".
-   - If Primary uses a different template, the week layout here may need a second shape.
-   - Default if there's no answer: Primary uses the same layout.
-3. **Do SOWs imported from Excel this year go round the approval ladder again?** Many will already have been vetted by email.
-   - If yes, every approver starts with a backlog, and no class can be checked until it clears.
-   - If no, an admin marks an import "already approved", recorded in the audit log with who did it, and the engine is skipped for it.
-   - Default if there's no answer: yes, round the ladder.
-4. **Which subjects have a SOW at all?** For example, whether non-academic subjects and Youngstarters are in or out.
-   - Default: every subject that has a grading sheet.
+1. **Grading sheets:** a warning only, never a block (§7).
+2. **Primary:** uses the same layout as Secondary. Revisit if a Primary sample in a different template turns up.
+3. **Excel imports:** an imported SOW is a draft and goes round the full approval ladder like any other. There is no "already approved" path.
+4. **Which subjects:** every subject × level that has grading sheets in that term (a `subject_configs` row for the AY, and the subject taught to the level's sections) gets a SOW row on "My schemes of work".
