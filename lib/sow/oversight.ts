@@ -16,6 +16,7 @@ import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { type SowSnapshot, SowSnapshotSchema } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { type SowState, type SowTrack, trackOf } from '@/lib/sow/access';
 import {
   type CellMark,
@@ -879,7 +880,7 @@ export async function loadOversight(
     ),
     service
       .from('subject_configs')
-      .select('subject_id')
+      .select('subject_id, display_name')
       .eq('academic_year_id', input.academicYearId),
     service
       .from('subject_level_offerings')
@@ -920,10 +921,20 @@ export async function loadOversight(
       { code: l.code, label: l.label, type: asLevelType(l.level_type) },
     ])
   );
+  // This year's subject name (migration 137), from the year's config rows
+  // read above; a subject not set up this year keeps its catalogue name.
+  const displayNameOf = new Map(
+    (
+      (configRes.data ?? []) as {
+        subject_id: string;
+        display_name?: string | null;
+      }[]
+    ).map((c) => [c.subject_id, c.display_name ?? null])
+  );
   const subjectName = new Map(
     ((subjectRes.data ?? []) as { id: string; name: string }[]).map((s) => [
       s.id,
-      s.name,
+      subjectDisplayName(s, { display_name: displayNameOf.get(s.id) }),
     ])
   );
   const sections = (sectionRes.data ?? []) as {

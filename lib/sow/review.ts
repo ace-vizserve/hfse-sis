@@ -13,6 +13,7 @@ import { withApprovalProgress } from '@/lib/approvals/rail';
 import type { Role } from '@/lib/auth/roles';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
+import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
 import { SOW_APPROVAL_SUBJECT_TYPE, type SowTrack } from '@/lib/sow/access';
 
 // The review side of a scheme of work (Task 10): the "Waiting for you" queue,
@@ -96,12 +97,13 @@ export async function listSowReviewQueue(
   const { data: schemeRows, error: sowErr } = await service
     .from('schemes_of_work')
     .select(
-      'id, state, current_submission_id, subject_id, level_id, term_id, track, scheme_of_work_classes(section_id)'
+      'id, academic_year_id, state, current_submission_id, subject_id, level_id, term_id, track, scheme_of_work_classes(section_id)'
     )
     .in('id', sowIds);
   if (sowErr) throw new Error(sowErr.message);
   type Scheme = {
     id: string;
+    academic_year_id: string;
     state: string;
     current_submission_id: string | null;
     subject_id: string;
@@ -162,10 +164,19 @@ export async function listSowReviewQueue(
     key: keyof T
   ): Map<string, string> =>
     new Map((rows ?? []).map((r) => [r.id, String(r[key])]));
-  const subjectName = nameOf(
-    subjects.data as { id: string; name: string }[] | null,
-    'name'
+  // Each scheme's subject under its own year's name (migration 137): the
+  // queue can hold schemes from more than one year.
+  const subjectRows = (subjects.data ?? []) as { id: string; name: string }[];
+  const subjectById = new Map(subjectRows.map((s) => [s.id, s]));
+  const resolveName = await subjectDisplayNameResolver(
+    service,
+    schemes.map((s) => s.academic_year_id),
+    subjectRows.map((s) => s.id)
   );
+  const subjectNameOf = (scheme: Scheme): string => {
+    const subject = subjectById.get(scheme.subject_id);
+    return subject ? resolveName(scheme.academic_year_id, subject) : '';
+  };
   const levelLabel = nameOf(
     levels.data as { id: string; label: string }[] | null,
     'label'
@@ -196,7 +207,7 @@ export async function listSowReviewQueue(
     rows.push({
       sowId: scheme.id,
       requestId: stage.requestId,
-      subjectName: subjectName.get(scheme.subject_id) ?? '',
+      subjectName: subjectNameOf(scheme),
       levelLabel: levelLabel.get(scheme.level_id) ?? '',
       track: scheme.track,
       termNumber: Number(termNumber.get(scheme.term_id) ?? 0),

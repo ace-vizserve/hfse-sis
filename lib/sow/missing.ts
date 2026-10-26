@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
 import { fetchInChunks } from '@/lib/supabase/paginate';
 
 export type ClassWithoutSow = {
@@ -14,6 +15,7 @@ type LevelCode = { code: string | null };
 type SectionRow = {
   id: string;
   name: string;
+  academic_year_id: string;
   level: LevelCode | LevelCode[] | null;
 };
 
@@ -91,7 +93,7 @@ export async function listClassesWithoutApprovedSow(
       async (slice) => {
         const { data, error } = await service
           .from('sections')
-          .select('id, name, level:levels(code)')
+          .select('id, name, academic_year_id, level:levels(code)')
           .in('id', slice);
         if (error) throw new Error(error.message);
         return (data ?? []) as unknown as SectionRow[];
@@ -109,16 +111,28 @@ export async function listClassesWithoutApprovedSow(
       }
     ),
   ]);
-  const sectionName = new Map(sections.map((s) => [s.id, classLabel(s)]));
-  const subjectName = new Map(subjects.map((s) => [s.id, s.name]));
+  const sectionById = new Map(sections.map((s) => [s.id, s]));
+  const subjectById = new Map(subjects.map((s) => [s.id, s]));
+  // This year's subject name (migration 137), from each class's own year.
+  const resolveName = await subjectDisplayNameResolver(
+    service,
+    sections.map((s) => s.academic_year_id),
+    subjects.map((s) => s.id)
+  );
 
   return missing
-    .map((p) => ({
-      sectionId: p.sectionId,
-      subjectId: p.subjectId,
-      sectionName: sectionName.get(p.sectionId) ?? '',
-      subjectName: subjectName.get(p.subjectId) ?? '',
-    }))
+    .map((p) => {
+      const section = sectionById.get(p.sectionId);
+      const subject = subjectById.get(p.subjectId);
+      return {
+        sectionId: p.sectionId,
+        subjectId: p.subjectId,
+        sectionName: section ? classLabel(section) : '',
+        subjectName: subject
+          ? resolveName(section?.academic_year_id, subject)
+          : '',
+      };
+    })
     .sort(
       (a, b) =>
         a.sectionName.localeCompare(b.sectionName) ||

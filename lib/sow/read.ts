@@ -15,6 +15,7 @@ import {
 } from '@/lib/sow/access';
 import { sgToday } from '@/lib/dates';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { REOPEN_ROLES } from '@/lib/sow/approval';
 import { loadSowChecking, type SowChecking } from '@/lib/sow/checks';
 import type { SowActor } from '@/lib/sow/create';
@@ -320,41 +321,63 @@ async function loadDisplay(
     copied_from_sow_id: string | null;
   }
 ): Promise<SowView['display']> {
-  const [subject, level, term, ay, copied, submission] = await Promise.all([
-    service.from('subjects').select('name').eq('id', sow.subject_id).single(),
-    service.from('levels').select('label').eq('id', sow.level_id).single(),
-    service
-      .from('terms')
-      .select('term_number, start_date, end_date')
-      .eq('id', sow.term_id)
-      .single(),
-    service
-      .from('academic_years')
-      .select('ay_code')
-      .eq('id', sow.academic_year_id)
-      .single(),
-    sow.copied_from_sow_id
-      ? service
-          .from('schemes_of_work')
-          .select('terms(term_number), academic_years(ay_code)')
-          .eq('id', sow.copied_from_sow_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-    // The note belongs to the submission that was returned, which is still
-    // the current one until the teacher sends it again.
-    sow.state === 'returned' && sow.current_submission_id
-      ? service
-          .from('scheme_of_work_submissions')
-          .select('return_note, return_week_number')
-          .eq('id', sow.current_submission_id)
-          .maybeSingle()
-      : Promise.resolve({ data: null, error: null }),
-  ]);
-  for (const r of [subject, level, term, ay, copied, submission]) {
+  const [subject, subjectConfig, level, term, ay, copied, submission] =
+    await Promise.all([
+      service.from('subjects').select('name').eq('id', sow.subject_id).single(),
+      // This year's name for the subject, if the school renamed it (137).
+      service
+        .from('subject_configs')
+        .select('display_name')
+        .eq('academic_year_id', sow.academic_year_id)
+        .eq('subject_id', sow.subject_id)
+        .maybeSingle(),
+      service.from('levels').select('label').eq('id', sow.level_id).single(),
+      service
+        .from('terms')
+        .select('term_number, start_date, end_date')
+        .eq('id', sow.term_id)
+        .single(),
+      service
+        .from('academic_years')
+        .select('ay_code')
+        .eq('id', sow.academic_year_id)
+        .single(),
+      sow.copied_from_sow_id
+        ? service
+            .from('schemes_of_work')
+            .select('terms(term_number), academic_years(ay_code)')
+            .eq('id', sow.copied_from_sow_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      // The note belongs to the submission that was returned, which is still
+      // the current one until the teacher sends it again.
+      sow.state === 'returned' && sow.current_submission_id
+        ? service
+            .from('scheme_of_work_submissions')
+            .select('return_note, return_week_number')
+            .eq('id', sow.current_submission_id)
+            .maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ]);
+  for (const r of [
+    subject,
+    subjectConfig,
+    level,
+    term,
+    ay,
+    copied,
+    submission,
+  ]) {
     if (r.error) throw new Error(r.error.message);
   }
 
-  const subjectName = (subject.data as { name: string } | null)?.name ?? '';
+  const subjectRow = subject.data as { name: string } | null;
+  const subjectName = subjectRow
+    ? subjectDisplayName(
+        subjectRow,
+        subjectConfig.data as { display_name: string | null } | null
+      )
+    : '';
   const levelLabel = (level.data as { label: string } | null)?.label ?? '';
   const t = term.data as {
     term_number: number;

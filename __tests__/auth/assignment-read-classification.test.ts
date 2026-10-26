@@ -118,6 +118,20 @@ const CLASSIFIED: Record<string, Category[]> = {
   // they may see the lesson and leave a note — and the holders of that class,
   // for last week's mark, by `teacher_user_id` only.
   'lib/sow/relief.ts': ['act'],
+  // The Classroom home SOW strip (Task 16): what is the teacher's OWN to do —
+  // write, check, answer. Relief-inclusive loader, then substantive subject
+  // seats only (cover never gets a SOW to-do); the relief window on the
+  // teacher's own seat is read only to say a day was covered.
+  'lib/sow/home.ts': ['act'],
+
+  // ── name ────────────────────────────────────────────────────────────────
+  // SOW oversight (Task 15): who may oversee is decided by subject heads and
+  // approval steps (resolveOversightScope), never by assignments. This file
+  // reads `teacher_assignments` directly, by `teacher_user_id`, to NAME a
+  // class's teachers (subject + co-teacher) and whose check a week waits on;
+  // the relief column is never selected. So a substitute never shows as the
+  // class's teacher here.
+  'lib/sow/oversight.ts': ['name'],
   // The request-scoped memo of the EFFECTIVE loader. It hard-codes the
   // relief-inclusive half of the pair, so the act/name decision is made here
   // rather than deferred to callers — which is why it is `act` and not

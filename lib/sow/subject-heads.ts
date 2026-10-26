@@ -5,6 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { logAction } from '@/lib/audit/log-action';
 import type { Role } from '@/lib/auth/roles';
 import { samePool } from '@/lib/approvals/materialise';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import { listStaffUsers } from '@/lib/sis/users/queries';
 import {
   SOW_APPROVAL_FLOW,
@@ -207,6 +208,8 @@ export async function replaceSubjectHeads(
   }));
 
   // The subject's name for the audit line. Best-effort: the id is always kept.
+  // The catalogue name on purpose: the setting has no year, and an audit row
+  // keeps the words of the time (as lib/audit/assignment-context.ts does).
   const { data: subjectRow } = await service
     .from('subjects')
     .select('name')
@@ -447,7 +450,7 @@ export async function loadSubjectHeadsScreen(
   ] = await Promise.all([
     service
       .from('subject_configs')
-      .select('subject_id, subjects!inner(id, code, name)')
+      .select('subject_id, display_name, subjects!inner(id, code, name)')
       .eq('academic_year_id', academicYearId),
     service
       .from('subject_level_offerings')
@@ -469,6 +472,7 @@ export async function loadSubjectHeadsScreen(
   const bySubject = new Map<string, SubjectHeadsScreenRow>();
   for (const row of (cfgData ?? []) as unknown as Array<{
     subject_id: string;
+    display_name: string | null;
     subjects: SubjectEmbed | SubjectEmbed[] | null;
   }>) {
     const subject = Array.isArray(row.subjects)
@@ -478,7 +482,8 @@ export async function loadSubjectHeadsScreen(
     bySubject.set(subject.id, {
       subjectId: subject.id,
       code: subject.code,
-      name: subject.name,
+      // This year's name (migration 137): the row is this year's config.
+      name: subjectDisplayName(subject, row),
       levelTypes: [],
       heads: [],
     });

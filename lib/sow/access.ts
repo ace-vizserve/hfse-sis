@@ -17,6 +17,7 @@ import {
 import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { compareLevelLabels } from '@/lib/sis/levels';
+import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 export type SowState = 'draft' | 'in_review' | 'returned' | 'approved';
 export type SowTrack = 'Standard' | 'Global';
@@ -181,7 +182,7 @@ export async function listMySowRows(
       .in('id', sectionIds),
     service
       .from('subject_configs')
-      .select('subject_id')
+      .select('subject_id, display_name')
       .eq('academic_year_id', ayId)
       .in('subject_id', subjectIds),
     service
@@ -214,10 +215,20 @@ export async function listMySowRows(
       (o) => `${o.subject_id}|${o.level_id}`
     )
   );
+  // This year's name for each subject (a rename lives on subject_configs,
+  // migration 137), read from the config rows already fetched above.
+  const displayNameOf = new Map(
+    (
+      (configs.data ?? []) as {
+        subject_id: string;
+        display_name?: string | null;
+      }[]
+    ).map((c) => [c.subject_id, c.display_name ?? null])
+  );
   const subjectName = new Map(
     ((subjects.data ?? []) as { id: string; name: string }[]).map((s) => [
       s.id,
-      s.name,
+      subjectDisplayName(s, { display_name: displayNameOf.get(s.id) }),
     ])
   );
 

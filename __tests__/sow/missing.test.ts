@@ -185,6 +185,16 @@ describe('listClassesWithoutApprovedSow', () => {
     ]);
   });
 
+  it("names the subject by this year's name when the school renamed it", async () => {
+    tables.subject_configs[0].display_name = 'Mathematics';
+    const out = await listClassesWithoutApprovedSow(
+      fakeService() as never,
+      T1,
+      [{ sectionId: 'sec-b', subjectId: 'sub-m' }]
+    );
+    expect(out[0].subjectName).toBe('Mathematics');
+  });
+
   it('uses a fixed handful of queries however many pairs', async () => {
     const pairs = ['sec-a', 'sec-b'].flatMap((sectionId) =>
       ['sub-m', 'sub-e'].map((subjectId) => ({ sectionId, subjectId }))
