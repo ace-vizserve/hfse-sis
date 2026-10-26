@@ -679,6 +679,20 @@ const CLASSROOM_NAV: NavSection[] = [
         ],
         badgeKey: 'sowReviews',
       },
+      // Scheme of work oversight (spec §5.3). The page admits more than this
+      // list — a teacher who heads a subject or sits on a step of the SOW
+      // flow — but that is data, not a role, and the sidebar only filters on
+      // roles and capabilities. So the item is shown to the office (who
+      // always see the whole page), and those teachers reach it from a link
+      // on "Schemes to review" and on the scheme's own page, each shown when
+      // `resolveOversightScope` gives them a scope. The page itself checks
+      // again and answers 403 to anyone without one. Its ROUTE_ACCESS row is
+      // `/classroom/sow`'s, which admits teachers, so the link never bounces.
+      {
+        href: '/classroom/sow/oversight',
+        label: 'Scheme of work oversight',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
       // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
       // this page does not (its own ROUTE_ACCESS row is narrower), so without
       // this every teacher would see a link that bounces them to `/` — the

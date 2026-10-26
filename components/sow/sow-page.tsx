@@ -6,6 +6,7 @@ import {
   ChevronDown,
   Clock,
   Download,
+  Eye,
   Info,
   RotateCcw,
   Send,
@@ -191,6 +192,11 @@ export function SowPage({ view }: { view: SowView }) {
               {/* An approver who does not teach it came from their queue. */}
               {approver && !view.teachesIt ? (
                 <Link href="/classroom/sow/review">Schemes to review</Link>
+              ) : view.canOversee && !view.teachesIt ? (
+                // A subject head or the office came from oversight.
+                <Link href={`/classroom/sow/oversight?term=${d.termNumber}`}>
+                  Scheme of work oversight
+                </Link>
               ) : (
                 <Link href={`/classroom/sow?term=${d.termNumber}`}>
                   My schemes of work
@@ -238,6 +244,18 @@ export function SowPage({ view }: { view: SowView }) {
               Download Excel
             </a>
           </Button>
+          {/* The way in for a subject head or approver who teaches: the
+              sidebar lists oversight for the office only (lib/auth/roles.ts). */}
+          {view.canOversee && view.teachesIt && view.checking && (
+            <Button variant="outline" asChild>
+              <Link
+                href={`/classroom/sow/oversight?term=${d.termNumber}&view=checks`}
+              >
+                <Eye className="size-4" />
+                Oversight
+              </Link>
+            </Button>
+          )}
           {view.state === 'approved' && view.canReopen && (
             <Button variant="outline" onClick={() => setReopenOpen(true)}>
               <RotateCcw className="size-4" />

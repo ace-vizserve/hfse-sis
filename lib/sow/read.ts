@@ -18,6 +18,7 @@ import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { REOPEN_ROLES } from '@/lib/sow/approval';
 import { loadSowChecking, type SowChecking } from '@/lib/sow/checks';
 import type { SowActor } from '@/lib/sow/create';
+import { inOversightScope, resolveOversightScope } from '@/lib/sow/oversight';
 import {
   loadFirstSowStepLabel,
   loadSowReview,
@@ -99,6 +100,8 @@ export type SowView = {
    * Null when the scheme has never been approved.
    */
   checking: SowChecking | null;
+  /** The viewer may open the oversight page (`resolveOversightScope`). */
+  canOversee: boolean;
 };
 
 /** The scheme, or null when it does not exist or the caller cannot read it. */
@@ -131,24 +134,38 @@ export async function loadSowView(
     approved_snapshot: unknown;
   };
 
-  const [classRes, weekRes, assignments, onStep, termWeeks] = await Promise.all(
-    [
-      service
-        .from('scheme_of_work_classes')
-        .select('section_id')
-        .eq('sow_id', sowId),
-      service
-        .from('scheme_of_work_weeks')
-        .select(
-          'week_number, starts_on, ends_on, topic, learning_outcomes, textbook_pages, activities, assessment, remarks, updated_at'
-        )
-        .eq('sow_id', sowId)
-        .order('week_number', { ascending: true }),
-      loadEffectiveAssignmentsForUser(service, actor.id),
-      isOnCurrentApprovalStep(service, actor.id, sow.current_submission_id),
-      loadTermWeeks(service, sow.term_id, sow.level_id),
-    ]
-  );
+  const [
+    classRes,
+    weekRes,
+    assignments,
+    onStep,
+    termWeeks,
+    oversight,
+    levelTypeRes,
+  ] = await Promise.all([
+    service
+      .from('scheme_of_work_classes')
+      .select('section_id')
+      .eq('sow_id', sowId),
+    service
+      .from('scheme_of_work_weeks')
+      .select(
+        'week_number, starts_on, ends_on, topic, learning_outcomes, textbook_pages, activities, assessment, remarks, updated_at'
+      )
+      .eq('sow_id', sowId)
+      .order('week_number', { ascending: true }),
+    loadEffectiveAssignmentsForUser(service, actor.id),
+    isOnCurrentApprovalStep(service, actor.id, sow.current_submission_id),
+    loadTermWeeks(service, sow.term_id, sow.level_id),
+    // Who oversees schemes of work (Task 15): the link to the oversight
+    // page, and a read of this scheme for an overseer it is in scope for.
+    resolveOversightScope(service, actor.id, actor.role ?? null),
+    service
+      .from('levels')
+      .select('level_type')
+      .eq('id', sow.level_id)
+      .maybeSingle(),
+  ]);
   if (classRes.error) throw new Error(classRes.error.message);
   if (weekRes.error) throw new Error(weekRes.error.message);
 
@@ -156,7 +173,7 @@ export async function loadSowView(
     (c) => c.section_id
   );
 
-  const capability = sowCapability({
+  let capability = sowCapability({
     role: actor.role ?? 'teacher',
     userId: actor.id,
     assignments,
@@ -167,6 +184,22 @@ export async function loadSowView(
     },
     isOnCurrentApprovalStep: onStep,
   });
+  // A subject head or an approver who oversees this scheme opens it from the
+  // oversight page, so they may read it (never edit it) even when it is not
+  // waiting on their step.
+  const levelType = (levelTypeRes.data as { level_type?: string } | null)
+    ?.level_type;
+  if (
+    capability === 'none' &&
+    oversight &&
+    inOversightScope(oversight, {
+      subjectId: sow.subject_id,
+      levelType:
+        levelType === 'primary' || levelType === 'secondary' ? levelType : null,
+    })
+  ) {
+    capability = 'read';
+  }
   if (capability === 'none') return null;
 
   let classes: { sectionId: string; name: string }[] = [];
@@ -272,6 +305,7 @@ export async function loadSowView(
     firstStepLabel,
     thisWeekNumber,
     checking,
+    canOversee: oversight !== null,
   };
 }
 

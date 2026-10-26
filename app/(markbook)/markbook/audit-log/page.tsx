@@ -49,6 +49,9 @@ export const MARKBOOK_AUDIT_ALLOWLIST = [
   'sow.check',
   // A relief teacher noted what they covered in a class.
   'sow.relief_note',
+  // The subject head signed a class's week, or asked the teacher about it.
+  'sow.sign',
+  'sow.ask',
   'sheet.bulk_create',
   'sheet.delete',
   'sheet.switch_type',

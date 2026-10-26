@@ -212,6 +212,9 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // Somebody else's plan, waiting for your stamp — the approval glyph
       // every decide-queue uses.
       '/classroom/sow/review': ICON_APPROVAL_INBOX,
+      // Every class's weeks at once, ticked off as they go — the grid of
+      // checks the subject head reads and signs.
+      '/classroom/sow/oversight': ListChecks,
       // Incident and disciplinary records. The system records these and
       // decides nothing (KD #189), so the glyph names the register, not a
       // verdict being handed down. Moved here from the records module with

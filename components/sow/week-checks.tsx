@@ -1,6 +1,12 @@
 'use client';
 
-import { CalendarDays, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import {
+  CalendarDays,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  MessageSquareText,
+} from 'lucide-react';
 import { useState } from 'react';
 
 import { formatRange, formatWeekdayDay } from '@/components/sow/format';
@@ -477,6 +483,31 @@ function OpenWeek({
           <p className="text-sm font-semibold text-foreground">
             How did Week {week.weekNumber} go?
           </p>
+          {/* The subject head's "Ask the teacher" (oversight, board 11),
+              until a newer check answers it or the week is signed. */}
+          {week.classes
+            .filter((c) => c.asked)
+            .map((c) => (
+              <div
+                key={`asked-${c.sectionId}`}
+                className="flex items-start gap-2.5 rounded-lg border border-brand-indigo-soft/40 bg-accent px-3.5 py-2.5 text-[13px] text-brand-indigo-deep"
+              >
+                <MessageSquareText
+                  className="mt-0.5 size-4 shrink-0"
+                  aria-hidden
+                />
+                <div className="min-w-0 space-y-0.5">
+                  <p className="font-semibold">
+                    Your subject head asked
+                    {week.classes.length > 1 ? ` about ${c.name}` : ''}:
+                  </p>
+                  <RichText
+                    html={c.asked!.remarks}
+                    className="text-[13px] text-ink-2"
+                  />
+                </div>
+              </div>
+            ))}
           {!week.started ? (
             <p className="text-[13px] text-muted-foreground">
               This week hasn&rsquo;t started yet.

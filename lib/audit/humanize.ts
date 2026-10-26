@@ -313,6 +313,8 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sow.reopen': 'Scheme of work reopened',
   'sow.check': 'Scheme of work week checked',
   'sow.relief_note': 'Relief teacher noted what was covered',
+  'sow.sign': 'Scheme of work week signed by the subject head',
+  'sow.ask': 'Subject head asked the teacher about a week',
 
   // Subjects / templates
   'subject_config.update': 'Subject weights updated',
@@ -1068,6 +1070,15 @@ function templateSummary(
       const option = str(ctx.option);
       if (isCheckOption(option)) parts.push(CHECK_LABELS[option]);
       if (boolish(ctx.note_present) === true) parts.push('with a note');
+      return joinParts(parts);
+    }
+
+    case 'sow.sign':
+    case 'sow.ask': {
+      const parts: string[] = [];
+      const week = numish(ctx.week_number);
+      if (week !== null) parts.push(`week ${week}`);
+      if (boolish(ctx.remarks_present) === true) parts.push('with remarks');
       return joinParts(parts);
     }
 

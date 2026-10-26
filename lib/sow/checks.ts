@@ -98,19 +98,73 @@ function holdsClass(
   );
 }
 
-type SignoffRow = {
+export type SignoffRow = {
   week_number: number;
   section_id: string;
   kind: 'signed' | 'asked';
   created_at: string;
+  remarks?: string | null;
 };
+
+/** The newest sign-off row of a list (one week of one class), if any. */
+export function newestSignoff<T extends SignoffRow>(rows: T[]): T | null {
+  return (
+    [...rows].sort((a, b) => b.created_at.localeCompare(a.created_at))[0] ??
+    null
+  );
+}
 
 /** Is the newest sign-off row a signature? ("Ask the teacher" is not.) */
 function isSigned(rows: SignoffRow[]): boolean {
-  const newest = [...rows].sort((a, b) =>
-    b.created_at.localeCompare(a.created_at)
-  )[0];
-  return newest?.kind === 'signed';
+  return newestSignoff(rows)?.kind === 'signed';
+}
+
+/**
+ * The checks as they stood when each week was signed.
+ *
+ * ⚠ THE SIGN-OFF RACE IS CLOSED ON READ. `recordCheck` refuses a check once
+ * the newest sign-off of that week and class is a signature, but a check and
+ * a signature sent at the same moment can both pass their reads. Whatever
+ * landed AFTER the signature the subject head put their name to is not what
+ * they signed, so every screen that shows or marks a week drops it here
+ * (the row stays in the table — append-only — it is just not the week's
+ * check). A week whose newest row is "Ask the teacher" is open again, so
+ * nothing is dropped from it.
+ */
+export function checksAsSigned<C extends CheckRow>(
+  checks: C[],
+  signoffs: SignoffRow[]
+): C[] {
+  const byKey = new Map<string, SignoffRow[]>();
+  for (const s of signoffs) {
+    const k = `${s.week_number}|${s.section_id}`;
+    byKey.set(k, [...(byKey.get(k) ?? []), s]);
+  }
+  const cutoff = new Map<string, string>();
+  for (const [k, rows] of byKey) {
+    const newest = newestSignoff(rows);
+    if (newest?.kind === 'signed') cutoff.set(k, newest.created_at);
+  }
+  if (cutoff.size === 0) return checks;
+  return checks.filter((c) => {
+    const at = cutoff.get(`${c.week_number}|${c.section_id}`);
+    return at === undefined || c.recorded_at <= at;
+  });
+}
+
+/**
+ * "Your subject head asked: …" — the remarks of an "Ask the teacher" that
+ * is still the last word on that week of that class: no signature since, and
+ * no check recorded after it (a new check is the teacher's answer).
+ */
+export function openAsk(
+  signoffs: SignoffRow[],
+  checks: Pick<CheckRow, 'recorded_at'>[]
+): { remarks: string; at: string } | null {
+  const newest = newestSignoff(signoffs);
+  if (!newest || newest.kind !== 'asked' || !newest.remarks) return null;
+  if (checks.some((c) => c.recorded_at > newest.created_at)) return null;
+  return { remarks: newest.remarks, at: newest.created_at };
 }
 
 export async function recordCheck(
@@ -271,6 +325,11 @@ export type SowCheckClass = {
   mine: { option: CheckOption; note: string | null } | null;
   /** What relief teachers covered in this class that week (Task 14). */
   reliefNotes: { taughtOn: string; name: string; note: string }[];
+  /**
+   * The subject head's "Ask the teacher" remarks, while they are still the
+   * last word on this week (`openAsk`). Rich text.
+   */
+  asked: { remarks: string; at: string } | null;
 };
 
 export type SowCheckWeek = {
@@ -342,7 +401,7 @@ export async function loadSowChecking(
       .eq('sow_id', input.sowId),
     service
       .from('scheme_of_work_signoffs')
-      .select('week_number, section_id, kind, created_at')
+      .select('week_number, section_id, kind, remarks, created_at')
       .eq('sow_id', input.sowId),
     // Relief notes (lib/sow/relief.ts): shown on their week so the subject
     // teacher and the supervisor see what the cover taught.
@@ -403,14 +462,17 @@ export async function loadSowChecking(
     teachersOf.set(a.section_id, set);
   }
 
-  const latest = latestChecks((checkRes.data ?? []) as CheckRow[]);
+  const signoffRows = (signRes.data ?? []) as SignoffRow[];
+  const latest = latestChecks(
+    checksAsSigned((checkRes.data ?? []) as CheckRow[], signoffRows)
+  );
   const checksAt = new Map<string, CheckRow[]>();
   for (const c of latest) {
     const k = `${c.week_number}|${c.section_id}`;
     checksAt.set(k, [...(checksAt.get(k) ?? []), c]);
   }
   const signoffsAt = new Map<string, SignoffRow[]>();
-  for (const s of (signRes.data ?? []) as SignoffRow[]) {
+  for (const s of signoffRows) {
     const k = `${s.week_number}|${s.section_id}`;
     signoffsAt.set(k, [...(signoffsAt.get(k) ?? []), s]);
   }
@@ -470,6 +532,7 @@ export async function loadSowChecking(
             canCheck: mineIds.has(c.sectionId),
             mine: own ? { option: own.option, note: own.note } : null,
             reliefNotes: reliefAt.get(k) ?? [],
+            asked: openAsk(signoffsAt.get(k) ?? [], rows),
           };
         }),
       };

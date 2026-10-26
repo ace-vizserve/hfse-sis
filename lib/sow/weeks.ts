@@ -235,9 +235,106 @@ export async function loadTermWeeks(
   if (evRes.error) {
     throw new Error(`calendar_events lookup failed: ${evRes.error.message}`);
   }
+  return weeksForLevel(
+    { start: term.start_date, end: term.end_date },
+    levelCode,
+    (calRes.data ?? []) as CalendarRow[],
+    (evRes.data ?? []) as EventRow[]
+  );
+}
+
+/**
+ * `loadTermWeeks` for several levels at once, in four reads whatever the
+ * number of levels — for a screen that lays many schemes of work side by
+ * side (the oversight grid). Each level's weeks are worked out exactly as
+ * `loadTermWeeks` works them out: the calendar rows are narrowed to the
+ * audiences that level sees before the same `weeksForLevel` runs.
+ */
+export async function loadTermWeeksForLevels(
+  service: SupabaseClient,
+  termId: string,
+  levelIds: string[]
+): Promise<
+  Map<string, { weeks: TermWeek[]; eventsByWeek: Map<number, string[]> }>
+> {
+  const out = new Map<
+    string,
+    { weeks: TermWeek[]; eventsByWeek: Map<number, string[]> }
+  >();
+  const ids = [...new Set(levelIds)];
+  if (ids.length === 0) return out;
+
+  const [termRes, levelRes, calRes, evRes] = await Promise.all([
+    service
+      .from('terms')
+      .select('start_date, end_date')
+      .eq('id', termId)
+      .single(),
+    service.from('levels').select('id, code').in('id', ids),
+    service
+      .from('school_calendar')
+      .select('date, day_type, audience, hbl_overlay, label')
+      .eq('term_id', termId)
+      .order('date', { ascending: true }),
+    service
+      .from('calendar_events')
+      .select('start_date, end_date, label, audience, levels, section_ids')
+      .eq('term_id', termId)
+      .order('start_date', { ascending: true }),
+  ]);
+  if (termRes.error || !termRes.data) {
+    throw new Error(`terms lookup failed: ${termRes.error?.message ?? 'none'}`);
+  }
+  for (const [name, r] of [
+    ['levels', levelRes],
+    ['school_calendar', calRes],
+    ['calendar_events', evRes],
+  ] as const) {
+    if (r.error) throw new Error(`${name} lookup failed: ${r.error.message}`);
+  }
+  const term = termRes.data as {
+    start_date: string | null;
+    end_date: string | null;
+  };
+  const codeOf = new Map(
+    ((levelRes.data ?? []) as { id: string; code: string }[]).map((l) => [
+      l.id,
+      l.code,
+    ])
+  );
   const calRows = (calRes.data ?? []) as CalendarRow[];
   const events = (evRes.data ?? []) as EventRow[];
 
+  for (const id of ids) {
+    if (!term.start_date || !term.end_date) {
+      out.set(id, { weeks: [], eventsByWeek: new Map() });
+      continue;
+    }
+    const levelCode = codeOf.get(id) ?? null;
+    const audiences = new Set<string>(dayAudiencesFor(levelCode));
+    out.set(
+      id,
+      weeksForLevel(
+        { start: term.start_date, end: term.end_date },
+        levelCode,
+        calRows.filter((r) => audiences.has(r.audience)),
+        events
+      )
+    );
+  }
+  return out;
+}
+
+/**
+ * One level's weeks and events from rows already read. `calRows` must be the
+ * rows for the audiences this level sees (`dayAudiencesFor`), in date order.
+ */
+function weeksForLevel(
+  term: { start: string; end: string },
+  levelCode: string | null,
+  calRows: CalendarRow[],
+  events: EventRow[]
+): { weeks: TermWeek[]; eventsByWeek: Map<number, string[]> } {
   const byDate = new Map<string, CalendarRow[]>();
   for (const r of calRows) {
     const bucket = byDate.get(r.date);
@@ -248,7 +345,7 @@ export async function loadTermWeeks(
 
   const closedDays = new Set<string>();
   const closedLabels = new Map<string, string>();
-  for (let t = toUtc(term.start_date); t <= toUtc(term.end_date); t += DAY_MS) {
+  for (let t = toUtc(term.start); t <= toUtc(term.end); t += DAY_MS) {
     const dow = weekdayOf(t);
     if (dow === 0 || dow === 6) continue;
     const date = fromUtc(t);
@@ -261,8 +358,8 @@ export async function loadTermWeeks(
   }
 
   const weeks = buildTermWeeks({
-    termStart: term.start_date,
-    termEnd: term.end_date,
+    termStart: term.start,
+    termEnd: term.end,
     closedDays,
     closedLabels,
   });

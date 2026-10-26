@@ -150,6 +150,18 @@ export const RecordSowCheckSchema = z.object({
 });
 
 /**
+ * "Sign Week N" or "Ask the teacher" (POST /api/sow/[sowId]/signoffs).
+ * Whether the remarks are needed, and how long they may be, is
+ * `recordSignoff`'s to say (422).
+ */
+export const RecordSowSignoffSchema = z.object({
+  weekNumber: z.number().int().min(1),
+  sectionId: z.string().uuid(),
+  kind: z.enum(['signed', 'asked']),
+  remarks: z.string().max(20000),
+});
+
+/**
  * A relief teacher's "What did you cover?" (POST /api/sow/relief-notes).
  * Whether it is empty or too long is `saveReliefNote`'s to say (422).
  */

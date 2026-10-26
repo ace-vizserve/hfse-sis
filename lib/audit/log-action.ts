@@ -316,6 +316,12 @@ export const ALL_AUDIT_ACTIONS = [
   // context carries the class, subject, day, week and THAT there was a note —
   // never the note itself.
   'sow.relief_note',
+  // The subject head signed one class's week of a scheme of work, or asked
+  // the teacher about it ("Ask the teacher" leaves the week unsigned). The
+  // context carries the week, the class and THAT there were remarks — never
+  // the remarks themselves.
+  'sow.sign',
+  'sow.ask',
   'user.login',
   'parent.session.issued',
   'parent.session.cleared',
