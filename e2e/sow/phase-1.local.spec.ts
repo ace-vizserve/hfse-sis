@@ -109,6 +109,16 @@ async function openSubjectHeads(
   await page.getByRole('tab', { name: new RegExp(tab) }).click();
 }
 
+/** The answer to the Subject heads save, so no step hangs on a toast that may have gone. */
+function waitForSave(page: Page) {
+  return page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/sis-admin/subject-heads') &&
+      r.request().method() === 'PUT' &&
+      r.ok()
+  );
+}
+
 function subjectRow(page: Page) {
   return page
     .getByRole('row')
@@ -132,8 +142,18 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   await openSubjectHeads(page, 'Needs a head');
   await expect(page.getByText(/still need a head/)).toBeVisible();
 
+  // The starting state is explicit: beforeAll cleared every head.
+  const { count: headsAtStart } = await db
+    .from('subject_heads')
+    .select('id', { count: 'exact', head: true });
+  expect(headsAtStart).toBe(0);
+
   // First subject on the screen that nobody heads yet, and a name that no other
   // subject's name contains, so the row can be told apart by its text.
+  // Wait for the rows to render before reading them (the read does not wait).
+  await expect(
+    page.locator('tbody tr td:first-child p.font-medium').first()
+  ).toBeVisible();
   const names = (
     await page.locator('tbody tr td:first-child p.font-medium').allInnerTexts()
   ).map((n) => n.trim());
@@ -153,13 +173,20 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   await expect(row.getByText('No subject head yet')).toBeVisible();
   await row.getByRole('button', { name: 'Add someone' }).click();
   await page.getByPlaceholder('Search staff').fill(staff.email);
+  const saveResponse = waitForSave(page);
   await page.getByRole('option', { name: new RegExp(staff.email) }).click();
-  // A subject taught in both halves asks which levels; "Every level" is the plain one.
+  // A subject taught in both halves asks which levels; "Every level" is the
+  // plain one. Wait for whichever comes first (the save itself, or the
+  // question) — an instant visibility check races the popover's next step.
   const everyLevel = page.getByRole('button', { name: 'Every level' });
-  if (await everyLevel.isVisible().catch(() => false)) await everyLevel.click();
+  await Promise.race([
+    saveResponse.then(() => undefined),
+    everyLevel.waitFor({ state: 'visible' }),
+  ]);
+  if (await everyLevel.isVisible()) await everyLevel.click();
 
-  // Saved: the toast says so, and the row moves to "Has a head".
-  await expect(page.getByText(/now heads/).first()).toBeVisible();
+  // Saved: the server answered, and the row moves to "Has a head".
+  await saveResponse;
   await page.getByRole('tab', { name: /Has a head/ }).click();
   const saved = subjectRow(page);
   await expect(
@@ -188,12 +215,13 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
 test('subject heads: removing one', async ({ page }) => {
   await adminSignIn(page);
   await openSubjectHeads(page, 'Has a head');
+  const saveResponse = waitForSave(page);
   await subjectRow(page)
     .getByRole('button', {
       name: new RegExp(`^Remove .+ as a head of ${subjectName}$`),
     })
     .click();
-  await expect(page.getByText(/is no longer a head of/).first()).toBeVisible();
+  await saveResponse;
 
   // Back to the plain "no head" state, under "Needs a head".
   await page.getByRole('tab', { name: /Needs a head/ }).click();
