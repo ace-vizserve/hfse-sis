@@ -495,26 +495,24 @@ export async function saveReliefNote(
   const weekNumber = sow ? noteWeekFor(weeks, today) : null;
 
   // One note per teacher, class, subject and day: the new one replaces it.
-  const { error: deleteError } = await service
+  // An upsert on the table's unique key (migration 198,
+  // `scheme_of_work_relief_notes_one_per_day`), so two saves at once still
+  // leave one row and a failed write never loses the earlier note.
+  const { error: upsertError } = await service
     .from('scheme_of_work_relief_notes')
-    .delete()
-    .eq('relief_teacher_user_id', actor.id)
-    .eq('section_id', input.sectionId)
-    .eq('subject_id', input.subjectId)
-    .eq('taught_on', today);
-  if (deleteError) throw new Error(deleteError.message);
-  const { error: insertError } = await service
-    .from('scheme_of_work_relief_notes')
-    .insert({
-      sow_id: sow && weekNumber !== null ? sow.id : null,
-      week_number: weekNumber,
-      section_id: input.sectionId,
-      subject_id: input.subjectId,
-      taught_on: today,
-      relief_teacher_user_id: actor.id,
-      note,
-    });
-  if (insertError) throw new Error(insertError.message);
+    .upsert(
+      {
+        sow_id: sow && weekNumber !== null ? sow.id : null,
+        week_number: weekNumber,
+        section_id: input.sectionId,
+        subject_id: input.subjectId,
+        taught_on: today,
+        relief_teacher_user_id: actor.id,
+        note,
+      },
+      { onConflict: 'relief_teacher_user_id,section_id,subject_id,taught_on' }
+    );
+  if (upsertError) throw new Error(upsertError.message);
 
   await logAction({
     service,

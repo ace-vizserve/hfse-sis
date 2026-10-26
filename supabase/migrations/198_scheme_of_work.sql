@@ -145,6 +145,12 @@ comment on table public.scheme_of_work_relief_notes is
 create index if not exists scheme_of_work_relief_notes_sow_idx
   on public.scheme_of_work_relief_notes (sow_id, week_number);
 
+-- One note per relief teacher, class, subject and day: saving again the same
+-- day replaces it (an upsert on this key, lib/sow/relief.ts). The key is what
+-- makes "one per day" true under two saves at once, not just a code habit.
+create unique index if not exists scheme_of_work_relief_notes_one_per_day
+  on public.scheme_of_work_relief_notes (relief_teacher_user_id, section_id, subject_id, taught_on);
+
 -- ── 7. Sign-offs ────────────────────────────────────────────────────────────
 
 create table if not exists public.scheme_of_work_signoffs (

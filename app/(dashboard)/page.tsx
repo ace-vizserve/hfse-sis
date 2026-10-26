@@ -4,10 +4,7 @@ import { CalendarPlus, Sunrise, Sun, Moon } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageShell } from '@/components/ui/page-shell';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import {
-  loadLiveLessonCoverForUser,
-  loadUpcomingCoverForUser,
-} from '@/lib/relief/upcoming';
+import { loadCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { resolveTeacherNavScope } from '@/lib/sidebar/resolve-hidden-modules';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
@@ -157,15 +154,11 @@ export default async function Home() {
   // bookings, so a viewer with no cover gets an empty array whatever role is
   // named here.
   // Plus cover running today, for the panel's "See today's lesson" links.
-  const [upcomingCover, liveCover] =
+  // One read for both (lib/relief/upcoming.ts).
+  const { upcoming: upcomingCover, live: liveCover } =
     view === 'teacher'
-      ? await createClient().then((c) =>
-          Promise.all([
-            loadUpcomingCoverForUser(c, userId),
-            loadLiveLessonCoverForUser(c, userId),
-          ])
-        )
-      : [[], []];
+      ? await loadCoverForUser(await createClient(), userId)
+      : { upcoming: [], live: [] };
 
   // Largest count first; single-item rows (change requests) after, in order.
   const todos = sortTodosByCount(

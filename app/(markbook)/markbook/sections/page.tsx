@@ -1,10 +1,7 @@
 import Link from 'next/link';
 import { ArrowUpRight, LayoutGrid, Settings, Users, UserX } from 'lucide-react';
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import {
-  loadLiveLessonCoverForUser,
-  loadUpcomingCoverForUser,
-} from '@/lib/relief/upcoming';
+import { loadCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { MarkbookSectionsDataTable } from '@/components/markbook/sections-data-table';
 import { AySwitcher } from '@/components/admissions/ay-switcher';
@@ -54,13 +51,11 @@ export default async function SectionsListPage({
   // Twin of the identical wrapper on app/(classroom)/classroom/page.tsx; the
   // two show the same panel and must not disagree about who sees it.
   // Plus cover running today, for the panel's "See today's lesson" links.
-  const [upcomingCover, liveCover] =
+  // One read for both (lib/relief/upcoming.ts).
+  const { upcoming: upcomingCover, live: liveCover } =
     role === 'teacher' && view
-      ? await Promise.all([
-          loadUpcomingCoverForUser(supabase, view.id),
-          loadLiveLessonCoverForUser(supabase, view.id),
-        ])
-      : [[], []];
+      ? await loadCoverForUser(supabase, view.id)
+      : { upcoming: [], live: [] };
   // One control: the "Manage in SIS Admin" button, which points at
   // `/sis/sections` — a module a teacher cannot open at all.
   const canManage =

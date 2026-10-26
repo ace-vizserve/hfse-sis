@@ -44,6 +44,8 @@ type Row = Record<string, unknown>;
 type Tables = Record<string, Row[]>;
 
 let seq = 0;
+/** The conflict keys every upsert was made on. */
+let upserts: string[] = [];
 
 /** A just-enough chainable fake of the Supabase query builder. */
 function fakeService(tables: Tables) {
@@ -76,6 +78,27 @@ function fakeService(tables: Tables) {
         },
         delete: () => {
           deleting = true;
+          return q;
+        },
+        // Like the database: a row matching the conflict key is updated in
+        // place, anything else is inserted. Refuses without a key, so a save
+        // that forgets it fails here rather than duplicating.
+        upsert: (v: Row, opts?: { onConflict?: string }) => {
+          if (!opts?.onConflict) throw new Error('upsert without onConflict');
+          upserts.push(opts.onConflict);
+          const keys = opts.onConflict.split(',');
+          const list = (tables[table] ??= []);
+          const hit = list.find((r) => keys.every((k) => r[k] === v[k]));
+          if (hit) Object.assign(hit, v);
+          else
+            list.push({
+              id: `${table}-${++seq}`,
+              created_at: new Date(
+                Date.UTC(2026, 9, 1, 0, 0, seq)
+              ).toISOString(),
+              ...v,
+            });
+          inserted = [];
           return q;
         },
         eq: (c: string, v: unknown) => {
@@ -206,6 +229,7 @@ function world(
 
 beforeEach(() => {
   seq = 0;
+  upserts = [];
   weeksMock.mockReset();
   logMock.mockReset();
   weeksMock.mockResolvedValue({
@@ -403,6 +427,46 @@ describe('saveReliefNote', () => {
       week_number: 2,
       note_present: true,
     });
+  });
+
+  it("upserts on the table's one-per-day key; another day is its own note", async () => {
+    const { service, tables } = world();
+    // A row already there for today (another tab saved first): it is
+    // replaced in place, never joined by a second one.
+    tables.scheme_of_work_relief_notes.push({
+      id: 'existing',
+      sow_id: 'sow1',
+      week_number: 2,
+      section_id: 'secA',
+      subject_id: 'sci',
+      taught_on: TODAY,
+      relief_teacher_user_id: 'relief',
+      note: '<p>Old</p>',
+      created_at: '2026-10-14T01:00:00.000Z',
+    });
+    await saveReliefNote(service, RELIEF, {
+      sectionId: 'secA',
+      subjectId: 'sci',
+      note: '<p>New</p>',
+      today: TODAY,
+    });
+    expect(upserts).toEqual([
+      'relief_teacher_user_id,section_id,subject_id,taught_on',
+    ]);
+    expect(tables.scheme_of_work_relief_notes).toHaveLength(1);
+    expect(tables.scheme_of_work_relief_notes[0]).toMatchObject({
+      id: 'existing',
+      note: '<p>New</p>',
+    });
+
+    // Thursday of the same week is a separate note.
+    await saveReliefNote(service, RELIEF, {
+      sectionId: 'secA',
+      subjectId: 'sci',
+      note: '<p>Thursday</p>',
+      today: '2026-10-15',
+    });
+    expect(tables.scheme_of_work_relief_notes).toHaveLength(2);
   });
 
   it('an empty note is refused', async () => {

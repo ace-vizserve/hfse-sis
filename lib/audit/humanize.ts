@@ -1073,7 +1073,7 @@ function templateSummary(
 
     case 'sow.relief_note': {
       const parts: string[] = [];
-      const day = str(ctx.taught_on);
+      const day = fmtMaybeDate(ctx.taught_on);
       if (day) parts.push(day);
       const week = numish(ctx.week_number);
       parts.push(week !== null ? `week ${week}` : 'no scheme of work');

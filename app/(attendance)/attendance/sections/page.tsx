@@ -6,10 +6,7 @@ import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
 import { DeclarationsWaitingPanel } from '@/components/attendance/declarations-waiting-panel';
 import { countInboxActionable } from '@/lib/approvals/inbox';
 import { DECLARATION_APPROVAL_FLOW } from '@/lib/declarations/approval';
-import {
-  loadLiveLessonCoverForUser,
-  loadUpcomingCoverForUser,
-} from '@/lib/relief/upcoming';
+import { loadCoverForUser } from '@/lib/relief/upcoming';
 import { createClient, getSessionUser } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
@@ -65,37 +62,34 @@ export default async function AttendanceSectionsListPage({
   // The upcoming-cover panel and the declarations badge are keyed on the
   // session alone, and the current academic year on nothing at all. They were
   // three consecutive `await`s.
-  const [upcomingCover, declarationsWaiting, currentAy, ayCodes, liveCover] =
-    await Promise.all([
-      // Cover booked for this teacher that has not started yet (migration 123).
-      // Caller's client on purpose: the row-read policy is deliberately
-      // unwindowed.
-      isTeacherOnly && session
-        ? loadUpcomingCoverForUser(supabase, session.id)
-        : Promise.resolve([]),
-      // Declarations waiting on this person. Never throws — one panel must not
-      // be able to take the section picker down with it, and zero is honest: the
-      // queue at /attendance/declarations is the authority either way.
-      session
-        ? countInboxActionable(createServiceClient(), {
-            flow: DECLARATION_APPROVAL_FLOW,
-            userId: session.id,
-            role: session.role,
-          }).catch((e) => {
-            console.error(
-              '[attendance] declarations count failed:',
-              e instanceof Error ? e.message : String(e)
-            );
-            return 0;
-          })
-        : Promise.resolve(0),
-      getCurrentAcademicYear(),
-      listAyCodes(supabase),
-      // Cover running today, for the panel's "See today's lesson" links.
-      isTeacherOnly && session
-        ? loadLiveLessonCoverForUser(supabase, session.id)
-        : Promise.resolve([]),
-    ]);
+  const [cover, declarationsWaiting, currentAy, ayCodes] = await Promise.all([
+    // Cover booked for this teacher that has not started yet (migration 123).
+    // Caller's client on purpose: the row-read policy is deliberately
+    // unwindowed.
+    isTeacherOnly && session
+      ? loadCoverForUser(supabase, session.id)
+      : Promise.resolve({ upcoming: [], live: [] }),
+    // Declarations waiting on this person. Never throws — one panel must not
+    // be able to take the section picker down with it, and zero is honest: the
+    // queue at /attendance/declarations is the authority either way.
+    session
+      ? countInboxActionable(createServiceClient(), {
+          flow: DECLARATION_APPROVAL_FLOW,
+          userId: session.id,
+          role: session.role,
+        }).catch((e) => {
+          console.error(
+            '[attendance] declarations count failed:',
+            e instanceof Error ? e.message : String(e)
+          );
+          return 0;
+        })
+      : Promise.resolve(0),
+    getCurrentAcademicYear(),
+    listAyCodes(supabase),
+  ]);
+  // Booked cover, plus cover running today for "See today's lesson" — one read.
+  const { upcoming: upcomingCover, live: liveCover } = cover;
 
   // The year on screen: ?ay= when it names a real year, else the current one.
   const selectedAyCode =

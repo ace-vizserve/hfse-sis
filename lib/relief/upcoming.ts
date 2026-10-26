@@ -92,68 +92,125 @@ export type LiveLessonCover = {
   coveredTeacherName: string | null;
 };
 
+type NameResolver = Awaited<ReturnType<typeof subjectDisplayNameResolver>>;
+
+const COVER_COLUMNS = `id, role, teacher_user_id, relief_started_on, relief_ended_on,
+       section:sections!inner(id, name, academic_year_id, level:levels(code)),
+       subject:subjects(id, name)`;
+
+/** "P4 Diligence" — how staff say it. */
+function sectionLabel(section: NonNullable<ReturnType<typeof sectionOf>>) {
+  const level = one(section.level);
+  return level?.code ? `${level.code} ${section.name}` : section.name;
+}
+const sectionOf = (a: Raw) => one(a.section);
+
+/** The booked rows, exactly as `loadUpcomingCoverForUser` has always made them. */
+function toUpcoming(rows: Raw[], resolveName: NameResolver): UpcomingCover[] {
+  return rows
+    .flatMap<UpcomingCover>((a) => {
+      const section = one(a.section);
+      const startedOn = a.relief_started_on;
+      if (!section || !startedOn) return [];
+
+      // The same predicate the gate uses, so this panel can never advertise a
+      // class the gate would already have opened — or one it has finished with.
+      if (reliefStatus(startedOn, a.relief_ended_on) !== 'scheduled') return [];
+
+      return [
+        {
+          assignmentId: a.id,
+          sectionId: section.id,
+          sectionName: sectionLabel(section),
+          subjectName: one(a.subject)
+            ? resolveName(section.academic_year_id, one(a.subject)!)
+            : null,
+          role: a.role,
+          startedOn,
+          endedOn: a.relief_ended_on,
+        },
+      ];
+    })
+    .sort((x, y) => x.startedOn.localeCompare(y.startedOn));
+}
+
 /**
- * Subject and co-teacher cover this user has live today. Form-class cover is
- * left out: it has no subject, so no scheme of work and no lesson to show.
- * Returns `[]` on any failure, like the loader below — never the reason a
- * page 500s.
+ * Subject and co-teacher cover live today. Form-class cover is left out: it
+ * has no subject, so no scheme of work and no lesson to show.
  */
-export async function loadLiveLessonCoverForUser(
+function toLive(
+  rows: (Raw & { teacher_user_id: string })[],
+  resolveName: NameResolver,
+  names: Map<string, string>
+): LiveLessonCover[] {
+  return rows
+    .filter(
+      (a) =>
+        isSubjectRole(a.role) &&
+        one(a.subject) &&
+        one(a.section) &&
+        // The gate's own predicate (KD #191) — never a copy of it.
+        isReliefLive(a.relief_started_on, a.relief_ended_on)
+    )
+    .map((a) => {
+      const section = one(a.section)!;
+      const subject = one(a.subject)!;
+      return {
+        assignmentId: a.id,
+        sectionId: section.id,
+        subjectId: subject.id,
+        sectionName: sectionLabel(section),
+        subjectName: resolveName(section.academic_year_id, subject),
+        coveredTeacherName: names.get(a.teacher_user_id) ?? null,
+      };
+    })
+    .sort((x, y) => x.sectionName.localeCompare(y.sectionName));
+}
+
+/**
+ * Everything the "You're covering" panel shows, from ONE read of the
+ * caller's cover rows: `upcoming` (booked, not started — identical to
+ * `loadUpcomingCoverForUser`) and `live` (subject cover running today, for
+ * "See today's lesson"). Both empty on any failure — never the reason a page
+ * 500s.
+ */
+export async function loadCoverForUser(
   supabase: SupabaseClient,
   userId: string
-): Promise<LiveLessonCover[]> {
+): Promise<{ upcoming: UpcomingCover[]; live: LiveLessonCover[] }> {
   const { data, error } = await supabase
     .from('teacher_assignments')
-    .select(
-      `id, role, teacher_user_id, relief_started_on, relief_ended_on,
-       section:sections!inner(id, name, academic_year_id, level:levels(code)),
-       subject:subjects(id, name)`
-    )
+    .select(COVER_COLUMNS)
     .eq('relief_teacher_user_id', userId);
   if (error) {
-    console.error('[live-cover] read failed:', error.message);
-    return [];
+    console.error('[cover-panel] read failed:', error.message);
+    return { upcoming: [], live: [] };
   }
-  const rows = (
-    (data ?? []) as unknown as (Raw & { teacher_user_id: string })[]
-  ).filter(
-    (a) =>
-      isSubjectRole(a.role) &&
-      one(a.subject) &&
-      one(a.section) &&
-      // The gate's own predicate (KD #191) — never a copy of it.
-      isReliefLive(a.relief_started_on, a.relief_ended_on)
-  );
-  if (rows.length === 0) return [];
+  const rows = (data ?? []) as unknown as (Raw & {
+    teacher_user_id: string;
+  })[];
+  if (rows.length === 0) return { upcoming: [], live: [] };
 
+  const anyLive = rows.some((a) =>
+    isReliefLive(a.relief_started_on, a.relief_ended_on)
+  );
   const [resolveName, names] = await Promise.all([
     subjectDisplayNameResolver(
       supabase,
       rows.map((r) => one(r.section)?.academic_year_id),
       rows.map((r) => one(r.subject)?.id)
     ),
-    getStaffDisplayNameById()
-      .then((entries) => new Map(entries))
-      .catch(() => new Map<string, string>()),
+    // Names are only printed on live rows.
+    anyLive
+      ? getStaffDisplayNameById()
+          .then((entries) => new Map(entries))
+          .catch(() => new Map<string, string>())
+      : Promise.resolve(new Map<string, string>()),
   ]);
-
-  return rows
-    .map((a) => {
-      const section = one(a.section)!;
-      const subject = one(a.subject)!;
-      const level = one(section.level);
-      return {
-        assignmentId: a.id,
-        sectionId: section.id,
-        subjectId: subject.id,
-        sectionName: level?.code
-          ? `${level.code} ${section.name}`
-          : section.name,
-        subjectName: resolveName(section.academic_year_id, subject),
-        coveredTeacherName: names.get(a.teacher_user_id) ?? null,
-      };
-    })
-    .sort((x, y) => x.sectionName.localeCompare(y.sectionName));
+  return {
+    upcoming: toUpcoming(rows, resolveName),
+    live: toLive(rows, resolveName, names),
+  };
 }
 
 /**
@@ -202,32 +259,5 @@ export async function loadUpcomingCoverForUser(
     rows.map((r) => one(r.subject)?.id)
   );
 
-  return rows
-    .flatMap<UpcomingCover>((a) => {
-      const section = one(a.section);
-      const startedOn = a.relief_started_on;
-      if (!section || !startedOn) return [];
-
-      // The same predicate the gate uses, so this panel can never advertise a
-      // class the gate would already have opened — or one it has finished with.
-      if (reliefStatus(startedOn, a.relief_ended_on) !== 'scheduled') return [];
-
-      const level = one(section.level);
-      return [
-        {
-          assignmentId: a.id,
-          sectionId: section.id,
-          sectionName: level?.code
-            ? `${level.code} ${section.name}`
-            : section.name,
-          subjectName: one(a.subject)
-            ? resolveName(section.academic_year_id, one(a.subject)!)
-            : null,
-          role: a.role,
-          startedOn,
-          endedOn: a.relief_ended_on,
-        },
-      ];
-    })
-    .sort((x, y) => x.startedOn.localeCompare(y.startedOn));
+  return toUpcoming(rows, resolveName);
 }

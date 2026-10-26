@@ -2,7 +2,14 @@ import { render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { UpcomingCoverPanel } from '@/components/relief/upcoming-cover';
-import { loadUpcomingCoverForUser } from '@/lib/relief/upcoming';
+import {
+  loadCoverForUser,
+  loadUpcomingCoverForUser,
+} from '@/lib/relief/upcoming';
+
+vi.mock('@/lib/auth/staff-list', () => ({
+  getStaffDisplayNameById: async () => [['holder-1', 'Ms Holder']],
+}));
 import type { UpcomingCover } from '@/lib/relief/upcoming';
 
 // The "you're covering" heads-up. Its whole job is to show a substitute a class
@@ -199,5 +206,69 @@ describe('the loader', () => {
     // convenience read must never 500 someone's home page.
     const { client } = stub([], { message: 'boom' });
     expect(await loadUpcomingCoverForUser(client, 'user-1')).toEqual([]);
+  });
+
+  it('loadCoverForUser: one read gives the same booked rows plus live subject cover', async () => {
+    // The panel's pages read cover once. Booked rows must come out exactly
+    // as loadUpcomingCoverForUser makes them.
+    const rows = [
+      row({ id: 'future', relief_started_on: '2026-09-03' }),
+      row({
+        id: 'live',
+        teacher_user_id: 'holder-1',
+        relief_started_on: '2026-08-20',
+        relief_ended_on: '2026-08-28',
+        subject: { id: 'sub-1', name: 'Mathematics' },
+      }),
+      // Live, but a form class: no subject, so no lesson link.
+      row({
+        id: 'form',
+        role: 'form_adviser',
+        relief_started_on: null,
+        relief_ended_on: null,
+        subject: null,
+      }),
+      row({
+        id: 'over',
+        relief_started_on: '2026-08-01',
+        relief_ended_on: '2026-08-05',
+      }),
+    ];
+    let reads = 0;
+    const q: Record<string, unknown> = {};
+    q.select = () => q;
+    q.eq = () => q;
+    q.in = () => q;
+    q.not = () => q;
+    q.then = (resolve: (v: unknown) => unknown) =>
+      Promise.resolve({ data: rows, error: null }).then(resolve);
+    const client = {
+      from: (t: string) => {
+        if (t === 'teacher_assignments') reads += 1;
+        return t === 'teacher_assignments'
+          ? q
+          : {
+              select: () => ({
+                in: () => ({
+                  in: () => Promise.resolve({ data: [], error: null }),
+                }),
+              }),
+            };
+      },
+    } as never;
+
+    const out = await loadCoverForUser(client, 'user-1');
+    expect(reads).toBe(1);
+    expect(out.upcoming.map((c) => c.assignmentId)).toEqual(['future']);
+    expect(out.live).toEqual([
+      {
+        assignmentId: 'live',
+        sectionId: 'sec-1',
+        subjectId: 'sub-1',
+        sectionName: 'P4 Diligence',
+        subjectName: 'Mathematics',
+        coveredTeacherName: 'Ms Holder',
+      },
+    ]);
   });
 });

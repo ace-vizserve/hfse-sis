@@ -43,6 +43,13 @@ describe('migration 198 — scheme of work tables', () => {
     );
   });
 
+  it('keeps one relief note per teacher, class, subject and day', () => {
+    // lib/sow/relief.ts upserts on exactly this key.
+    expect(sql).toMatch(
+      /create unique index if not exists scheme_of_work_relief_notes_one_per_day\s+on public\.scheme_of_work_relief_notes \(relief_teacher_user_id, section_id, subject_id, taught_on\)/
+    );
+  });
+
   it('leaves approval_request_stages alone (a subject-head step is stored as named)', () => {
     expect(sql).not.toMatch(/alter table\s+public\.approval_request_stages/i);
   });
