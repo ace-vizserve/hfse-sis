@@ -3,12 +3,17 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { Role } from '@/lib/auth/roles';
-import { countInboxActionableAcrossFlows } from '@/lib/approvals/inbox';
+import {
+  countInboxActionableAcrossFlows,
+  countInboxActionableByFlow,
+} from '@/lib/approvals/inbox';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import {
   DECLARATION_APPROVAL_FLOW,
+  SOW_APPROVAL_FLOW,
   type StagedApprovalFlow,
 } from '@/lib/schemas/approval-flows';
-import { SOW_FLOWS } from '@/lib/sow/flows';
+import { BELL_STAGED_FLOWS } from '@/lib/sidebar/bell-flows';
 
 /**
  * How many ordered-approval steps (KD #196), across the named flows, are
@@ -63,15 +68,48 @@ export async function getDeclarationWaitingCount(
   ]);
 }
 
+export type BellStagedCounts = {
+  /** Both grade-change flows — Markbook's change-request badge half. */
+  gradeChange: number;
+  /** The scheme-of-work flow — Classroom's "Schemes to review" badge. */
+  sow: number;
+  /** Everything in `BELL_STAGED_FLOWS` — the bell's seed. */
+  total: number;
+};
+
 /**
- * How many schemes of work are waiting on a step THIS person may decide — the
- * "Schemes to review" badge and the bell's SOW half. The same rules as
- * `getStagedWaitingCount`, which it is.
+ * Grade-change and scheme-of-work steps waiting for THIS person, in ONE read
+ * (`BELL_STAGED_FLOWS`), split so a nav badge can show its own flow's share.
+ *
+ * ⚠ THIS REPLACED A GRADE-CHANGE-ONLY CALL IN EVERY LAYOUT, AND MUST STAY ONE
+ * CALL. Counting the SOW flow separately would add a full inbox read to every
+ * page for every user.
+ *
+ * ⚠ NEVER THROWS, for the reason `getStagedWaitingCount` gives.
  */
-export async function getSowWaitingCount(
+export async function getBellStagedCounts(
   service: SupabaseClient,
   role: Role,
   userId: string
-): Promise<number> {
-  return getStagedWaitingCount(service, role, userId, SOW_FLOWS);
+): Promise<BellStagedCounts> {
+  try {
+    const byFlow = await countInboxActionableByFlow(service, {
+      flows: BELL_STAGED_FLOWS,
+      userId,
+      role,
+    });
+    const gradeChange = GRADE_CHANGE_FLOWS.reduce(
+      (n, f) => n + (byFlow[f] ?? 0),
+      0
+    );
+    const sow = byFlow[SOW_APPROVAL_FLOW] ?? 0;
+    return { gradeChange, sow, total: gradeChange + sow };
+  } catch (e) {
+    console.error(
+      '[approvals] could not seed the waiting count:',
+      BELL_STAGED_FLOWS.join(', '),
+      e instanceof Error ? e.message : String(e)
+    );
+    return { gradeChange: 0, sow: 0, total: 0 };
+  }
 }

@@ -5,10 +5,8 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
-  getSowWaitingCount,
-  getStagedWaitingCount,
+  getBellStagedCounts,
 } from '@/lib/sidebar/notification-counts';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { resolvePFileBadges } from '@/lib/p-files/sidebar-badges';
 import { createServiceClient } from '@/lib/supabase/service';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
@@ -71,14 +69,12 @@ export default async function PFilesLayout({
 
   // Not gated on role: being an approver is decided by being ON a step, not by
   // holding a role, so the count answers that itself and returns 0 otherwise.
-  const [declarationCount, gradeChangeStepCount, sowStepCount] =
-    await Promise.all([
-      getDeclarationWaitingCount(service, role, id),
-      // Grade changes decided step by step — same "on a step" rule.
-      getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-      // Schemes of work at a step this person is on — the bell's fourth source.
-      getSowWaitingCount(service, role, id),
-    ]);
+  const [declarationCount, stagedCounts] = await Promise.all([
+    getDeclarationWaitingCount(service, role, id),
+    // Grade changes and schemes of work decided step by step, in one read —
+    // same "on a step" rule.
+    getBellStagedCounts(service, role, id),
+  ]);
 
   // Always empty here, and cheaply so — the only tiles this hides are the ones
   // a subject-teacher-only account cannot use, and `/p-files` does not admit a
@@ -113,8 +109,7 @@ export default async function PFilesLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
-                initialGradeChangeStepCount={gradeChangeStepCount}
-                initialSowStepCount={sowStepCount}
+                initialStagedStepCount={stagedCounts.total}
               />
             </div>
           </div>

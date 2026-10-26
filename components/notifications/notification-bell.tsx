@@ -15,8 +15,7 @@ import type { Role } from '@/lib/auth/roles';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
 import { useStagedApprovalCount } from '@/lib/sidebar/use-staged-approval-count';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
-import { SOW_FLOWS } from '@/lib/sow/flows';
+import { BELL_STAGED_FLOWS } from '@/lib/sidebar/bell-flows';
 import { ActivityPanel } from '@/components/notifications/activity-panel';
 
 const GATE_ROLES: Role[] = [
@@ -53,19 +52,15 @@ type NotificationBellProps = {
    */
   initialDeclarationCount?: number | null;
   /**
-   * Grade-change steps waiting for this person to decide (migration 144 —
-   * requests on the approval engine). `initialCount` is the legacy half and
-   * excludes those rows, so the two add without overlap.
+   * Steps on the approval engine waiting for this person to decide, across
+   * `BELL_STAGED_FLOWS` — both grade-change flows (migration 144) and the
+   * scheme-of-work flow — seeded by ONE read (`getBellStagedCounts().total`).
+   * `initialCount` is the legacy grade-change half and excludes these rows,
+   * so the two add without overlap.
    *
    * Optional for the same reason as the declaration count.
    */
-  initialGradeChangeStepCount?: number | null;
-  /**
-   * Scheme-of-work steps waiting for this person to decide (`SOW_FLOWS`).
-   * Its own flow, so it adds to the others without overlap. Optional for the
-   * same reason as the declaration count.
-   */
-  initialSowStepCount?: number | null;
+  initialStagedStepCount?: number | null;
 };
 
 // Surfaces the changeRequests realtime signal outside Markbook's own
@@ -83,8 +78,7 @@ export function NotificationBell({
   userId,
   initialCount,
   initialDeclarationCount = null,
-  initialGradeChangeStepCount = null,
-  initialSowStepCount = null,
+  initialStagedStepCount = null,
 }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const changeRequestCount = useChangeRequestCount(role, userId, initialCount);
@@ -92,17 +86,12 @@ export function NotificationBell({
   // Unlike the Markbook sidebar badge, the bell counts these for EVERY role,
   // teacher included: an Academic and Examination Board member can hold a
   // teacher account, and the bell is how a step waiting for them finds them.
-  const gradeChangeStepCount = useStagedApprovalCount(
+  // ⚠ ONE HOOK FOR GRADE CHANGES AND SCHEMES OF WORK: the SOW flow joined by
+  // widening the list, so a realtime ping still costs one recount, not two.
+  const stagedStepCount = useStagedApprovalCount(
     userId,
-    GRADE_CHANGE_FLOWS,
-    initialGradeChangeStepCount
-  );
-  // Schemes of work at a step this person is on — counted for every role for
-  // the same reason: who approves a SOW is the step's people, not a role.
-  const sowStepCount = useStagedApprovalCount(
-    userId,
-    SOW_FLOWS,
-    initialSowStepCount
+    BELL_STAGED_FLOWS,
+    initialStagedStepCount
   );
 
   // ⚠ `null` means "not tracked", which is not the same as zero — treating it
@@ -111,13 +100,11 @@ export function NotificationBell({
   const count =
     changeRequestCount == null &&
     declarationCount == null &&
-    gradeChangeStepCount == null &&
-    sowStepCount == null
+    stagedStepCount == null
       ? null
       : (changeRequestCount ?? 0) +
         (declarationCount ?? 0) +
-        (gradeChangeStepCount ?? 0) +
-        (sowStepCount ?? 0);
+        (stagedStepCount ?? 0);
 
   if (!role || !GATE_ROLES.includes(role)) return null;
 

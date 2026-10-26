@@ -18,10 +18,8 @@ import {
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
-  getSowWaitingCount,
-  getStagedWaitingCount,
+  getBellStagedCounts,
 } from '@/lib/sidebar/notification-counts';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { QBO_INVOICE_ROLES } from '@/lib/qbo/roles';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -57,18 +55,12 @@ export default async function BillingLayout({
   );
 
   const service = createServiceClient();
-  const [
-    changeRequestCount,
-    declarationCount,
-    gradeChangeStepCount,
-    sowStepCount,
-  ] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-    // Schemes of work at a step this person is on — the bell's fourth source.
-    getSowWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, stagedCounts] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      getBellStagedCounts(service, role, id),
+    ]);
 
   const hiddenModules = await resolveHiddenModules(role, id);
 
@@ -98,8 +90,7 @@ export default async function BillingLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
-                initialGradeChangeStepCount={gradeChangeStepCount}
-                initialSowStepCount={sowStepCount}
+                initialStagedStepCount={stagedCounts.total}
               />
             </div>
           </div>

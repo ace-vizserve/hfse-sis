@@ -128,6 +128,8 @@ export async function loadStepDecisions(
 
 export type InboxStage = {
   requestId: string;
+  /** The request's flow — what lets one read over several flows be split per flow. */
+  flow: string;
   subjectType: string;
   subjectId: string;
   requestStatus: ApprovalRequestStatus;
@@ -252,6 +254,7 @@ export async function listInboxStagesAcrossFlows(
   if (error) throw new Error(error.message);
 
   type EmbeddedRequest = {
+    flow?: string;
     subject_type: string;
     subject_id: string;
     status: ApprovalRequestStatus;
@@ -312,6 +315,7 @@ export async function listInboxStagesAcrossFlows(
 
     return {
       requestId: row.request_id,
+      flow: req?.flow ?? '',
       subjectType: req?.subject_type ?? '',
       subjectId: req?.subject_id ?? '',
       requestStatus: req?.status ?? 'pending',
@@ -351,6 +355,26 @@ export async function countInboxActionableAcrossFlows(
 ): Promise<number> {
   const rows = await listInboxStagesAcrossFlows(service, scope);
   return rows.filter((r) => r.canDecide).length;
+}
+
+/**
+ * The same count, split by flow, from the SAME single pass — for a header
+ * that shows the sum on the bell and one flow's share on a nav badge. Asking
+ * per flow instead would re-run the whole read once per flow on every page.
+ * Every asked flow has a key, zero when nothing waits on it.
+ */
+export async function countInboxActionableByFlow(
+  service: SupabaseClient,
+  scope: InboxMultiFlowScope
+): Promise<Record<string, number>> {
+  const out: Record<string, number> = Object.fromEntries(
+    scope.flows.map((f) => [f, 0])
+  );
+  const rows = await listInboxStagesAcrossFlows(service, scope);
+  for (const r of rows) {
+    if (r.canDecide && r.flow in out) out[r.flow] += 1;
+  }
+  return out;
 }
 
 // ── What already happened ──────────────────────────────────────────────────
@@ -471,6 +495,7 @@ export async function listDecidedStages(
   if (error) throw new Error(error.message);
 
   type EmbeddedRequest = {
+    flow?: string;
     subject_type: string;
     subject_id: string;
     status: ApprovalRequestStatus;
@@ -529,6 +554,7 @@ export async function listDecidedStages(
 
     out.push({
       requestId: stage.request_id,
+      flow: req.flow ?? '',
       subjectType: req.subject_type,
       subjectId: req.subject_id,
       requestStatus: req.status,

@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 
 import type { Role, SidebarBadgeKey, SidebarBadges } from '@/lib/auth/roles';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
-import { SOW_FLOWS } from '@/lib/sow/flows';
 import { subscribeToBadgeTopic } from '@/lib/sidebar/badge-bus';
 import { useChangeRequestCount } from '@/lib/sidebar/use-change-request-count';
 import { useDeclarationCount } from '@/lib/sidebar/use-declaration-count';
@@ -136,22 +135,12 @@ export function useRealtimeBadges(
     );
   }, [liveDeclarationCount]);
 
-  // Schemes of work waiting on the reader's step — the declarations shape:
-  // the database decides what the reader may count, so no scope here.
-  const liveSowReviewCount = useStagedApprovalCount(
-    userId,
-    SOW_FLOWS,
-    initial.sowReviews ?? null
-  );
-
-  useEffect(() => {
-    if (liveSowReviewCount == null) return;
-    setBadges((prev) =>
-      prev.sowReviews === liveSowReviewCount
-        ? prev
-        : { ...prev, sowReviews: liveSowReviewCount }
-    );
-  }, [liveSowReviewCount]);
+  // ⚠ `sowReviews` IS DELIBERATELY NOT LIVE. It is the SOW share of the one
+  // staged read every layout already makes (`getBellStagedCounts`), passed
+  // through as served and renewed on the next navigation or refresh (every
+  // decision refreshes the page). A live copy would be a second recount on
+  // every approval ping for everyone in Classroom, beside the bell's own,
+  // which already counts these steps live.
 
   // pfileAwaitingVerification — SSR-rendered badge; a ping on the
   // `sis:pfile-verification` broadcast topic (migration 171's

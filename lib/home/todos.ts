@@ -11,7 +11,11 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { sgToday } from '@/lib/dates';
-import { listInboxStagesAcrossFlows } from '@/lib/approvals/inbox';
+import {
+  countInboxActionableAcrossFlows,
+  listInboxStagesAcrossFlows,
+} from '@/lib/approvals/inbox';
+import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { GRADE_CHANGE_SUBJECT_TYPE } from '@/lib/change-requests/approval-route';
 import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 
@@ -314,19 +318,20 @@ async function loadStagedChangeRequestRows(
 
 /**
  * Schemes of work waiting on a step this person is on — one counted row into
- * the "Waiting for you" queue. The queue's own read, so the row and the page
- * it opens can never disagree about how many there are.
+ * the "Waiting for you" queue. Only the number is needed, so it is the inbox
+ * count (the same `canDecide` the queue keeps), not the queue's full build.
+ *
+ * Asked with `role: null` for the reason `loadStagedChangeRequestRows` gives:
+ * an office role widens what the inbox returns, never what it may decide.
  */
 async function sowReviewTodo({
   userId,
-  role,
 }: TodoContext): Promise<HomeTodoItem | null> {
-  const { listSowReviewQueue } = await import('@/lib/sow/review');
-  const rows = await listSowReviewQueue(createServiceClient(), {
+  const count = await countInboxActionableAcrossFlows(createServiceClient(), {
+    flows: [SOW_APPROVAL_FLOW],
     userId,
-    role,
+    role: null,
   });
-  const count = rows.length;
   if (count === 0) return null;
   return {
     id: 'classroom-sow-review',

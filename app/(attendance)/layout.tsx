@@ -18,10 +18,8 @@ import {
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
-  getSowWaitingCount,
-  getStagedWaitingCount,
+  getBellStagedCounts,
 } from '@/lib/sidebar/notification-counts';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { SidebarBadges } from '@/lib/auth/roles';
@@ -62,19 +60,13 @@ export default async function AttendanceLayout({
   );
 
   const service = createServiceClient();
-  const [
-    changeRequestCount,
-    declarationCount,
-    gradeChangeStepCount,
-    sowStepCount,
-  ] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-    // Grade changes decided step by step — the bell's third source.
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-    // Schemes of work at a step this person is on — the bell's fourth source.
-    getSowWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, stagedCounts] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes and schemes of work decided step by step, in one read.
+      getBellStagedCounts(service, role, id),
+    ]);
 
   // The Declarations nav item carries the same number the bell adds in — how
   // many are waiting for this person, not how many exist.
@@ -112,8 +104,7 @@ export default async function AttendanceLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
-                initialGradeChangeStepCount={gradeChangeStepCount}
-                initialSowStepCount={sowStepCount}
+                initialStagedStepCount={stagedCounts.total}
               />
             </div>
           </div>

@@ -78,7 +78,15 @@ export function ReopenSowDialog({
             onChange={(e) => setNote(e.target.value)}
             maxLength={MAX}
             placeholder="e.g. The term exam moved to Week 9."
+            aria-describedby="sow-reopen-note-count"
           />
+          {/* The same counter the Return dialog's editor shows. */}
+          <p
+            id="sow-reopen-note-count"
+            className="mt-1 text-right font-mono text-[10px] tracking-wider tabular-nums text-muted-foreground"
+          >
+            {note.length} / {MAX}
+          </p>
         </Field>
         <DialogFooter>
           <Button variant="outline" onClick={() => reset(false)}>

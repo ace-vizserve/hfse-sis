@@ -181,7 +181,7 @@ describe('NotificationBell — grade-change steps', () => {
         userId="u-1"
         initialCount={1}
         initialDeclarationCount={2}
-        initialGradeChangeStepCount={4}
+        initialStagedStepCount={4}
       />
     );
     expect(screen.getByText('7')).toBeInTheDocument();
@@ -194,44 +194,30 @@ describe('NotificationBell — grade-change steps', () => {
         userId="u-1"
         initialCount={0}
         initialDeclarationCount={0}
-        initialGradeChangeStepCount={2}
+        initialStagedStepCount={2}
       />
     );
     expect(screen.getByText('2')).toBeInTheDocument();
   });
 
-  it('asks about both grade-change flows', () => {
+  it('asks about both grade-change flows and schemes of work in ONE hook', () => {
     stagedFlowsSeen.length = 0;
     render(
       <NotificationBell
         role="teacher"
         userId="u-1"
         initialCount={null}
-        initialGradeChangeStepCount={1}
+        initialStagedStepCount={1}
       />
     );
-    // One hook per source (grade changes, schemes of work), so look for the
-    // grade-change call among them rather than assuming it is the last.
-    expect(stagedFlowsSeen.map((f) => [...f].sort())).toContainEqual([
+    // One staged hook per render, not one per flow family: a realtime ping
+    // must cost one recount, as it did before schemes of work joined.
+    expect(stagedFlowsSeen).toHaveLength(1);
+    expect([...stagedFlowsSeen[0]].sort()).toEqual([
       'markbook.grade_change',
       'markbook.grade_change_aeb',
+      'markbook.scheme_of_work',
     ]);
-  });
-
-  it('asks about the scheme-of-work flow and adds it in', () => {
-    stagedFlowsSeen.length = 0;
-    render(
-      <NotificationBell
-        role="teacher"
-        userId="u-1"
-        initialCount={0}
-        initialDeclarationCount={0}
-        initialGradeChangeStepCount={1}
-        initialSowStepCount={2}
-      />
-    );
-    expect(stagedFlowsSeen).toContainEqual(['markbook.scheme_of_work']);
-    expect(screen.getByText('3')).toBeInTheDocument();
   });
 
   it('stays hidden when no source is tracked', () => {
@@ -241,7 +227,7 @@ describe('NotificationBell — grade-change steps', () => {
         userId="u-1"
         initialCount={null}
         initialDeclarationCount={null}
-        initialGradeChangeStepCount={null}
+        initialStagedStepCount={null}
       />
     );
     expect(

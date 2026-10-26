@@ -23,9 +23,15 @@ vi.mock('@/lib/auth/staff-list', () => ({
     ]),
 }));
 
+import {
+  countInboxActionableAcrossFlows,
+  countInboxActionableByFlow,
+} from '@/lib/approvals/inbox';
+import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
+import { BELL_STAGED_FLOWS } from '@/lib/sidebar/bell-flows';
 import { SOW_APPROVAL_SUBJECT_TYPE as SOW_SUBJECT_TYPE } from '@/lib/sow/access';
-import { listSowReviewQueue } from '@/lib/sow/review';
+import { listSowReviewQueue, loadSowReview } from '@/lib/sow/review';
 
 type Row = Record<string, unknown>;
 type Tables = Record<string, Row[]>;
@@ -56,9 +62,13 @@ function arm(clause: string): (r: Row) => boolean {
 }
 
 /** A just-enough read-only fake of the query builder. */
-function fakeService(tables: Tables): SupabaseClient {
+function fakeService(
+  tables: Tables,
+  reads: { count: number } = { count: 0 }
+): SupabaseClient {
   return {
     from(table: string) {
+      reads.count += 1;
       const filters: Array<(r: Row) => boolean> = [];
       const run = () => ({
         data: (tables[table] ?? []).filter((r) => filters.every((f) => f(r))),
@@ -266,5 +276,101 @@ describe('listSowReviewQueue', () => {
       role: 'teacher',
     });
     expect(rows).toEqual([]);
+  });
+});
+
+describe('loadSowReview — who may decide the live step', () => {
+  // Scheme A's ladder: step 1 (Subject head, head-1) is live, filed by
+  // teacher-1. The shared `canDecideCurrentStep` answers each case.
+  const review = (viewerId: string) =>
+    loadSowReview(fakeService(tables), viewerId, 'sub-a');
+
+  it('an on-pool viewer who has not decided may decide', async () => {
+    const r = await review('head-1');
+    expect(r?.canDecide).toBe(true);
+    expect(r?.requestId).toBe('req-a');
+    expect(r?.live).toMatchObject({
+      label: 'Subject head',
+      stageOrder: 1,
+      isLast: false,
+      empty: false,
+    });
+  });
+
+  it('a viewer off the pool may not', async () => {
+    // The OIC sits on step 2, which is not live yet.
+    expect((await review('oic-1'))?.canDecide).toBe(false);
+    expect((await review('nobody'))?.canDecide).toBe(false);
+  });
+
+  it('the teacher who sent it may not, even if put on the pool', async () => {
+    const s1 = tables.approval_request_stages.find((s) => s.id === 'req-a-s1')!;
+    s1.approver_pool = ['head-1', 'teacher-1'];
+    expect((await review('teacher-1'))?.canDecide).toBe(false);
+  });
+
+  it('a viewer who already decided the step may not decide it again', async () => {
+    // An "everyone must approve" step still waiting on the others.
+    const s1 = tables.approval_request_stages.find((s) => s.id === 'req-a-s1')!;
+    s1.approval_rule = 'all';
+    s1.approver_pool = ['head-1', 'head-2'];
+    tables.approval_request_stage_decisions.push({
+      request_stage_id: 'req-a-s1',
+      user_id: 'head-1',
+      user_email: 'h@x.sg',
+      decision: 'approve',
+      note: null,
+      decided_at: '2026-03-10T01:00:00Z',
+    });
+    expect((await review('head-1'))?.canDecide).toBe(false);
+    expect((await review('head-2'))?.canDecide).toBe(true);
+  });
+
+  it('a scheme never sent has no review', async () => {
+    expect(await loadSowReview(fakeService(tables), 'head-1', null)).toBe(null);
+  });
+});
+
+describe('the bell counts schemes of work inside the existing read', () => {
+  beforeEach(() => {
+    // A grade change waiting on head-1 too.
+    const gc = {
+      ...REQUEST('req-g', 'gcr-1'),
+      flow: 'markbook.grade_change' as const,
+      subject_type: 'grade_change_request',
+    };
+    tables.approval_requests.push(gc);
+    tables.approval_request_stages.push(
+      stageRow(gc, 1, 'Head of department', ['head-1'], 'pending')
+    );
+  });
+
+  it('splits one pass into each flow’s share', async () => {
+    const byFlow = await countInboxActionableByFlow(fakeService(tables), {
+      flows: BELL_STAGED_FLOWS,
+      userId: 'head-1',
+      role: 'teacher',
+    });
+    expect(byFlow).toEqual({
+      'markbook.grade_change': 1,
+      'markbook.grade_change_aeb': 0,
+      [SOW_APPROVAL_FLOW]: 1,
+    });
+  });
+
+  it('costs the same reads as the grade-change-only count it replaced', async () => {
+    const before = { count: 0 };
+    await countInboxActionableAcrossFlows(fakeService(tables, before), {
+      flows: GRADE_CHANGE_FLOWS,
+      userId: 'head-1',
+      role: 'teacher',
+    });
+    const after = { count: 0 };
+    await countInboxActionableByFlow(fakeService(tables, after), {
+      flows: BELL_STAGED_FLOWS,
+      userId: 'head-1',
+      role: 'teacher',
+    });
+    expect(after.count).toBe(before.count);
   });
 });

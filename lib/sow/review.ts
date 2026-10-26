@@ -3,11 +3,11 @@ import 'server-only';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
-  hasDecidedStep,
   listInboxStagesAcrossFlows,
   loadLaddersBySubject,
   type RequestLadder,
 } from '@/lib/approvals/inbox';
+import { canDecideCurrentStep } from '@/lib/change-requests/staged-scope';
 import type { ApprovalRailStage } from '@/lib/approvals/rail';
 import { withApprovalProgress } from '@/lib/approvals/rail';
 import type { Role } from '@/lib/auth/roles';
@@ -273,14 +273,10 @@ export async function loadSowReview(
   const last = ladder.stages[ladder.stages.length - 1];
   const rejected = ladder.stages.find((s) => s.status === 'rejected');
 
-  // Named steps only on this flow (a subject head step is resolved to names
-  // when it is sent), so the pool is the whole answer — plus the two rules
-  // every flow keeps: never the sender, never someone who already decided.
-  const canDecide =
-    live != null &&
-    ladder.filedBy !== viewerId &&
-    !hasDecidedStep(live, viewerId) &&
-    live.approverPool.includes(viewerId);
+  // The shared rule (never the sender, never someone who already decided, a
+  // named step's pool). No advised classes: the SOW flow has no form adviser
+  // step — a subject head step is resolved to names when it is sent.
+  const canDecide = canDecideCurrentStep(ladder, viewerId, new Set());
 
   const railStages: ApprovalRailStage[] = ladder.stages.map((s) => ({
     stageOrder: s.stageOrder,

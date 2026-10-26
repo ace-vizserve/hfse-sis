@@ -240,7 +240,7 @@ export async function loadActivityPage(
 /**
  * Schemes of work waiting on the reader's step — "Waiting for you" only.
  *
- * ⚠ NO EVENTS. The bell counts this flow (`SOW_FLOWS`), so its pinned list
+ * ⚠ NO EVENTS. The bell counts this flow (`BELL_STAGED_FLOWS`), so its pinned list
  * must show what the number counts, or the badge sends somebody to a panel
  * with nothing in it. The SOW's history lives on its own page.
  */

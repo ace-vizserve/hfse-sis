@@ -18,10 +18,8 @@ import {
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
-  getSowWaitingCount,
-  getStagedWaitingCount,
+  getBellStagedCounts,
 } from '@/lib/sidebar/notification-counts';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getCapabilitiesForRole } from '@/lib/auth/permission-map';
 import { createServiceClient } from '@/lib/supabase/service';
 
@@ -61,19 +59,13 @@ export default async function EvaluationLayout({
   );
 
   const service = createServiceClient();
-  const [
-    changeRequestCount,
-    declarationCount,
-    gradeChangeStepCount,
-    sowStepCount,
-  ] = await Promise.all([
-    getSidebarChangeRequestCount(service, role, id),
-    getDeclarationWaitingCount(service, role, id),
-    // Grade changes decided step by step — the bell's third source.
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-    // Schemes of work at a step this person is on — the bell's fourth source.
-    getSowWaitingCount(service, role, id),
-  ]);
+  const [changeRequestCount, declarationCount, stagedCounts] =
+    await Promise.all([
+      getSidebarChangeRequestCount(service, role, id),
+      getDeclarationWaitingCount(service, role, id),
+      // Grade changes and schemes of work decided step by step, in one read.
+      getBellStagedCounts(service, role, id),
+    ]);
 
   // Tiles that would be dead ends for this person: a subject-teacher-only user
   // has no Attendance or Evaluation work of their own, so those two go. The
@@ -106,8 +98,7 @@ export default async function EvaluationLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
-                initialGradeChangeStepCount={gradeChangeStepCount}
-                initialSowStepCount={sowStepCount}
+                initialStagedStepCount={stagedCounts.total}
               />
             </div>
           </div>

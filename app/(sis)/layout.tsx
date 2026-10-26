@@ -22,10 +22,8 @@ import type { SidebarCounts } from '@/lib/auth/roles';
 import { getSidebarChangeRequestCount } from '@/lib/change-requests/sidebar-counts';
 import {
   getDeclarationWaitingCount,
-  getSowWaitingCount,
-  getStagedWaitingCount,
+  getBellStagedCounts,
 } from '@/lib/sidebar/notification-counts';
-import { GRADE_CHANGE_FLOWS } from '@/lib/change-requests/staged-flows';
 import { getAyReadiness } from '@/lib/sis/readiness';
 import { getSectionsCount } from '@/lib/sis/sidebar-counts';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -117,8 +115,7 @@ export default async function SisLayout({
     // Not gated on role: being an approver is decided by being ON a step, not
     // by holding a role, so the count answers that itself and returns 0.
     declarationCount,
-    gradeChangeStepCount,
-    sowStepCount,
+    stagedCounts,
     // Always empty here, and cheaply so — the only tiles this hides are the
     // ones a subject-teacher-only account cannot use, and `/sis` does not admit
     // a teacher at all. Called anyway so all eight layouts read the same and
@@ -135,10 +132,9 @@ export default async function SisLayout({
       ? getSidebarChangeRequestCount(service, role, id)
       : Promise.resolve(null),
     getDeclarationWaitingCount(service, role, id),
-    // Grade changes decided step by step — same "on a step" rule.
-    getStagedWaitingCount(service, role, id, GRADE_CHANGE_FLOWS),
-    // Schemes of work at a step this person is on — the bell's fourth source.
-    getSowWaitingCount(service, role, id),
+    // Grade changes and schemes of work decided step by step, in one read —
+    // same "on a step" rule.
+    getBellStagedCounts(service, role, id),
     resolveHiddenModules(role, id),
   ]);
 
@@ -196,8 +192,7 @@ export default async function SisLayout({
                 userId={id}
                 initialCount={changeRequestCount}
                 initialDeclarationCount={declarationCount}
-                initialGradeChangeStepCount={gradeChangeStepCount}
-                initialSowStepCount={sowStepCount}
+                initialStagedStepCount={stagedCounts.total}
               />
             </div>
           </div>
