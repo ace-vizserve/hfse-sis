@@ -269,3 +269,7 @@ scripts/*.py
 /*.docx
 /*.png
 /sis-walkthrough.md
+
+# Playwright browser tests (e2e/)
+e2e/.results/
+e2e/.report/
