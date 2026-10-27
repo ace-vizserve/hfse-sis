@@ -6,6 +6,7 @@ import { resolveNonExaminableLetter } from '@/lib/compute/letter-grade';
 import type {
   MasterfilePayload,
   MasterfileStudentRow,
+  MasterfileSubject,
 } from '@/lib/markbook/masterfile';
 import { toPlainText } from '@/lib/rich-text';
 import type { AttendanceDateIndex } from '@/lib/markbook/masterfile-attendance-dates';
@@ -16,50 +17,72 @@ import type { AttendanceDateIndex } from '@/lib/markbook/masterfile-attendance-d
 // the on-screen grid renders). No spreadsheet input, no DB reads — the route
 // loads the payload via `loadMasterfile`, then hands it here.
 //
-// Sheet layout mirrors the AY Final Report Book Masterfile:
-//   Row 1 (group header): Identity block · one merged group per examinable
-//     subject · one merged group per non-examinable subject · Overall Academic
-//     Award · Attendance · Teacher's Comments.
-//   Row 2 (sub-header): per-subject Term 1/2/3/4 · Overall · Award (examinable)
-//     or Term 1–4 (non-exam); attendance School Days/Present/Late per term plus
-//     totals.
-//   Rows 3+: one per student.
+// The xlsx sheet is a COPY of the "Masterfile" sheet in the school's own
+// `AY2025 Final Report Book_Primary.xlsx` / `_Secondary.xlsx` — same rows,
+// same headers, same column order, same cell words — so the registrar gets the
+// file they already work from (Mr Ace, 2026-10-27: "mirror what they're doing
+// in excel"). Only the layout is copied; every value is the SIS's own:
+//   Row 1  HFSE INTERNATIONAL SCHOOL
+//   Row 2  AY 2026 REPORT CARD - PRIMARY | SECONDARY
+//   Row 4  column numbers 1, 2, 3… from STUDENT NAME (the report-book sheets
+//          VLOOKUP by them)
+//   Rows 5–7  three header rows: group · Term / Overall / Remarks · attendance
+//          School Days / Present / Late
+//   Rows 8+  one per student, S/N counting 1, 2, 3…
+// Secondary only: the Teacher's Comments block ends in CCA (the CCA subject's
+// year letter) instead of Term 4, attendance has a Remarks column, and two
+// "Remarks for Economics" columns close the sheet (the SIS holds no such
+// remark, so they stay empty, as in the school's file for non-Economics rows).
 //
-// Correctness > pixel-perfect merges — column counts and merge spans are
-// derived from the payload shape so they always line up with the data rows.
+// The CSV branch is the flat data table and keeps its own simple shape below.
 
 const IDENTITY_HEADERS = [
   'S/N',
-  'Student Name',
-  'Student No.',
-  'Level',
-  'Class',
-  'Form Class Adviser',
-  'Status',
+  'STUDENT NAME',
+  'LEVEL',
+  'CLASS',
+  'FORM CLASS ADVISER',
+  'STUDENT\nSTATUS',
 ] as const;
 
-const EXAMINABLE_SUBCOLS = [
-  'Term 1',
-  'Term 2',
-  'Term 3',
-  'Term 4',
-  'Overall',
-  'Award',
-] as const;
+const TERM_SUBCOLS = ['Term 1', 'Term 2', 'Term 3', 'Term 4'] as const;
 
-// Non-examinable subjects render T1–T4 derived/override letters PLUS a Final
-// column (the registrar-entered year-end letter) — mirrors the on-screen grid's
-// T1·T2·T3·T4·Final layout (KD #95). The 5-wide span must match the grid or
-// every group-merge + downstream column index drifts off by one per subject.
-const NONEXAM_SUBCOLS = [
-  'Term 1',
-  'Term 2',
-  'Term 3',
-  'Term 4',
-  'Final',
-] as const;
+// The school's file puts these first, in this order (English, Math, Mother
+// Tongue, then History / Science / Social Studies…). Anything not listed keeps
+// the payload's order after them.
+const SUBJECT_ORDER = [
+  'ENG',
+  'MATH',
+  'MT',
+  'FIL',
+  'MANDARIN',
+  'HIST',
+  'SCI',
+  'SS',
+  'LIT',
+  'HUM',
+  'ECON',
+];
 
-const OVERALL_AWARD_SUBCOLS = ['General Average', 'Award'] as const;
+const NUMBER_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'];
+
+/** "S1" → "Secondary One", "P3" → "Primary Three"; anything else → its label. */
+function levelLabel(level: MasterfilePayload['level']): string {
+  const m = /^([PS])(\d)$/i.exec(level.code);
+  if (!m || !NUMBER_WORDS[Number(m[2])]) return level.label;
+  const school = m[1].toUpperCase() === 'S' ? 'Secondary' : 'Primary';
+  return `${school} ${NUMBER_WORDS[Number(m[2])]}`;
+}
+
+/** The school file's STUDENT STATUS words. */
+function excelStatusLabel(row: MasterfileStudentRow): string {
+  if (row.enrollmentStatus === 'late_enrollee') {
+    return row.lateEnrolleeTermNumber != null
+      ? `Late Enrolment | Term ${row.lateEnrolleeTermNumber}`
+      : 'Late Enrolment';
+  }
+  return statusLabel(row.enrollmentStatus);
+}
 
 function statusLabel(status: string): string {
   if (status === 'late_enrollee') return 'Late Enrolment';
@@ -94,145 +117,178 @@ function commentsText(row: MasterfileStudentRow): string {
     .join('\n\n');
 }
 
+/** One term's adviser comment as plain text, '' when there is none. */
+function commentForTerm(row: MasterfileStudentRow, termNumber: number): string {
+  const c = row.commentsByTerm?.find((x) => x.termNumber === termNumber);
+  return c ? toPlainText(c.text) : '';
+}
+
+/** A letter-graded term cell: override → derived letter, N.A. when excused. */
+function termLetter(
+  cell: MasterfileStudentRow['subjectRows'][number]['cells'][number]
+): string {
+  const resolved = resolveNonExaminableLetter({
+    isNa: cell.isNa,
+    letterOverride: cell.letter,
+    quarterly: cell.quarterly,
+  });
+  return resolved === 'NA' ? 'N.A.' : (resolved ?? '');
+}
+
+/** The school file's subject order: SUBJECT_ORDER first, the rest as given. */
+function orderSubjects(subjects: MasterfileSubject[]): MasterfileSubject[] {
+  const rank = (s: MasterfileSubject) => {
+    const i = SUBJECT_ORDER.indexOf(s.code.toUpperCase());
+    return i === -1 ? SUBJECT_ORDER.length : i;
+  };
+  return subjects
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => {
+      if (a.s.isExaminable !== b.s.isExaminable)
+        return a.s.isExaminable ? -1 : 1;
+      return rank(a.s) - rank(b.s) || a.i - b.i;
+    })
+    .map((x) => x.s);
+}
+
 /**
  * Builds an `.xlsx` workbook from the computed Masterfile payload and returns
  * it as a Node Buffer (`Content-Type` xlsx). Server-only.
  */
-export function buildMasterfileWorkbook(
-  payload: MasterfilePayload,
-  /**
-   * WHICH DAYS each student missed, per term (KD #218's sibling ask). Optional:
-   * a caller without it still gets the counts, and the columns simply do not
-   * appear. A missing date index must never block an export.
-   */
-  dates?: AttendanceDateIndex
-): Buffer {
-  const examinable = payload.subjects.filter((s) => s.isExaminable);
-  const nonExam = payload.subjects.filter((s) => !s.isExaminable);
-  const terms = payload.terms; // already ordered by term_number
+export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
+  const isSecondary = /^S/i.test(payload.level.code);
+  // Secondary's CCA is a cell in the comments block, not a subject group.
+  const isCca = (s: MasterfileSubject) =>
+    isSecondary && s.code.toUpperCase() === 'CCA';
+  const cca = payload.subjects.find(isCca) ?? null;
+  const ordered = orderSubjects(payload.subjects.filter((s) => !isCca(s)));
+  const examinable = ordered.filter((s) => s.isExaminable);
+  const nonExam = ordered.filter((s) => !s.isExaminable);
+  const termNumbers = [1, 2, 3, 4];
 
-  // Attendance sub-columns: per term (School Days/Present/Late) + totals.
-  const attendancePerTermSubcols: string[] = [];
-  for (const t of terms) {
-    attendancePerTermSubcols.push(
-      `T${t.termNumber} School Days`,
-      `T${t.termNumber} Present`,
-      `T${t.termNumber} Late`
-    );
-    // The dates behind the counts — "12 Aug absent · 3 Sep late". The
-    // consolidated file this export replaces carried dates, and a count alone
-    // cannot answer the question a parent phones about.
-    if (dates) attendancePerTermSubcols.push(`T${t.termNumber} Days missed`);
-  }
-  const attendanceTotalSubcols = [
-    'Total School Days',
-    'Total Present',
-    'Total Late',
-  ];
-
-  // ---- Header rows (two rows: group + sub-header) ----
-  const groupRow: (string | number)[] = [];
-  const subRow: (string | number)[] = [];
+  // Header rows: 0 school name · 1 title · 2 blank · 3 column numbers ·
+  // 4 group · 5 Term/Overall/Remarks · 6 attendance sub-columns.
+  const HEADER_ROWS = 7;
+  const head: (string | number)[][] = Array.from(
+    { length: HEADER_ROWS },
+    () => []
+  );
   const merges: XLSX.Range[] = [];
+  const merge = (r1: number, c1: number, r2: number, c2: number) => {
+    if (r1 !== r2 || c1 !== c2)
+      merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+  };
+  const put = (r: number, c: number, v: string) => {
+    head[r][c] = v;
+  };
+
+  head[0][0] = 'HFSE INTERNATIONAL SCHOOL';
+  head[1][0] = `AY ${payload.ayCode.replace(/^AY/i, '')} REPORT CARD - ${
+    isSecondary ? 'SECONDARY' : 'PRIMARY'
+  }`;
 
   let col = 0;
 
-  // Identity block: each column is its own group (merged vertically r0..r1).
+  // Identity: one column each, merged down the three header rows.
   for (const h of IDENTITY_HEADERS) {
-    groupRow.push(h);
-    subRow.push('');
-    merges.push({ s: { r: 0, c: col }, e: { r: 1, c: col } });
+    put(4, col, h);
+    merge(4, col, 6, col);
     col++;
   }
 
-  // Examinable subjects: 6 sub-columns each, group merged horizontally.
+  // Examinable subject: Term 1–4 · Overall · Remarks (the subject award).
   for (const sub of examinable) {
-    const start = col;
-    groupRow.push(sub.name);
-    subRow.push(EXAMINABLE_SUBCOLS[0]);
-    col++;
-    for (let i = 1; i < EXAMINABLE_SUBCOLS.length; i++) {
-      groupRow.push('');
-      subRow.push(EXAMINABLE_SUBCOLS[i]);
+    put(4, col, sub.name.toUpperCase());
+    merge(4, col, 4, col + 5);
+    for (const h of [...TERM_SUBCOLS, 'Overall', 'Remarks']) {
+      put(5, col, h);
+      merge(5, col, 6, col);
       col++;
     }
-    merges.push({ s: { r: 0, c: start }, e: { r: 0, c: col - 1 } });
   }
 
-  // Non-examinable subjects: 4 term sub-columns each.
+  // Letter-graded subject: Term 1–4 only.
   for (const sub of nonExam) {
-    const start = col;
-    groupRow.push(sub.name);
-    subRow.push(NONEXAM_SUBCOLS[0]);
-    col++;
-    for (let i = 1; i < NONEXAM_SUBCOLS.length; i++) {
-      groupRow.push('');
-      subRow.push(NONEXAM_SUBCOLS[i]);
+    put(4, col, sub.name.toUpperCase());
+    merge(4, col, 4, col + 3);
+    for (const h of TERM_SUBCOLS) {
+      put(5, col, h);
+      merge(5, col, 6, col);
       col++;
     }
-    merges.push({ s: { r: 0, c: start }, e: { r: 0, c: col - 1 } });
   }
 
-  // Overall Academic Award block: General Average + Award.
-  {
-    const start = col;
-    groupRow.push('Overall Academic Award');
-    subRow.push(OVERALL_AWARD_SUBCOLS[0]);
+  // Overall Academic Award: General Average · award, no sub-headers.
+  put(4, col, 'OVERALL ACADEMIC AWARD');
+  merge(4, col, 6, col + 1);
+  col += 2;
+
+  // Attendance: per term School Days · Present · Late, then Overall
+  // Present · Late, then (Secondary) Remarks.
+  const attStart = col;
+  put(4, col, 'ATTENDANCE');
+  for (const n of termNumbers) {
+    put(5, col, `Term ${n}`);
+    merge(5, col, 5, col + 2);
+    for (const h of ['School Days', 'Present', 'Late']) put(6, col++, h);
+  }
+  put(5, col, 'Overall');
+  merge(5, col, 5, col + 1);
+  for (const h of ['Present', 'Late']) put(6, col++, h);
+  if (isSecondary) {
+    put(5, col, 'Remarks');
+    merge(5, col, 6, col);
     col++;
-    for (let i = 1; i < OVERALL_AWARD_SUBCOLS.length; i++) {
-      groupRow.push('');
-      subRow.push(OVERALL_AWARD_SUBCOLS[i]);
-      col++;
-    }
-    merges.push({ s: { r: 0, c: start }, e: { r: 0, c: col - 1 } });
   }
+  merge(4, attStart, 4, col - 1);
 
-  // Attendance block: per-term (School Days/Present/Late) + totals.
-  {
-    const start = col;
-    const allAttSub = [...attendancePerTermSubcols, ...attendanceTotalSubcols];
-    groupRow.push('Attendance');
-    subRow.push(allAttSub[0]);
+  // Teacher's Comments: Term 1 · Term 2 · Term 3 · Term 4 (Primary) or CCA.
+  const commentsStart = col;
+  put(4, col, "TEACHER'S COMMENTS");
+  for (const h of [
+    'Term 1',
+    'Term 2',
+    'Term 3',
+    isSecondary ? 'CCA' : 'Term 4',
+  ]) {
+    put(5, col, h);
+    merge(5, col, 6, col);
     col++;
-    for (let i = 1; i < allAttSub.length; i++) {
-      groupRow.push('');
-      subRow.push(allAttSub[i]);
-      col++;
-    }
-    merges.push({ s: { r: 0, c: start }, e: { r: 0, c: col - 1 } });
   }
+  merge(4, commentsStart, 4, col - 1);
+  const numberedCols = col;
 
-  // Teacher's Comments: single column, merged vertically.
-  groupRow.push("Teacher's Comments");
-  subRow.push('');
-  merges.push({ s: { r: 0, c: col }, e: { r: 1, c: col } });
-  col++;
-
+  if (isSecondary) {
+    put(4, col, 'Remarks for Economics');
+    merge(4, col, 6, col + 1);
+    col += 2;
+  }
   const totalCols = col;
 
+  // Column numbers 1, 2, 3… from STUDENT NAME to the end of the comments.
+  for (let c = 1; c < numberedCols; c++) head[3][c] = c;
+
   // ---- Data rows ----
-  const dataRows: (string | number)[][] = [];
-  payload.rows.forEach((row) => {
-    const cells: (string | number)[] = [];
-    // S/N = the student's permanent per-section index number (KD #85 rule:
-    // index numbers are permanent roll numbers, never renumbered by position).
-    cells.push(row.indexNumber ?? '');
-    cells.push(row.fullName || row.studentNumber);
-    cells.push(row.studentNumber);
-    cells.push(payload.level.label);
-    cells.push(row.sectionName);
-    cells.push(row.formClassAdviser ?? '');
-    cells.push(statusLabel(row.enrollmentStatus));
+  const dataRows: (string | number)[][] = payload.rows.map((row, idx) => {
+    const cells: (string | number)[] = [
+      idx + 1,
+      row.fullName || row.studentNumber,
+      levelLabel(payload.level),
+      row.sectionName,
+      row.formClassAdviser ?? '',
+      excelStatusLabel(row),
+    ];
 
     const subjectRowById = new Map(
       row.subjectRows.map((sr) => [sr.subjectId, sr])
     );
 
-    // Examinable: T1-T4 quarterly, Overall (2dp), Award.
+    // Examinable: T1–T4 quarterly, Overall (2dp), Remarks. A subject the
+    // student doesn't take reads NA in the terms, blank after.
     for (const sub of examinable) {
       const sr = subjectRowById.get(sub.id);
       if (!sr) {
-        cells.push('', '', '', '', '', '');
+        cells.push('NA', 'NA', 'NA', 'NA', '', '');
         continue;
       }
       for (const cell of sr.cells) {
@@ -244,65 +300,57 @@ export function buildMasterfileWorkbook(
       cells.push(sr.award ?? '');
     }
 
-    // Non-examinable: T1-T4 derived/override letters + Final (year-end letter).
+    // Letter-graded: T1–T4 derived/override letters.
     for (const sub of nonExam) {
       const sr = subjectRowById.get(sub.id);
       if (!sr) {
-        cells.push('', '', '', '', '');
+        cells.push('NA', 'NA', 'NA', 'NA');
         continue;
       }
-      for (const cell of sr.cells) {
-        const resolved = resolveNonExaminableLetter({
-          isNa: cell.isNa,
-          letterOverride: cell.letter,
-          quarterly: cell.quarterly,
-        });
-        cells.push(resolved === 'NA' ? 'N.A.' : (resolved ?? ''));
-      }
-      // Final column — the registrar-entered year-end letter (KD #100). Mirrors
-      // exactly what the grid's Final cell shows (sr.annualLetter, or blank when
-      // no T4 entry / not yet set; the grid renders "—" for the same null).
-      cells.push(sr.annualLetter ?? '');
+      for (const cell of sr.cells) cells.push(termLetter(cell));
     }
 
-    // Overall Academic Award: General Average (1dp) + Award.
+    // Overall Academic Award: General Average (1dp) + award.
     cells.push(
       row.generalAverage != null ? Number(row.generalAverage.toFixed(1)) : ''
     );
     cells.push(row.overallAward ?? '');
 
-    // Attendance per term + totals.
-    for (const att of row.attendanceByTerm) {
-      cells.push(att.schoolDays ?? '');
-      cells.push(att.present ?? '');
-      cells.push(att.late ?? '');
-      if (dates) cells.push(dates.get(row.studentId, att.termId));
+    // Attendance. `?? ''` not `|| ''` — a real 0 must print as 0.
+    for (const n of termNumbers) {
+      const termId = payload.terms.find((t) => t.termNumber === n)?.id;
+      const att = row.attendanceByTerm.find((a) => a.termId === termId);
+      cells.push(att?.schoolDays ?? '', att?.present ?? '', att?.late ?? '');
     }
-    // `?? ''` not `|| ''` — a real 0 (e.g. withdrawn / no attendance) must
-    // print as 0 so downstream SUMs stay correct, not collapse to blank.
-    cells.push(row.attendanceTotal.schoolDays ?? '');
-    cells.push(row.attendanceTotal.present ?? '');
-    cells.push(row.attendanceTotal.late ?? '');
+    cells.push(
+      row.attendanceTotal.present ?? '',
+      row.attendanceTotal.late ?? ''
+    );
+    if (isSecondary) cells.push('');
 
-    // Teacher's Comments (joined T1-T3).
-    cells.push(commentsText(row));
+    // Teacher's Comments, one column per term.
+    for (const n of [1, 2, 3]) cells.push(commentForTerm(row, n));
+    if (isSecondary) {
+      const sr = cca ? subjectRowById.get(cca.id) : undefined;
+      cells.push(sr ? (sr.annualLetter ?? sr.derivedAnnualLetter ?? '') : '');
+      cells.push('', ''); // Remarks for Economics
+    } else {
+      cells.push(commentForTerm(row, 4));
+    }
 
-    dataRows.push(cells);
+    return cells;
   });
 
-  const aoa: (string | number)[][] = [groupRow, subRow, ...dataRows];
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  const ws = XLSX.utils.aoa_to_sheet([...head, ...dataRows]);
   ws['!merges'] = merges;
 
-  // Column widths — identity columns wider, comments widest.
+  // Column widths — name / adviser wider, comment columns widest.
   const colWidths: { wch: number }[] = [];
   for (let c = 0; c < totalCols; c++) {
-    if (c === 1)
-      colWidths.push({ wch: 28 }); // Student Name
-    else if (c === 5)
-      colWidths.push({ wch: 22 }); // Form Class Adviser
-    else if (c === totalCols - 1)
-      colWidths.push({ wch: 60 }); // Comments
+    if (c === 1) colWidths.push({ wch: 28 });
+    else if (c === 4) colWidths.push({ wch: 22 });
+    else if (c >= commentsStart && c < commentsStart + 3)
+      colWidths.push({ wch: 50 });
     else colWidths.push({ wch: 8 });
   }
   ws['!cols'] = colWidths;
@@ -315,12 +363,13 @@ export function buildMasterfileWorkbook(
 }
 
 // ---------------------------------------------------------------------------
-// Flat CSV helper — same column ORDER as the xlsx workbook, single header row.
+// Flat CSV helper — the data table, single header row.
 //
-// Used by the `?format=csv` branch in the export route so the two export
-// formats share the same column set and can't drift independently.
+// Used by the `?format=csv` branch in the export route. Unlike the xlsx sheet
+// (a copy of the school's file), it keeps Student No., each non-exam subject's
+// Final letter and the attendance "Days missed" dates.
 //
-// Column order (mirrors buildMasterfileWorkbook exactly):
+// Column order:
 //   Identity (7) · examinable subjects (6 each) · non-exam subjects (5 each) ·
 //   General Average · Overall Academic Award · attendance per-term + totals ·
 //   Teacher's Comments
