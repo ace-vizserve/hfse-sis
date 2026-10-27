@@ -1,6 +1,6 @@
 import 'server-only';
 
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 import { resolveNonExaminableLetter } from '@/lib/compute/letter-grade';
 import type {
@@ -153,9 +153,13 @@ function orderSubjects(subjects: MasterfileSubject[]): MasterfileSubject[] {
 
 /**
  * Builds an `.xlsx` workbook from the computed Masterfile payload and returns
- * it as a Node Buffer (`Content-Type` xlsx). Server-only.
+ * it as a Node Buffer (`Content-Type` xlsx). Server-only. Written with
+ * ExcelJS, not SheetJS: SheetJS's free build writes no fills, fonts or
+ * borders, so the file opened looking like a bare CSV.
  */
-export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
+export async function buildMasterfileWorkbook(
+  payload: MasterfilePayload
+): Promise<Buffer> {
   const isSecondary = /^S/i.test(payload.level.code);
   // Secondary's CCA is a cell in the comments block, not a subject group.
   const isCca = (s: MasterfileSubject) =>
@@ -173,10 +177,9 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
     { length: HEADER_ROWS },
     () => []
   );
-  const merges: XLSX.Range[] = [];
+  const merges: { r1: number; c1: number; r2: number; c2: number }[] = [];
   const merge = (r1: number, c1: number, r2: number, c2: number) => {
-    if (r1 !== r2 || c1 !== c2)
-      merges.push({ s: { r: r1, c: c1 }, e: { r: r2, c: c2 } });
+    if (r1 !== r2 || c1 !== c2) merges.push({ r1, c1, r2, c2 });
   };
   const put = (r: number, c: number, v: string) => {
     head[r][c] = v;
@@ -188,12 +191,14 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
   }`;
 
   let col = 0;
+  // What each column holds — drives its cell style and width.
+  const kinds: ColKind[] = [];
 
   // Identity: one column each, merged down the three header rows.
-  for (const h of IDENTITY_HEADERS) {
+  for (const [i, h] of IDENTITY_HEADERS.entries()) {
     put(4, col, h);
     merge(4, col, 6, col);
-    col++;
+    kinds[col++] = i === 0 ? 'serial' : i === 1 ? 'name' : 'text';
   }
 
   // Examinable subject: Term 1–4 · Overall · Remarks (the subject award).
@@ -203,7 +208,8 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
     for (const h of [...TERM_SUBCOLS, 'Overall', 'Remarks']) {
       put(5, col, h);
       merge(5, col, 6, col);
-      col++;
+      kinds[col++] =
+        h === 'Overall' ? 'overall' : h === 'Remarks' ? 'remarks' : 'grade';
     }
   }
 
@@ -214,14 +220,15 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
     for (const h of TERM_SUBCOLS) {
       put(5, col, h);
       merge(5, col, 6, col);
-      col++;
+      kinds[col++] = 'grade';
     }
   }
 
   // Overall Academic Award: General Average · award, no sub-headers.
   put(4, col, 'OVERALL ACADEMIC AWARD');
   merge(4, col, 6, col + 1);
-  col += 2;
+  kinds[col++] = 'ga';
+  kinds[col++] = 'award';
 
   // Attendance: per term School Days · Present · Late, then Overall
   // Present · Late, then (Secondary) Remarks.
@@ -230,15 +237,21 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
   for (const n of termNumbers) {
     put(5, col, `Term ${n}`);
     merge(5, col, 5, col + 2);
-    for (const h of ['School Days', 'Present', 'Late']) put(6, col++, h);
+    for (const h of ['School Days', 'Present', 'Late']) {
+      put(6, col, h);
+      kinds[col++] = 'att';
+    }
   }
   put(5, col, 'Overall');
   merge(5, col, 5, col + 1);
-  for (const h of ['Present', 'Late']) put(6, col++, h);
+  for (const h of ['Present', 'Late']) {
+    put(6, col, h);
+    kinds[col++] = 'att';
+  }
   if (isSecondary) {
     put(5, col, 'Remarks');
     merge(5, col, 6, col);
-    col++;
+    kinds[col++] = 'remarks';
   }
   merge(4, attStart, 4, col - 1);
 
@@ -253,7 +266,7 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
   ]) {
     put(5, col, h);
     merge(5, col, 6, col);
-    col++;
+    kinds[col++] = h === 'CCA' ? 'grade' : 'comment';
   }
   merge(4, commentsStart, 4, col - 1);
   const numberedCols = col;
@@ -261,7 +274,8 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
   if (isSecondary) {
     put(4, col, 'Remarks for Economics');
     merge(4, col, 6, col + 1);
-    col += 2;
+    kinds[col++] = 'econ';
+    kinds[col++] = 'econ';
   }
   const totalCols = col;
 
@@ -341,25 +355,118 @@ export function buildMasterfileWorkbook(payload: MasterfilePayload): Buffer {
     return cells;
   });
 
-  const ws = XLSX.utils.aoa_to_sheet([...head, ...dataRows]);
-  ws['!merges'] = merges;
+  // ---- Render, in the school file's look ----
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet('Masterfile', {
+    views: [{ state: 'frozen', xSplit: 1, ySplit: 0 }],
+  });
 
-  // Column widths — name / adviser wider, comment columns widest.
-  const colWidths: { wch: number }[] = [];
+  [...head, ...dataRows].forEach((cells, r) => {
+    const row = ws.getRow(r + 1);
+    for (let c = 0; c < totalCols; c++) {
+      const v = cells[c];
+      if (v !== undefined && v !== '') row.getCell(c + 1).value = v;
+    }
+  });
+  for (const m of merges) ws.mergeCells(m.r1 + 1, m.c1 + 1, m.r2 + 1, m.c2 + 1);
+
+  ws.getCell('A1').font = { ...FONT, bold: true, size: 15 };
+  ws.getCell('A2').font = FONT;
+  ws.getRow(4).height = 48.75;
+  ws.getRow(5).height = 21;
   for (let c = 0; c < totalCols; c++) {
-    if (c === 1) colWidths.push({ wch: 28 });
-    else if (c === 4) colWidths.push({ wch: 22 });
-    else if (c >= commentsStart && c < commentsStart + 3)
-      colWidths.push({ wch: 50 });
-    else colWidths.push({ wch: 8 });
+    const kind = kinds[c];
+    ws.getColumn(c + 1).width = COLUMN_WIDTH[kind];
+    if (c > 0 && c < numberedCols) {
+      const n = ws.getCell(4, c + 1);
+      n.font = FONT;
+      n.alignment = { horizontal: 'center', vertical: 'bottom' };
+    }
+    // Header block: orange, white bold; the award header is blue.
+    for (let r = 5; r <= 7; r++) {
+      const cell = ws.getCell(r, c + 1);
+      cell.font = { ...FONT, bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = solid(kind === 'ga' || kind === 'award' ? BLUE : ORANGE);
+      cell.border = HAIR_BOX;
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true,
+      };
+    }
+    // Student rows.
+    for (let r = HEADER_ROWS + 1; r <= HEADER_ROWS + dataRows.length; r++) {
+      const cell = ws.getCell(r, c + 1);
+      cell.font = FONT;
+      cell.border = kind === 'name' ? THIN_BOX : HAIR_BOX;
+      cell.alignment = {
+        horizontal: LEFT_KINDS.has(kind) ? 'left' : 'center',
+        vertical: 'middle',
+      };
+      if (kind === 'overall') {
+        cell.fill = solid(LIGHT_ORANGE);
+        cell.numFmt = '0';
+      } else if (kind === 'ga') {
+        cell.fill = solid(LIGHT_BLUE);
+        cell.numFmt = '0';
+      }
+    }
   }
-  ws['!cols'] = colWidths;
 
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Masterfile');
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
 
-  const out = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
-  return out as Buffer;
+type ColKind =
+  | 'serial'
+  | 'name'
+  | 'text'
+  | 'grade'
+  | 'overall'
+  | 'remarks'
+  | 'ga'
+  | 'award'
+  | 'att'
+  | 'comment'
+  | 'econ';
+
+// The school file's look (AY2025 Final Report Book, Masterfile sheet): Arial
+// 10, an orange header block with white bold text, the Overall Academic Award
+// header in blue, Overall cells light orange, General Average light blue,
+// hairline borders. Spreadsheet colours, not UI tokens — Hard Rule #7 covers
+// app/ and components/.
+const FONT = { name: 'Arial', size: 10, color: { argb: 'FF000000' } };
+const ORANGE = 'FFED7D31';
+const BLUE = 'FF0000FF';
+const LIGHT_ORANGE = 'FFFBE4D5';
+const LIGHT_BLUE = 'FFDEEAF6';
+const hair = { style: 'hair' as const, color: { argb: 'FF000000' } };
+const thin = { style: 'thin' as const, color: { argb: 'FF000000' } };
+const HAIR_BOX = { top: hair, left: hair, bottom: hair, right: hair };
+const THIN_BOX = { top: thin, left: thin, bottom: thin, right: thin };
+const LEFT_KINDS = new Set<ColKind>([
+  'name',
+  'text',
+  'remarks',
+  'award',
+  'comment',
+  'econ',
+]);
+const COLUMN_WIDTH: Record<ColKind, number> = {
+  serial: 7.43,
+  name: 33.43,
+  text: 18,
+  grade: 8.71,
+  overall: 8.71,
+  remarks: 27,
+  ga: 8.71,
+  award: 30.43,
+  att: 11.86,
+  comment: 45,
+  econ: 37.43,
+};
+
+function solid(argb: string): ExcelJS.Fill {
+  return { type: 'pattern', pattern: 'solid', fgColor: { argb } };
 }
 
 // ---------------------------------------------------------------------------

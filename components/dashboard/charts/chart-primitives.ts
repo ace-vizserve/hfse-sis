@@ -9,7 +9,7 @@
 import type { ChartLegendChipColor } from '@/components/dashboard/chart-legend-chip';
 import type { BarRectangleItem } from 'recharts';
 
-export type YFormat = 'number' | 'percent' | 'days';
+export type YFormat = 'number' | 'percent' | 'percent1' | 'days';
 
 export function formatterFor(
   format: YFormat | undefined
@@ -17,6 +17,11 @@ export function formatterFor(
   switch (format) {
     case 'percent':
       return (n) => `${Math.round(n)}%`;
+    // Attendance sits at 98-point-something; whole percents would print every
+    // term as "99%". Whole numbers (the axis ticks) stay whole, so "100%"
+    // fits the axis.
+    case 'percent1':
+      return (n) => (Number.isInteger(n) ? `${n}%` : `${n.toFixed(1)}%`);
     case 'days':
       return (n) => `${Math.round(n)}d`;
     case 'number':
