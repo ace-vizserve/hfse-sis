@@ -12,17 +12,10 @@ import type {
   MasterfileSubjectRow,
 } from '@/lib/markbook/masterfile';
 
-// Regression test for the Masterfile Excel export (KD #95). Locks the
-// column/merge math so the off-by-one bug (non-exam subjects exporting 4
-// sub-columns when the grid renders 5: T1·T2·T3·T4·Final) can't return.
-//
-// Column model the export builds (must match masterfile-grid.tsx):
-//   Identity:    7 columns (S/N · Name · No. · Level · Class · FCA · Status)
-//   Examinable:  6 columns each (T1·T2·T3·T4·Overall·Award)
-//   Non-exam:    5 columns each (T1·T2·T3·T4·Final)
-//   Overall Award: 2 columns (General Average · Award)
-//   Attendance:  3 per term + 3 totals
-//   Comments:    1 column
+// Regression test for the Masterfile exports (KD #95). The xlsx sheet is a
+// copy of the school's "AY2025 Final Report Book" Masterfile sheet — the
+// layout constants above `describe` spell that out. The CSV is the flat data
+// table and is checked through the comment tests at the bottom.
 
 const TERMS = [
   { id: 't1', termNumber: 1, label: 'Term 1' },
@@ -169,7 +162,8 @@ function makePayload(): MasterfilePayload {
   };
 }
 
-// Parse the workbook back into the AOA + sheet object.
+// Parse the workbook back into a full grid (blank rows kept, so row indexes
+// are the sheet's own: 0 school name … 4–6 headers, 7+ students).
 function readBack(payload: MasterfilePayload) {
   const buffer = buildMasterfileWorkbook(payload);
   const wb = XLSX.read(buffer, { type: 'buffer' });
@@ -177,168 +171,201 @@ function readBack(payload: MasterfilePayload) {
   const aoa = XLSX.utils.sheet_to_json<(string | number)[]>(ws, {
     header: 1,
     defval: '',
-    blankrows: false,
+    blankrows: true,
   });
   return { ws, aoa };
 }
 
-// Expected column geometry for the fixture (1 exam, 2 non-exam, 4 terms).
-const IDENTITY_COLS = 7;
+// The school file's Primary layout for the fixture (1 exam, 2 letter, 4 terms):
+//   Identity 6 · exam 6 (T1–T4 · Overall · Remarks) · letter 4 each (T1–T4) ·
+//   Overall Academic Award 2 · attendance 3×4 + Present/Late 2 · comments 4.
+const IDENTITY_COLS = 6;
 const EXAM_WIDTH = 6;
-const NONEXAM_WIDTH = 5;
+const NONEXAM_WIDTH = 4;
 const OVERALL_AWARD_WIDTH = 2;
-const ATTENDANCE_WIDTH = 3 * TERMS.length + 3; // per-term + totals
-const COMMENTS_WIDTH = 1;
+const ATTENDANCE_WIDTH = 3 * 4 + 2;
+const COMMENTS_WIDTH = 4;
 const EXPECTED_TOTAL_COLS =
   IDENTITY_COLS +
-  1 * EXAM_WIDTH +
+  EXAM_WIDTH +
   2 * NONEXAM_WIDTH +
   OVERALL_AWARD_WIDTH +
   ATTENDANCE_WIDTH +
   COMMENTS_WIDTH;
+const FIRST_DATA_ROW = 7;
+const ATT_START =
+  IDENTITY_COLS + EXAM_WIDTH + 2 * NONEXAM_WIDTH + OVERALL_AWARD_WIDTH;
+const COMMENTS_START = ATT_START + ATTENDANCE_WIDTH;
 
-describe('buildMasterfileWorkbook', () => {
-  it('(a) every data row has the same column count as the header', () => {
-    const payload = makePayload();
-    const { aoa } = readBack(payload);
+function secondaryPayload(): MasterfilePayload {
+  const p = makePayload();
+  p.level = { id: 'lvl-s4', code: 'S4', label: 'Secondary 4' };
+  return p;
+}
 
-    // aoa[0] = group header, aoa[1] = sub-header, aoa[2..] = data rows.
-    const groupRow = aoa[0];
-    const subRow = aoa[1];
-    const dataRows = aoa.slice(2);
-
-    expect(subRow.length).toBe(EXPECTED_TOTAL_COLS);
-    // Group row's last cell is at the same final column index — but trailing
-    // merged-blank cells may be trimmed by sheet_to_json. The authoritative
-    // count is the sub-header (every column has a value there).
-    expect(groupRow.length).toBeLessThanOrEqual(EXPECTED_TOTAL_COLS);
-
-    expect(dataRows.length).toBe(2);
-    for (const r of dataRows) {
-      // Trailing comments cell can be empty for the withdrawn student; pad
-      // the row to the full width before comparing.
-      const padded = [...r];
-      while (padded.length < EXPECTED_TOTAL_COLS) padded.push('');
-      expect(padded.length).toBe(EXPECTED_TOTAL_COLS);
-    }
+describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', () => {
+  it('has the school title rows and the column-number row', () => {
+    const { aoa } = readBack(makePayload());
+    expect(aoa[0][0]).toBe('HFSE INTERNATIONAL SCHOOL');
+    expect(aoa[1][0]).toBe('AY 9999 REPORT CARD - PRIMARY');
+    expect(aoa[3][0]).toBe('');
+    expect(aoa[3][1]).toBe(1);
+    expect(aoa[3][EXPECTED_TOTAL_COLS - 1]).toBe(EXPECTED_TOTAL_COLS - 1);
+    expect(readBack(secondaryPayload()).aoa[1][0]).toBe(
+      'AY 9999 REPORT CARD - SECONDARY'
+    );
   });
 
-  it('(b) the examinable Award and a non-exam Final letter land in the right columns', () => {
-    const payload = makePayload();
-    const { aoa } = readBack(payload);
-    const activeRow = aoa[2]; // first data row (Tan, Alice)
-    const withdrawnRow = aoa[3]; // second data row (Lim, Bob)
-
-    // S/N uses the permanent indexNumber field, not the array position.
-    // active.indexNumber=7 (not 1), withdrawn.indexNumber=2 (matches position).
-    // If S/N were idx+1 both would be 1 and 2 respectively — this proves it uses
-    // the real field.
-    expect(activeRow[0]).toBe(7); // S/N = indexNumber 7, not array position 1
-    expect(withdrawnRow[0]).toBe(2); // S/N = indexNumber 2 (also happens to be pos 2)
-
-    // Examinable block: starts after identity (index 7). Award is the 6th
-    // sub-column → index 7 + 6 - 1 = 12.
-    const examAwardCol = IDENTITY_COLS + EXAM_WIDTH - 1;
-    expect(activeRow[examAwardCol]).toBe('Silver');
-
-    // Music block follows the examinable block. Final = its 5th sub-column.
-    const musicStart = IDENTITY_COLS + EXAM_WIDTH;
-    const musicFinalCol = musicStart + NONEXAM_WIDTH - 1;
-    expect(activeRow[musicFinalCol]).toBe('Passed');
-
-    // Music term cells = derived letters A·B·C·IP.
-    expect(activeRow[musicStart]).toBe('A');
-    expect(activeRow[musicStart + 1]).toBe('B');
-    expect(activeRow[musicStart + 2]).toBe('C');
-    expect(activeRow[musicStart + 3]).toBe('IP');
-
-    // Art block follows Music. T1 override = UG, T2 = N.A., T4 derived = A,
-    // Final = blank (annualLetter null).
-    const artStart = musicStart + NONEXAM_WIDTH;
-    expect(activeRow[artStart]).toBe('UG');
-    expect(activeRow[artStart + 1]).toBe('N.A.');
-    expect(activeRow[artStart + 3]).toBe('A');
-    const artFinalCol = artStart + NONEXAM_WIDTH - 1;
-    expect(activeRow[artFinalCol] ?? '').toBe('');
-
-    // Overall Academic Award block follows the non-exam blocks.
-    const overallStart = artStart + NONEXAM_WIDTH;
-    expect(activeRow[overallStart]).toBe(93.4); // General Average (1dp)
-    expect(activeRow[overallStart + 1]).toBe('Silver');
+  it('uses the school headers, in the school order', () => {
+    const { aoa } = readBack(makePayload());
+    expect(aoa[4].slice(0, 7)).toEqual([
+      'S/N',
+      'STUDENT NAME',
+      'LEVEL',
+      'CLASS',
+      'FORM CLASS ADVISER',
+      'STUDENT\nSTATUS',
+      'MATHEMATICS',
+    ]);
+    expect(aoa[5].slice(6, 12)).toEqual([
+      'Term 1',
+      'Term 2',
+      'Term 3',
+      'Term 4',
+      'Overall',
+      'Remarks',
+    ]);
+    expect(aoa[4][12]).toBe('MUSIC');
+    expect(aoa[4][16]).toBe('ART');
+    expect(aoa[4][20]).toBe('OVERALL ACADEMIC AWARD');
+    expect(aoa[4][ATT_START]).toBe('ATTENDANCE');
+    expect(aoa[5][ATT_START + 12]).toBe('Overall');
+    expect(aoa[6].slice(ATT_START, ATT_START + 3)).toEqual([
+      'School Days',
+      'Present',
+      'Late',
+    ]);
+    expect(aoa[6].slice(ATT_START + 12, ATT_START + 14)).toEqual([
+      'Present',
+      'Late',
+    ]);
+    expect(aoa[4][COMMENTS_START]).toBe("TEACHER'S COMMENTS");
+    expect(aoa[5].slice(COMMENTS_START, COMMENTS_START + 4)).toEqual([
+      'Term 1',
+      'Term 2',
+      'Term 3',
+      'Term 4',
+    ]);
   });
 
-  it('(c) merges do not overlap and each group merge width equals its sub-column count', () => {
-    const payload = makePayload();
-    const { ws } = readBack(payload);
-    const merges = ws['!merges'] ?? [];
+  it('fills each student row in the same columns as the headers', () => {
+    const { aoa } = readBack(makePayload());
+    const active = aoa[FIRST_DATA_ROW];
+    const withdrawn = aoa[FIRST_DATA_ROW + 1];
 
-    // No two merge ranges overlap.
-    const occupied = new Set<string>();
-    for (const m of merges) {
-      for (let r = m.s.r; r <= m.e.r; r++) {
-        for (let c = m.s.c; c <= m.e.c; c++) {
-          const key = `${r}:${c}`;
-          expect(occupied.has(key)).toBe(false);
-          occupied.add(key);
+    // S/N counts 1, 2, 3 — as the school file does.
+    expect(active[0]).toBe(1);
+    expect(withdrawn[0]).toBe(2);
+    expect(active.slice(1, 6)).toEqual([
+      'Tan, Alice',
+      'Primary Five',
+      'P5 Diamond',
+      'Ms Lee',
+      'Active',
+    ]);
+    expect(withdrawn[5]).toBe('Withdrawn');
+
+    expect(active.slice(6, 12)).toEqual([90, 91, 92, 93, 93.4, 'Silver']);
+    expect(active.slice(12, 16)).toEqual(['A', 'B', 'C', 'IP']);
+    expect(active.slice(16, 20)).toEqual(['UG', 'N.A.', '', 'A']);
+    expect(active.slice(20, 22)).toEqual([93.4, 'Silver']);
+    expect(active.slice(ATT_START, ATT_START + 3)).toEqual([45, 44, 1]);
+    expect(active.slice(ATT_START + 12, ATT_START + 14)).toEqual([162, 3]);
+    expect(active.slice(COMMENTS_START, COMMENTS_START + 4)).toEqual([
+      'Doing well.',
+      '',
+      '',
+      '',
+    ]);
+  });
+
+  it('writes NA in the terms of a subject the student does not take', () => {
+    const p = makePayload();
+    p.rows[0].subjectRows = p.rows[0].subjectRows.filter(
+      (sr) => sr.subjectId !== EXAM_SUBJECT.id && sr.subjectId !== MUSIC.id
+    );
+    const row = readBack(p).aoa[FIRST_DATA_ROW];
+    expect(row.slice(6, 12)).toEqual(['NA', 'NA', 'NA', 'NA', '', '']);
+    expect(row.slice(12, 16)).toEqual(['NA', 'NA', 'NA', 'NA']);
+  });
+
+  it('labels a late enrollee with the term they joined', () => {
+    const p = makePayload();
+    p.rows[0].enrollmentStatus = 'late_enrollee';
+    p.rows[0].lateEnrolleeTermNumber = 2;
+    expect(readBack(p).aoa[FIRST_DATA_ROW][5]).toBe('Late Enrolment | Term 2');
+  });
+
+  it('a 0-attendance cell exports as 0, not blank', () => {
+    const withdrawn = readBack(makePayload()).aoa[FIRST_DATA_ROW + 1];
+    expect(withdrawn[ATT_START]).toBe(0);
+    expect(withdrawn[ATT_START + 12]).toBe(0);
+    expect(withdrawn[ATT_START + 13]).toBe(0);
+  });
+
+  it('Secondary: attendance Remarks, CCA in the comments, Remarks for Economics', () => {
+    const p = secondaryPayload();
+    const CCA = {
+      id: 'cca',
+      code: 'CCA',
+      name: 'Co-curricular Activities',
+      isExaminable: false,
+    };
+    p.subjects = [...p.subjects, CCA];
+    p.rows[0].subjectRows.push({ ...musicRow('B'), subjectId: 'cca' });
+    const { aoa } = readBack(p);
+    // CCA is not a subject group.
+    expect(aoa[4]).not.toContain('CO-CURRICULAR ACTIVITIES');
+    expect(aoa[5][ATT_START + 14]).toBe('Remarks');
+    const commentsStart = ATT_START + 15;
+    expect(aoa[5].slice(commentsStart, commentsStart + 4)).toEqual([
+      'Term 1',
+      'Term 2',
+      'Term 3',
+      'CCA',
+    ]);
+    expect(aoa[4][commentsStart + 4]).toBe('Remarks for Economics');
+    expect(aoa[FIRST_DATA_ROW][1 + 1]).toBe('Secondary Four');
+    expect(aoa[FIRST_DATA_ROW][commentsStart + 3]).toBe('B');
+    // Numbered up to CCA, not over the Economics remarks.
+    expect(aoa[3][commentsStart + 3]).toBe(commentsStart + 3);
+    expect(aoa[3][commentsStart + 4] ?? '').toBe('');
+  });
+
+  it('merges never overlap', () => {
+    for (const p of [makePayload(), secondaryPayload()]) {
+      const merges = readBack(p).ws['!merges'] ?? [];
+      const occupied = new Set<string>();
+      for (const m of merges) {
+        for (let r = m.s.r; r <= m.e.r; r++) {
+          for (let c = m.s.c; c <= m.e.c; c++) {
+            const key = `${r}:${c}`;
+            expect(occupied.has(key)).toBe(false);
+            occupied.add(key);
+          }
         }
       }
     }
-
-    // Group-header merges (row 0) must have the right widths. Identity columns
-    // merge vertically (r0..r1, width 1); subject/section groups merge
-    // horizontally on row 0.
-    const horizontalGroupMerges = merges.filter(
-      (m) => m.s.r === 0 && m.e.r === 0 && m.e.c > m.s.c
-    );
-    const widths = horizontalGroupMerges
-      .map((m) => m.e.c - m.s.c + 1)
-      .sort((a, b) => a - b);
-
-    // 1 exam (6) + 2 non-exam (5,5) + overall award (2) + attendance (15).
-    expect(widths).toEqual(
-      [
-        EXAM_WIDTH,
-        NONEXAM_WIDTH,
-        NONEXAM_WIDTH,
-        OVERALL_AWARD_WIDTH,
-        ATTENDANCE_WIDTH,
-      ].sort((a, b) => a - b)
-    );
-
-    // The full merged width across all group headers + vertical-merge identity
-    // and comments columns must cover exactly EXPECTED_TOTAL_COLS columns.
-    const maxCol = Math.max(...merges.map((m) => m.e.c));
-    expect(maxCol).toBe(EXPECTED_TOTAL_COLS - 1);
-  });
-
-  it('(d) a 0-attendance cell exports as 0, not blank', () => {
-    const payload = makePayload();
-    const { aoa } = readBack(payload);
-    const withdrawnRow = aoa[3]; // second data row (Lim, Bob)
-
-    // Attendance block starts after identity + exam + 2 non-exam + overall.
-    const attStart =
-      IDENTITY_COLS + EXAM_WIDTH + 2 * NONEXAM_WIDTH + OVERALL_AWARD_WIDTH;
-
-    // First per-term School Days cell = 0 (a real zero, not blank).
-    expect(withdrawnRow[attStart]).toBe(0);
-
-    // Totals = last 3 attendance columns, all 0.
-    const totalsStart = attStart + 3 * TERMS.length;
-    expect(withdrawnRow[totalsStart]).toBe(0); // total school days
-    expect(withdrawnRow[totalsStart + 1]).toBe(0); // total present
-    expect(withdrawnRow[totalsStart + 2]).toBe(0); // total late
   });
 });
 
 // ---------------------------------------------------------------------------
 // The FCA write-up is formatted text now — it arrives as HTML. A spreadsheet
 // cell cannot render it, so the registrar would read the tags. Both export
-// formats share one `commentsText()` helper, and both are asserted here so a
-// fix to one path can't silently skip the other.
+// formats strip it, and both are asserted here so a fix to one path can't
+// silently skip the other. The xlsx sheet has one column per term; the CSV
+// joins the terms into one cell.
 // ---------------------------------------------------------------------------
-
-const COMMENTS_COL = EXPECTED_TOTAL_COLS - 1;
 
 function payloadWithComments(
   comments: MasterfileStudentRow['commentsByTerm']
@@ -348,10 +375,13 @@ function payloadWithComments(
   return payload;
 }
 
-/** The active student's Teacher's Comments cell, as the xlsx sheet holds it. */
+/** The active student's Teacher's Comments cells, as the xlsx sheet holds them. */
 function xlsxComment(payload: MasterfilePayload): string {
   const { aoa } = readBack(payload);
-  return String(aoa[2][COMMENTS_COL] ?? '');
+  return aoa[FIRST_DATA_ROW].slice(COMMENTS_START, COMMENTS_START + 3)
+    .map((v, i) => (v ? `T${i + 1}: ${v}` : ''))
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 /** The same cell out of the CSV branch. */

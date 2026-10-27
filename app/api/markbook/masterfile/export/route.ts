@@ -188,8 +188,9 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  // Default: xlsx (existing path — unchanged).
-  const buffer = buildMasterfileWorkbook(payload, attendanceDates);
+  // Default: xlsx — a copy of the school's own Masterfile sheet, which has no
+  // "Days missed" columns, so the dates go to the CSV only.
+  const buffer = buildMasterfileWorkbook(payload);
   const filename = `Masterfile_${levelPart}_${classPart}_${ayCode}.xlsx`;
   return new Response(new Uint8Array(buffer), {
     status: 200,
