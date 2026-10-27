@@ -28,6 +28,12 @@ export type DonutChartProps = {
    */
   centerHint?: React.ReactNode;
   onSegmentClick?: SegmentClickHandler;
+  /**
+   * `size` (default) lists the legend biggest-first. `given` keeps the order
+   * passed in — for slices that are a ladder (grade bands), where a
+   * biggest-first key stops reading as one.
+   */
+  legendOrder?: 'size' | 'given';
 };
 
 // The five series colours, then greys. A sixth or seventh slice is small by
@@ -47,9 +53,13 @@ function DonutChartImpl({
   centerValue,
   centerHint,
   onSegmentClick,
+  legendOrder = 'size',
 }: DonutChartProps) {
   const total = data.reduce((sum, d) => sum + d.value, 0);
-  const sorted = [...data].sort((a, b) => b.value - a.value);
+  const sorted =
+    legendOrder === 'given'
+      ? data
+      : [...data].sort((a, b) => b.value - a.value);
 
   return (
     <div className="flex items-center gap-6">

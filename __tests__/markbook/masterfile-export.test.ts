@@ -164,8 +164,8 @@ function makePayload(): MasterfilePayload {
 
 // Parse the workbook back into a full grid (blank rows kept, so row indexes
 // are the sheet's own: 0 school name … 4–6 headers, 7+ students).
-function readBack(payload: MasterfilePayload) {
-  const buffer = buildMasterfileWorkbook(payload);
+async function readBack(payload: MasterfilePayload) {
+  const buffer = await buildMasterfileWorkbook(payload);
   const wb = XLSX.read(buffer, { type: 'buffer' });
   const ws = wb.Sheets[wb.SheetNames[0]];
   const aoa = XLSX.utils.sheet_to_json<(string | number)[]>(ws, {
@@ -203,21 +203,21 @@ function secondaryPayload(): MasterfilePayload {
   return p;
 }
 
-describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', () => {
-  it('has the school title rows and the column-number row', () => {
-    const { aoa } = readBack(makePayload());
+describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', async () => {
+  it('has the school title rows and the column-number row', async () => {
+    const { aoa } = await readBack(makePayload());
     expect(aoa[0][0]).toBe('HFSE INTERNATIONAL SCHOOL');
     expect(aoa[1][0]).toBe('AY 9999 REPORT CARD - PRIMARY');
     expect(aoa[3][0]).toBe('');
     expect(aoa[3][1]).toBe(1);
     expect(aoa[3][EXPECTED_TOTAL_COLS - 1]).toBe(EXPECTED_TOTAL_COLS - 1);
-    expect(readBack(secondaryPayload()).aoa[1][0]).toBe(
+    expect((await readBack(secondaryPayload())).aoa[1][0]).toBe(
       'AY 9999 REPORT CARD - SECONDARY'
     );
   });
 
-  it('uses the school headers, in the school order', () => {
-    const { aoa } = readBack(makePayload());
+  it('uses the school headers, in the school order', async () => {
+    const { aoa } = await readBack(makePayload());
     expect(aoa[4].slice(0, 7)).toEqual([
       'S/N',
       'STUDENT NAME',
@@ -258,8 +258,8 @@ describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', ()
     ]);
   });
 
-  it('fills each student row in the same columns as the headers', () => {
-    const { aoa } = readBack(makePayload());
+  it('fills each student row in the same columns as the headers', async () => {
+    const { aoa } = await readBack(makePayload());
     const active = aoa[FIRST_DATA_ROW];
     const withdrawn = aoa[FIRST_DATA_ROW + 1];
 
@@ -289,31 +289,33 @@ describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', ()
     ]);
   });
 
-  it('writes NA in the terms of a subject the student does not take', () => {
+  it('writes NA in the terms of a subject the student does not take', async () => {
     const p = makePayload();
     p.rows[0].subjectRows = p.rows[0].subjectRows.filter(
       (sr) => sr.subjectId !== EXAM_SUBJECT.id && sr.subjectId !== MUSIC.id
     );
-    const row = readBack(p).aoa[FIRST_DATA_ROW];
+    const row = (await readBack(p)).aoa[FIRST_DATA_ROW];
     expect(row.slice(6, 12)).toEqual(['NA', 'NA', 'NA', 'NA', '', '']);
     expect(row.slice(12, 16)).toEqual(['NA', 'NA', 'NA', 'NA']);
   });
 
-  it('labels a late enrollee with the term they joined', () => {
+  it('labels a late enrollee with the term they joined', async () => {
     const p = makePayload();
     p.rows[0].enrollmentStatus = 'late_enrollee';
     p.rows[0].lateEnrolleeTermNumber = 2;
-    expect(readBack(p).aoa[FIRST_DATA_ROW][5]).toBe('Late Enrolment | Term 2');
+    expect((await readBack(p)).aoa[FIRST_DATA_ROW][5]).toBe(
+      'Late Enrolment | Term 2'
+    );
   });
 
-  it('a 0-attendance cell exports as 0, not blank', () => {
-    const withdrawn = readBack(makePayload()).aoa[FIRST_DATA_ROW + 1];
+  it('a 0-attendance cell exports as 0, not blank', async () => {
+    const withdrawn = (await readBack(makePayload())).aoa[FIRST_DATA_ROW + 1];
     expect(withdrawn[ATT_START]).toBe(0);
     expect(withdrawn[ATT_START + 12]).toBe(0);
     expect(withdrawn[ATT_START + 13]).toBe(0);
   });
 
-  it('Secondary: attendance Remarks, CCA in the comments, Remarks for Economics', () => {
+  it('Secondary: attendance Remarks, CCA in the comments, Remarks for Economics', async () => {
     const p = secondaryPayload();
     const CCA = {
       id: 'cca',
@@ -323,7 +325,7 @@ describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', ()
     };
     p.subjects = [...p.subjects, CCA];
     p.rows[0].subjectRows.push({ ...musicRow('B'), subjectId: 'cca' });
-    const { aoa } = readBack(p);
+    const { aoa } = await readBack(p);
     // CCA is not a subject group.
     expect(aoa[4]).not.toContain('CO-CURRICULAR ACTIVITIES');
     expect(aoa[5][ATT_START + 14]).toBe('Remarks');
@@ -342,9 +344,9 @@ describe('buildMasterfileWorkbook — a copy of the school Masterfile sheet', ()
     expect(aoa[3][commentsStart + 4] ?? '').toBe('');
   });
 
-  it('merges never overlap', () => {
+  it('merges never overlap', async () => {
     for (const p of [makePayload(), secondaryPayload()]) {
-      const merges = readBack(p).ws['!merges'] ?? [];
+      const merges = (await readBack(p)).ws['!merges'] ?? [];
       const occupied = new Set<string>();
       for (const m of merges) {
         for (let r = m.s.r; r <= m.e.r; r++) {
@@ -376,8 +378,8 @@ function payloadWithComments(
 }
 
 /** The active student's Teacher's Comments cells, as the xlsx sheet holds them. */
-function xlsxComment(payload: MasterfilePayload): string {
-  const { aoa } = readBack(payload);
+async function xlsxComment(payload: MasterfilePayload): Promise<string> {
+  const { aoa } = await readBack(payload);
   return aoa[FIRST_DATA_ROW].slice(COMMENTS_START, COMMENTS_START + 3)
     .map((v, i) => (v ? `T${i + 1}: ${v}` : ''))
     .filter(Boolean)
@@ -391,7 +393,7 @@ function csvComment(payload: MasterfilePayload): string {
 }
 
 describe("the Teacher's Comments cell reads as prose, not markup", () => {
-  it('strips formatting out of the xlsx cell', () => {
+  it('strips formatting out of the xlsx cell', async () => {
     const payload = payloadWithComments([
       {
         termNumber: 1,
@@ -399,10 +401,10 @@ describe("the Teacher's Comments cell reads as prose, not markup", () => {
         submitted: true,
       },
     ]);
-    expect(xlsxComment(payload)).toBe('T1: Alice is improving.');
+    expect(await xlsxComment(payload)).toBe('T1: Alice is improving.');
   });
 
-  it('strips formatting out of the CSV cell', () => {
+  it('strips formatting out of the CSV cell', async () => {
     const payload = payloadWithComments([
       {
         termNumber: 1,
@@ -413,7 +415,7 @@ describe("the Teacher's Comments cell reads as prose, not markup", () => {
     expect(csvComment(payload)).toBe('T1: Alice is improving.');
   });
 
-  it('flattens a bullet list into readable lines rather than <li> tags', () => {
+  it('flattens a bullet list into readable lines rather than <li> tags', async () => {
     const payload = payloadWithComments([
       {
         termNumber: 2,
@@ -421,21 +423,23 @@ describe("the Teacher's Comments cell reads as prose, not markup", () => {
         submitted: true,
       },
     ]);
-    const cell = xlsxComment(payload);
+    const cell = await xlsxComment(payload);
     expect(cell).not.toContain('<');
     expect(cell).toBe('T2: Leads group work\nWritten fluency');
   });
 
-  it('keeps the terms apart when more than one comment exists', () => {
+  it('keeps the terms apart when more than one comment exists', async () => {
     const payload = payloadWithComments([
       { termNumber: 1, text: '<p>Settling in.</p>', submitted: true },
       { termNumber: 2, text: '<p>Much stronger.</p>', submitted: true },
     ]);
-    expect(xlsxComment(payload)).toBe('T1: Settling in.\n\nT2: Much stronger.');
+    expect(await xlsxComment(payload)).toBe(
+      'T1: Settling in.\n\nT2: Much stronger.'
+    );
     expect(csvComment(payload)).toBe('T1: Settling in.\n\nT2: Much stronger.');
   });
 
-  it('drops a term whose comment is an empty editor document', () => {
+  it('drops a term whose comment is an empty editor document', async () => {
     // An adviser who opens the box, types nothing and saves leaves `<p></p>`.
     // Without this the registrar's cell reads "T2: " — a term that looks
     // commented but isn't.
@@ -443,28 +447,28 @@ describe("the Teacher's Comments cell reads as prose, not markup", () => {
       { termNumber: 1, text: '<p>Settling in.</p>', submitted: true },
       { termNumber: 2, text: '<p></p>', submitted: false },
     ]);
-    expect(xlsxComment(payload)).toBe('T1: Settling in.');
+    expect(await xlsxComment(payload)).toBe('T1: Settling in.');
     expect(csvComment(payload)).toBe('T1: Settling in.');
   });
 
-  it('leaves the cell empty when every comment is a blank document', () => {
+  it('leaves the cell empty when every comment is a blank document', async () => {
     const payload = payloadWithComments([
       { termNumber: 1, text: '<p><br></p>', submitted: false },
     ]);
-    expect(xlsxComment(payload)).toBe('');
+    expect(await xlsxComment(payload)).toBe('');
     expect(csvComment(payload)).toBe('');
   });
 
-  it('passes through text written before the editor existed', () => {
+  it('passes through text written before the editor existed', async () => {
     // Every AY2025 write-up is a bare sentence, not HTML.
     const payload = payloadWithComments([
       { termNumber: 1, text: 'Doing well.', submitted: true },
     ]);
-    expect(xlsxComment(payload)).toBe('T1: Doing well.');
+    expect(await xlsxComment(payload)).toBe('T1: Doing well.');
     expect(csvComment(payload)).toBe('T1: Doing well.');
   });
 
-  it('does not leak an escaped tag into the CSV text', () => {
+  it('does not leak an escaped tag into the CSV text', async () => {
     const payload = payloadWithComments([
       {
         termNumber: 1,

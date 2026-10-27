@@ -7,6 +7,7 @@ import {
   CartesianGrid,
   LabelList,
   Legend,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -93,6 +94,11 @@ export type TrendChartProps = {
    * each to its year.
    */
   onSegmentClick?: SegmentClickHandler;
+  /**
+   * A named cut-off drawn across the plot (e.g. the 80% attendance line) — a
+   * reading aid, not a data series.
+   */
+  referenceLine?: { value: number; label: string };
 };
 
 function TrendChartImpl({
@@ -109,6 +115,7 @@ function TrendChartImpl({
   showValues = false,
   lastPointProvisional = false,
   onSegmentClick,
+  referenceLine,
 }: TrendChartProps) {
   const compact = variant === 'compact';
   const yFormatter = formatterFor(yFormat);
@@ -373,6 +380,21 @@ function TrendChartImpl({
                 : undefined
             }
             isAnimationActive={false}
+          />
+        )}
+        {referenceLine && (
+          <ReferenceLine
+            y={referenceLine.value}
+            stroke="var(--color-destructive)"
+            strokeOpacity={0.5}
+            strokeDasharray="4 4"
+            strokeWidth={1.5}
+            label={{
+              value: referenceLine.label,
+              position: 'insideTopRight',
+              fill: 'var(--color-destructive)',
+              fontSize: 10,
+            }}
           />
         )}
       </AreaChart>
