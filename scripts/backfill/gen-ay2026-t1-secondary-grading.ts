@@ -21,7 +21,7 @@ import type {
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 1;
-const DIR = 'AY2026/T1/Term 1 Grades/Grades';
+const DIR = 'files/AY2026/T1/Term 1 Grades/Grades';
 
 // Explicit file list — never a directory glob. History has no S3/S4 tabs
 // (genuinely absent from the real file); SS & Geo has no S1/S2 tabs (same).

@@ -9,7 +9,7 @@ import { createServiceClient } from '../../lib/supabase/service';
 import { parseWorkbookT3 } from '../../lib/sis/backfill/attendance/attendance-workbook-t3';
 
 const AY_CODE = 'AY2026';
-const WORKBOOK = 'AY2026 Term 3 Attendance Latest.xlsx';
+const WORKBOOK = 'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 const STUDENT_NUMBER = 'H170072';
 
 async function main() {

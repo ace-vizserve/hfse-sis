@@ -27,7 +27,7 @@ import { sqlString } from '../../lib/sis/backfill/enrollment/sql-escape';
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
 const GLOBAL_FILE =
-  'AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets/Science Grading Sheet Global Class AY2026 T2.xlsx';
+  'files/AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets/Science Grading Sheet Global Class AY2026 T2.xlsx';
 
 function toFixed6(n: number | null): string {
   return n == null ? 'null' : n.toFixed(6);

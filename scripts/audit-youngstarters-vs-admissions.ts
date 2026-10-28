@@ -14,7 +14,7 @@ import * as XLSX from 'xlsx';
 
 import { createServiceClient } from '../lib/supabase/service';
 
-const WORKBOOK = 'List of Students.xlsx';
+const WORKBOOK = 'files/school-lists/List of Students.xlsx';
 const AY = 'ay2026';
 
 type Row = { index: number; name: string; tier: string };

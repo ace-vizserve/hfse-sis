@@ -30,7 +30,7 @@ import { buildT3GradingImport } from '../../lib/sis/backfill/grading/build-t3-gr
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 3;
-const ROOT = 'AY2026/T3/Term 3 Grades';
+const ROOT = 'files/AY2026/T3/Term 3 Grades';
 const OUT_DIR = 'scripts/backfill';
 
 // Explicit file list — never a directory glob (T1/T2 had corrupted "Copy of"

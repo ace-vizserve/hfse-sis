@@ -277,7 +277,7 @@ describe('parseGradingWorkbookT1Secondary', () => {
 // The AY2026/ source folder holds real student PII and is gitignored — it
 // exists locally but not in CI. Skip (not fail) this suite when it's absent,
 // matching the established pattern in masterfile-grades.test.ts.
-const DIR = 'AY2026/T1/Term 1 Grades/Grades';
+const DIR = 'files/AY2026/T1/Term 1 Grades/Grades';
 const d = existsSync(DIR) ? describe : describe.skip;
 
 d(

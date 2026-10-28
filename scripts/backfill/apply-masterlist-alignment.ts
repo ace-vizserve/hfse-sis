@@ -46,7 +46,7 @@ import * as XLSX from 'xlsx';
 
 import { createServiceClient } from '../../lib/supabase/service';
 
-const WORKBOOK = 'List of Students.xlsx';
+const WORKBOOK = 'files/school-lists/List of Students.xlsx';
 const AY = 'AY2026';
 const APPLY = process.argv.includes('--apply');
 

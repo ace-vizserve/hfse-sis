@@ -1,7 +1,7 @@
 // scripts/backfill/apply-ay2026-house-points.ts
 // Seeds AY2026's house points into the SIS from the school's own workbook.
 //
-// Source: `House Points Tracking AY2026.xlsx` at the repo root — one tab per
+// Source: `files/AY2026/House Points Tracking AY2026.xlsx` — one tab per
 // event, every tab laid out differently, plus an "Overall Points Tracker" tab
 // holding the per-event house totals the school actually read out. Target:
 // the house_point_* tables of migration 181 (KD #228).
@@ -95,7 +95,7 @@ import { EventInputSchema } from '../../lib/schemas/house-points';
 import { fetchAllPages } from '../../lib/supabase/paginate';
 import { createServiceClient } from '../../lib/supabase/service';
 
-const WORKBOOK = 'House Points Tracking AY2026.xlsx';
+const WORKBOOK = 'files/AY2026/House Points Tracking AY2026.xlsx';
 const AY = 'AY2026';
 const SOURCE = 'ay2026-workbook-import';
 

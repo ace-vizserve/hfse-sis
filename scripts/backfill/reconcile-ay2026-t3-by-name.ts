@@ -21,7 +21,8 @@ const AY_CODE = 'AY2026';
 const TERM_NUMBER = 3;
 const YEAR = 2026;
 const NEW_WORKBOOK =
-  process.env.T3_WORKBOOK ?? 'AY2026 Term 3 Attendance Latest.xlsx';
+  process.env.T3_WORKBOOK ??
+  'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 const OUT = 'scripts/backfill/ay2026-t3-by-name-report.txt';
 
 const CAL_ROW_RE =

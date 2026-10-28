@@ -41,6 +41,8 @@ import { listAllAuthUsers } from '../lib/supabase/paginate';
 const WORKBOOK = resolve(
   import.meta.dirname,
   '..',
+  'files',
+  'school-lists',
   'Teachers Deployment_Updated 29 Jun 26_Teacherscopy.xlsx'
 );
 const SHEET = 'Final Update_New';

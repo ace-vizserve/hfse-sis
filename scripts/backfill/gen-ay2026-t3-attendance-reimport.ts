@@ -39,7 +39,8 @@ const AY_CODE = 'AY2026';
 const TERM_NUMBER = 3;
 const YEAR = 2026;
 const WORKBOOK =
-  process.env.T3_WORKBOOK ?? 'AY2026 Term 3 Attendance Latest.xlsx';
+  process.env.T3_WORKBOOK ??
+  'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 const APPLY_DIR = 'scripts/backfill/ay2026-t3-attendance-reimport-apply';
 const PREVIEW = 'scripts/backfill/ay2026-t3-attendance-reimport-preview.sql';
 const CHUNK = 2000;

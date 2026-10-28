@@ -24,7 +24,7 @@ import { sqlString } from '../../lib/sis/backfill/enrollment/sql-escape';
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 3;
 const YEAR = 2026;
-const WORKBOOK = 'AY2026 Term 3 Attendance Latest.xlsx';
+const WORKBOOK = 'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 const APPLY_DIR = 'scripts/backfill/ay2026-t3-attendance-stragglers-apply';
 const VALID = new Set(['P', 'A', 'EX', 'L']);
 

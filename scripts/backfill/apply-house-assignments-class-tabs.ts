@@ -59,7 +59,7 @@ import {
 } from '../../lib/sis/backfill/house/section-name-match';
 import { createServiceClient } from '../../lib/supabase/service';
 
-const WORKBOOK = 'house/Student House Color Assignment.xlsx';
+const WORKBOOK = 'files/house/Student House Color Assignment.xlsx';
 const AY = 'AY2026';
 const SOURCE = 'class-tabs-correction-2026-09-29';
 

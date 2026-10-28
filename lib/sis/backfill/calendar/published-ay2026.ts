@@ -1,6 +1,6 @@
 // lib/sis/backfill/calendar/published-ay2026.ts
 // HFSE's PUBLISHED AY2026 school calendar, transcribed verbatim from
-// "AY 2026 Calendar.png" at the repo root — the school's own one-page
+// files/AY2026/"AY 2026 Calendar.png" — the school's own one-page
 // calendar, and the authority for what the year is meant to look like.
 //
 // WHY THIS FILE EXISTS. Every calendar row in production was reverse-

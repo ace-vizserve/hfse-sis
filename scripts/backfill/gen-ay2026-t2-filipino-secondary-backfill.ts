@@ -27,7 +27,7 @@ import type {
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
-const DIR = 'AY2026/T2/Term 2 Grades/GRADES';
+const DIR = 'files/AY2026/T2/Term 2 Grades/GRADES';
 const FILE = 'Filipino Grading AY2026 T2.xlsx';
 const SUBJECT_CODE = 'FIL';
 

@@ -15,7 +15,7 @@ import type { T1RosterCandidate } from '../../lib/sis/backfill/evaluation/build-
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 1;
 const SOURCE_FILE =
-  'AY2026/T1/Term 1 Grades/AY2026 T1 Student Evaluation_Subject Checklists.xlsx';
+  'files/AY2026/T1/Term 1 Grades/AY2026 T1 Student Evaluation_Subject Checklists.xlsx';
 
 // Validated during design (docs/superpowers/specs/2026-07-20-ay2026-t1-evaluation-writeups-import-design.md
 // §3/§4) against this exact file + the live roster at design time. A real

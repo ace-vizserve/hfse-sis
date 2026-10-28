@@ -19,9 +19,9 @@ const AY_CODE = 'AY2026';
 const WORKBOOKS = [
   [
     'OLD (July, already imported)',
-    'AY2026/T3/AY2026 Term 3 Attendance (1).xlsx',
+    'files/AY2026/T3/AY2026 Term 3 Attendance (1).xlsx',
   ],
-  ['NEW (Latest)', 'AY2026 Term 3 Attendance Latest.xlsx'],
+  ['NEW (Latest)', 'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx'],
 ] as const;
 const OUT = 'scripts/backfill/ay2026-t3-roster-alignment-report.txt';
 

@@ -48,7 +48,7 @@ import type {
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
 const FILE =
-  'AY2026/T2/Term 2 Grades/GRADES/Contemporary Arts Grading AY2026 T2.xlsx';
+  'files/AY2026/T2/Term 2 Grades/GRADES/Contemporary Arts Grading AY2026 T2.xlsx';
 const SUBJECT_CODE = 'CA';
 
 // CA's T2 header (0.3/0.5/0.2) already matches the live subject_configs

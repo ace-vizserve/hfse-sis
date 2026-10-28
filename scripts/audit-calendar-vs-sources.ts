@@ -34,19 +34,19 @@ const REGISTERS: {
   taught: boolean;
 }[] = [
   {
-    file: 'AY2026/T1/T1 Attendance Jan-Mar (1).xlsx',
+    file: 'files/AY2026/T1/T1 Attendance Jan-Mar (1).xlsx',
     termLabel: 'T1',
     year: 2026,
     taught: true,
   },
   {
-    file: 'AY2026/T2/T2 Attendance Mar-May (1).xlsx',
+    file: 'files/AY2026/T2/T2 Attendance Mar-May (1).xlsx',
     termLabel: 'T2',
     year: 2026,
     taught: true,
   },
   {
-    file: 'AY2026/T3/AY2026 Term 3 Attendance (1).xlsx',
+    file: 'files/AY2026/T3/AY2026 Term 3 Attendance (1).xlsx',
     termLabel: 'T3',
     year: 2026,
     taught: true,

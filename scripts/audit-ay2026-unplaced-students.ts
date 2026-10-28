@@ -15,7 +15,7 @@ import { createServiceClient } from '../lib/supabase/service';
 import { parseWorkbookT3 } from '../lib/sis/backfill/attendance/attendance-workbook-t3';
 
 const OUT = 'scripts/audit-ay2026-unplaced-students-report.txt';
-const T3_WORKBOOK = 'AY2026 Term 3 Attendance Latest.xlsx';
+const T3_WORKBOOK = 'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 
 function norm(s: string | null | undefined): string {
   return (s ?? '')

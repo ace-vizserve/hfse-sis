@@ -49,6 +49,11 @@ next-env.d.ts
 
 /AY 2025*
 
+# School files kept on this machine only — every workbook, export, form and
+# report the school sends, sorted by kind (docs/context/26-local-files.md).
+# Real student PII throughout. Never commit.
+/files/
+
 
 # HFSE reference workbooks — Excel files dropped at the repo root for
 # canonical-spec verification (report books, attendance workbooks,

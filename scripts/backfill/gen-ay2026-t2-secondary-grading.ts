@@ -28,7 +28,7 @@ const TERM_NUMBER = 2;
 // doc §2 Locked Decision #1), never Mandarin or STAR/MAPEH (no Secondary
 // tabs exist in either file at all), never CCA (activity-rostered, not
 // section-rostered — see design doc §1 point 3, out of scope this phase).
-const REGULAR_DIR = 'AY2026/T2/Term 2 Grades/GRADES';
+const REGULAR_DIR = 'files/AY2026/T2/Term 2 Grades/GRADES';
 const REGULAR_SUBJECT_FILES: { file: string; subjectCode: string }[] = [
   { file: 'Math Grading AY2026 T2.xlsx', subjectCode: 'MATH' },
   { file: 'English Grading AY2026 T2.xlsx', subjectCode: 'ENG' },
@@ -50,7 +50,7 @@ const REGULAR_SUBJECT_FILES: { file: string; subjectCode: string }[] = [
 // Mathematics..." are corrupted duplicates (same standing exclusion
 // policy as every prior phase) and must never be read.
 const GLOBAL_DIR =
-  'AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets';
+  'files/AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets';
 const GLOBAL_SUBJECT_FILES: { file: string; subjectCode: string }[] = [
   {
     file: 'Art and Design Grading Sheet Global Class AY2026 T2.xlsx',

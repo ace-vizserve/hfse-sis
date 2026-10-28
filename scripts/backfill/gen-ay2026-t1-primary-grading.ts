@@ -20,7 +20,7 @@ import type {
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 1;
-const DIR = 'AY2026/T1/Term 1 Grades/Grades';
+const DIR = 'files/AY2026/T1/Term 1 Grades/Grades';
 
 // Explicit file list — never a directory glob. This folder also has
 // Secondary-only subject files (History, Literature, SS & Geo,

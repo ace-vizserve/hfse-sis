@@ -41,7 +41,7 @@ import {
 } from '../../lib/sis/backfill/enrollment/name-match';
 import { createServiceClient } from '../../lib/supabase/service';
 
-const WORKBOOK_PATH = 'house/Student House Color Assignment.xlsx';
+const WORKBOOK_PATH = 'files/house/Student House Color Assignment.xlsx';
 const AY_CODE = 'AY2026';
 const OUT_PREVIEW = 'scripts/backfill/house-assignment-preview.sql';
 const OUT_APPLY = 'scripts/backfill/house-assignment-apply.sql';

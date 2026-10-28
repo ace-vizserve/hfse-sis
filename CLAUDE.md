@@ -56,6 +56,7 @@ These live **outside** `.claude/rules/`, so they cost nothing until read. Read b
 | `docs/context/20-dashboards.md`             | Any dashboard work — before touching a module's landing page or `lib/<module>/dashboard.ts`                                                                                                             |
 | `docs/context/21-stp-application.md`        | Singapore ICA Student Pass workflow (HFSE Edutrust Certified) — `stpApplicationType` + `stpApplicationStatus` phases (KD #61). ⚠ Its 3 STP document slots were removed by KD #96 — that half is history |
 | `docs/context/23-session-log.md`            | Session history before the current sprint — shipped work, closed decisions, superseded claims, and the gotchas they left behind                                                                         |
+| `docs/context/26-local-files.md`            | Looking for a school file (workbook, QuickBooks export, form, calendar, weekly update) or saving one — all live under the git-ignored `files/`, sorted by year and kind; never at the repo root         |
 
 ## Session context
 
