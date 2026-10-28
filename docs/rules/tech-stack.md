@@ -19,7 +19,8 @@ load: on-demand
 - **`cmdk`** for the global Cmd+K command palette (`components/ui/command.tsx` is the shadcn-style wrapper; `components/sis/command-palette.tsx` is the wired-up palette mounted in the root layout). Trigger lives in the module-sidebar header + topbar.
 - **`countries-list`** (MIT) supplies the canonical country-NAME list for the Student Profile nationality picker (`lib/data/countries.ts`). Deliberately NOT `country-state-city`, which ships the same dataset but is **GPL-3.0** — caught in review and swapped before merge (KD #157).
 - **`pdf-merger-js`** (server-only) for P-Files upload merge.
-- **`xlsx`** / SheetJS (server-only) for the attendance-sheet and masterfile `.xlsx` exports, and for reading trusted workbooks in `scripts/backfill/`.
+- **`xlsx`** / SheetJS (server-only) for the plain `.xlsx` exports (attendance sheet, Academic Summary tables, SOW, credentials) and for reading trusted workbooks in `scripts/backfill/` and `lib/sis/backfill/`. Its free build writes values and merges only — no fills, fonts or borders.
+- **`exceljs`** (server-only) for exports that must copy a school workbook's look — the masterfile's Consolidated Form (`lib/markbook/masterfile-export.ts`) and Report Book (`lib/markbook/report-book-export.ts`). Use it, not SheetJS, whenever an export needs the school's colours, fonts, borders, hidden columns or dropdowns.
 - **Resend** for best-effort parent + change-request emails.
 - **Vercel** deploy. **PDF generation deferred** — browser Print covers current volume.
 
