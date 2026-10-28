@@ -9,6 +9,7 @@ import {
 } from '@/lib/markbook/academic-overview-export';
 import {
   buildMasterfileWorkbook,
+  consolidatedTerms,
   divisionName,
   masterfileToCsv,
   type ConsolidatedFilters,
@@ -22,25 +23,26 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 // GET /api/markbook/masterfile/export
 //
-// The school's two files (KD #95): the AY2026 Consolidated File (one tab per
-// class) or the Final Report Book Masterfile sheet (?template=report-book),
-// built
-// from the same computed payload the on-screen masterfile shows
-// (`loadMasterfile`). The page's filters narrow it — see masterfile-export.ts.
+// The school's two files (KD #95): the CONSOLIDATED FORM (one term, one tab
+// per class, P1–S4 in one file) or the Final Report Book Masterfile sheet
+// (?template=report-book, one file per division), built from the same
+// computed payload the on-screen masterfile shows (`loadMasterfile`). The
+// page's filters narrow them — see masterfile-export.ts / report-book-export.ts.
 //
 // Query params:
-//   ?division=primary|secondary  every level of that division (P1–P6 / S1–S4)
-//   ?level=<level_id>    one level (when no division)
+//   ?level=<level_id>    one level
 //   ?class=<section_id>  optional, repeatable; one level's classes. Also
 //                          accepts a single comma-joined value for back-compat.
+//   ?division=primary|secondary  every level of that division (P1–P6 / S1–S4)
+//   (none of the three)  every class P1–S4 (Consolidated Form only)
 //   ?subject=<subject_id> optional, only that subject's columns
-//   ?term=1..4           optional, terms up to that one
+//   ?term=1..4           optional; the Consolidated Form's term (default the
+//                          latest graded), the Report Book's last term filled
 //   ?status=active|late_enrollee|withdrawn  optional
-//   ?template=report-book the Final Report Book Masterfile sheet instead
-//                          (report-book-export.ts); default Consolidated File
-//   ?format=csv          the same grid as CSV (default xlsx)
+//   ?template=report-book | summary  default the Consolidated Form; summary =
+//                          the school-wide summary tables
+//   ?format=csv          the same rows as CSV (default xlsx)
 //   ?ay=<ay_code>        optional (defaults to current AY)
-// No division and no level → the school-wide summary tables (legacy).
 
 export async function GET(req: NextRequest) {
   // Page is registrar | school_admin | superadmin — mirror it here.
@@ -113,11 +115,11 @@ export async function GET(req: NextRequest) {
     (l) => withSections.has(l.id)
   );
 
+  const template = searchParams.get('template');
+  const reportBook = template === 'report-book';
+
   let levelIds: string[];
-  if (division === 'primary' || division === 'secondary') {
-    const pattern = division === 'primary' ? /^P\d$/i : /^S\d$/i;
-    levelIds = levels.filter((l) => pattern.test(l.code)).map((l) => l.id);
-  } else if (levelParam && levelParam !== '__all__') {
+  if (levelParam && levelParam !== '__all__') {
     if (!levels.some((l) => l.id === levelParam)) {
       return new Response(
         'The requested level has no sections in this academic year.',
@@ -125,8 +127,20 @@ export async function GET(req: NextRequest) {
       );
     }
     levelIds = [levelParam];
+  } else if (division === 'primary' || division === 'secondary') {
+    const pattern = division === 'primary' ? /^P\d$/i : /^S\d$/i;
+    levelIds = levels.filter((l) => pattern.test(l.code)).map((l) => l.id);
+  } else if (template !== 'summary') {
+    // Unfiltered: every class P1–S4, as the school's CONSOLIDATED FORM holds
+    // them. (The Report Book is two files, so its menu always names one.)
+    if (reportBook) {
+      return new Response('Pick Primary or Secondary for the Report Book.', {
+        status: 400,
+      });
+    }
+    levelIds = levels.filter((l) => /^[PS]\d$/i.test(l.code)).map((l) => l.id);
   } else {
-    // No division, no level → the school-wide summary tables.
+    // ?template=summary → the school-wide summary tables.
     const overview = await getAcademicOverview(ayCode, academicYearId);
     if (asCsv) {
       return new Response(overviewToCsv(overview), {
@@ -169,8 +183,8 @@ export async function GET(req: NextRequest) {
     return new Response('No students to export.', { status: 404 });
   }
 
-  // The school's own file name: "AY2026 Consolidated File Primary Grades
-  // Term 2" — plus the level / class when the file holds just that.
+  // The school's own file names — "Term 2 CONSOLIDATED FORM", "AY2025 Final
+  // Report Book_Primary" — plus the level / class when the file holds just that.
   const sanitize = (s: string) => s.replace(/[^A-Za-z0-9 ._-]+/g, '_').trim();
   const only = payloads.length === 1 ? payloads[0] : null;
   const scope = !only
@@ -178,13 +192,16 @@ export async function GET(req: NextRequest) {
     : only.selectedSectionIds.length === 1
       ? ` ${only.level.code} ${only.sections.find((s) => s.id === only.selectedSectionIds[0])?.name ?? ''}`
       : ` ${only.level.code}`;
-  const reportBook = searchParams.get('template') === 'report-book';
-  const termPart = filters.termNumber ? ` Term ${filters.termNumber}` : '';
-  const divisionWord = divisionName(payloads[0].level);
   const base = sanitize(
     reportBook
-      ? `${ayCode} Final Report Book_${divisionWord}${scope}${termPart}`
-      : `${ayCode} Consolidated File ${divisionWord}${scope} Grades${termPart}`
+      ? `${ayCode} Final Report Book_${divisionName(payloads[0].level)}${scope}${
+          filters.termNumber ? ` Term ${filters.termNumber}` : ''
+        }`
+      : consolidatedFileName(
+          ayCode,
+          consolidatedTerms(payloads, filters),
+          scope
+        )
   );
 
   if (asCsv) {
@@ -212,4 +229,15 @@ export async function GET(req: NextRequest) {
       'Cache-Control': 'no-store',
     },
   });
+}
+
+/** "AY2026 Term 2 CONSOLIDATED FORM", or "… CONSOLIDATED FORM All Terms". */
+function consolidatedFileName(
+  ayCode: string,
+  terms: number[],
+  scope: string
+): string {
+  return terms.length === 1
+    ? `${ayCode} Term ${terms[0]} CONSOLIDATED FORM${scope}`
+    : `${ayCode} CONSOLIDATED FORM All Terms${scope}`;
 }
