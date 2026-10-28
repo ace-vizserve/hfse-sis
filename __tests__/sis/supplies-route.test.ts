@@ -52,17 +52,33 @@ vi.mock('@/lib/sis/queries', () => ({
     )
   ),
 }));
+// `realLoad` runs the real loader over the service mock's read rows below, so
+// the track rule reaches the GET list and the POST allow-list end to end.
+let realLoad = false;
+let appTrack: 'Global' | 'Standard' | null = null;
+let sectionClassType: string | null = null;
+let itemRows: Record<string, unknown>[] = [];
 vi.mock('@/lib/sis/supplies/student-list', async (importActual) => {
   const actual =
     await importActual<typeof import('@/lib/sis/supplies/student-list')>();
   return {
     ...actual,
     loadStudentSupplies: vi.fn(
-      (_s: unknown, args: { sectionId: string | null }) =>
-        Promise.resolve(args.sectionId ? list : { needsClass: true })
+      (
+        s: Parameters<typeof actual.loadStudentSupplies>[0],
+        args: Parameters<typeof actual.loadStudentSupplies>[1]
+      ) =>
+        realLoad
+          ? actual.loadStudentSupplies(s, args)
+          : Promise.resolve(args.sectionId ? list : { needsClass: true })
     ),
   };
 });
+vi.mock('@/lib/sis/supplies/tracks', () => ({
+  resolveStudentTracks: vi.fn((_s: unknown, _ay: string, nums: string[]) =>
+    Promise.resolve(new Map(nums.map((n) => [n, appTrack])))
+  ),
+}));
 vi.mock('@/lib/supabase/admissions', () => ({
   createAdmissionsClient: () => ({
     from: () => {
@@ -109,11 +125,32 @@ vi.mock('@/lib/supabase/service', () => ({
         changedIds = f[1] as string[];
         return q;
       };
+      // A read (no write started) chains on and resolves to the table's rows.
       q.select = () =>
+        rec.op
+          ? Promise.resolve({
+              data: changedIds.map((item_id) => ({ item_id })),
+              error: null,
+            })
+          : q;
+      q.or = () => q;
+      q.maybeSingle = () =>
         Promise.resolve({
-          data: changedIds.map((item_id) => ({ item_id })),
+          data:
+            table === 'academic_years'
+              ? { id: 'ay-1' }
+              : table === 'sections'
+                ? { level_id: 'level-p3', class_type: sectionClassType }
+                : null,
           error: null,
         });
+      q.then = (resolve: (r: unknown) => unknown) =>
+        Promise.resolve(
+          resolve({
+            data: table === 'supply_items' ? itemRows : [],
+            error: null,
+          })
+        );
       return q;
     },
   }),
@@ -151,6 +188,10 @@ beforeEach(() => {
   sectionId = 'section-1';
   writes.length = 0;
   audit.mockClear();
+  realLoad = false;
+  appTrack = null;
+  sectionClassType = null;
+  itemRows = [];
   list = {
     groups: [
       {
@@ -256,5 +297,70 @@ describe('supplies route — POST', () => {
     const res = await post({ ay: 'AY2027', itemIds: [ITEM_A], given: true });
     expect(res.status).toBe(422);
     expect(writes).toEqual([]);
+  });
+});
+
+describe('supplies route — the track comes from the application', () => {
+  const book = (id: string, class_type: string, subject: string) => ({
+    id,
+    kind: 'book',
+    level_id: 'level-p3',
+    class_type,
+    subject,
+    title: `${subject} P3`,
+    publisher: null,
+    isbn: null,
+    sort_order: 1,
+  });
+  const subjects = async () => {
+    const r = (await (await get()).json()) as StudentSupplies;
+    return 'needsClass' in r ? null : r.groups.map((g) => g.name);
+  };
+
+  beforeEach(() => {
+    realLoad = true;
+    itemRows = [
+      book(ITEM_A, 'Global', 'Mother Tongue'),
+      book(ITEM_B, 'Standard', 'Mathematics'),
+    ];
+  });
+
+  it('a Global application in a class with no track gets the Global books, and only those may be ticked', async () => {
+    appTrack = 'Global';
+    expect(await subjects()).toEqual(['Mother Tongue']);
+
+    const ok = await post({ ay: 'AY2027', itemIds: [ITEM_A], given: true });
+    expect(ok.status).toBe(200);
+    expect(writes[0]).toMatchObject({ op: 'upsert' });
+
+    writes.length = 0;
+    const refused = await post({
+      ay: 'AY2027',
+      itemIds: [ITEM_B],
+      given: true,
+    });
+    expect(refused.status).toBe(400);
+    expect((await refused.json()).itemIds).toEqual([ITEM_B]);
+    expect(writes).toEqual([]);
+  });
+
+  it('the application wins over the class’s own track', async () => {
+    appTrack = 'Standard';
+    sectionClassType = 'Global';
+    expect(await subjects()).toEqual(['Mathematics']);
+  });
+
+  it('an unresolved application falls back to the class, then Standard', async () => {
+    sectionClassType = 'Global';
+    expect(await subjects()).toEqual(['Mother Tongue']);
+
+    sectionClassType = null;
+    expect(await subjects()).toEqual(['Mathematics']);
+    const refused = await post({
+      ay: 'AY2027',
+      itemIds: [ITEM_A],
+      given: true,
+    });
+    expect(refused.status).toBe(400);
   });
 });

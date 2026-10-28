@@ -123,6 +123,49 @@ describe('buildLevelSupplies', () => {
     expect(find(r, 'p3-std-eng')).toBeUndefined();
   });
 
+  it('the application track wins over the class; unresolved falls back to it', () => {
+    // N1 sits in a class with no track but applied Global; G2 sits in a
+    // Global class but applied Standard; G1's application is unresolved.
+    const mixed: LevelStudent[] = [
+      { studentNumber: 'G1', classType: 'Global', applicationTrack: null },
+      {
+        studentNumber: 'G2',
+        classType: 'Global',
+        applicationTrack: 'Standard',
+      },
+      { studentNumber: 'S1', classType: 'Standard' },
+      { studentNumber: 'N1', classType: null, applicationTrack: 'Global' },
+    ];
+    const handovers = [
+      { item_id: 'p3-glb-eng', student_number: 'N1' },
+      { item_id: 'p3-glb-eng', student_number: 'G2' },
+    ];
+    const global = buildLevelSupplies({
+      levelId: P3,
+      track: 'Global',
+      items,
+      students: mixed,
+      handovers,
+    });
+    expect(global.students).toBe(2); // G1, N1
+    // G2's tick no longer counts: G2 is on the Standard list now.
+    expect(find(global, 'p3-glb-eng')).toMatchObject({
+      given: 1,
+      students: 2,
+      handedOver: 2,
+    });
+
+    const standard = buildLevelSupplies({
+      levelId: P3,
+      track: 'Standard',
+      items,
+      students: mixed,
+      handovers,
+    });
+    expect(standard.students).toBe(2); // G2, S1
+    expect(find(standard, 'p3-std-eng')).toMatchObject({ students: 2 });
+  });
+
   it('defaults to the first track when none or an unknown one is asked for', () => {
     expect(
       buildLevelSupplies({

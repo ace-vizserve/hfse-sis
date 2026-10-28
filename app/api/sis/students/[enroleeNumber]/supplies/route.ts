@@ -25,9 +25,10 @@ import { createServiceClient } from '@/lib/supabase/service';
 //   POST { ay, itemIds, given }              → tick (given) or untick each
 //                                              item, then the fresh list
 //
-// The list is the books for the student's current class (level + track) plus
-// the supplies for their level — lib/sis/supplies/student-list.ts. No class
-// yet → `{ needsClass: true }`.
+// The list is the books for the student's current class's level and their
+// track (the one their application names, else the class's) plus the
+// supplies for their level — lib/sis/supplies/student-list.ts. No class yet →
+// `{ needsClass: true }`.
 //
 // ⚠ TICKING NEVER TOUCHES THE STAGE. `suppliesStatus` is the stage card's to
 // set; this route writes `supply_handovers` and the audit log only.

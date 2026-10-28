@@ -3,10 +3,11 @@
 // have been given it.
 //
 // For an item, M = the students currently in that year's classes of the level
-// (not withdrawn) whose class the item fits, and N = those of them with a
-// handover row for it. "Fits" is the checklist's own rule, `itemFitsClass`
-// (a class with no track follows the Standard list), so a count and a
-// student's checklist can never disagree about who an item is for.
+// (not withdrawn) whose track the item fits, and N = those of them with a
+// handover row for it. "Fits" is the checklist's own rule, `itemFitsClass`,
+// on the checklist's own track, `trackOfStudent` (the application's track,
+// else the class's, else Standard), so a count and a student's checklist can
+// never disagree about who an item is for.
 //
 // `buildLevelSupplies` is the pure half (tested); `loadLevelSupplies` reads
 // the rows and hands them to it. Nothing here is cached: a tick on a
@@ -20,8 +21,9 @@ import {
   groupSupplyItems,
   itemFitsClass,
   metaOf,
-  trackOfClass,
+  trackOfStudent,
 } from '@/lib/sis/supplies/student-list';
+import { resolveStudentTracks } from '@/lib/sis/supplies/tracks';
 import type {
   SupplyClassType,
   SupplyItemRow,
@@ -32,7 +34,13 @@ import { fetchAllPages, fetchInChunks } from '@/lib/supabase/paginate';
 const TRACK_ORDER: SupplyClassType[] = ['Global', 'Standard'];
 
 /** A student in one of the level's classes. */
-export type LevelStudent = { studentNumber: string; classType: string | null };
+export type LevelStudent = {
+  studentNumber: string;
+  /** Their class's `class_type`. */
+  classType: string | null;
+  /** The track their application names; null/absent → the class's. */
+  applicationTrack?: SupplyClassType | null;
+};
 
 export type LevelSupplyItem = {
   id: string;
@@ -41,7 +49,7 @@ export type LevelSupplyItem = {
   meta: string | null;
   /** N — students on `students` with a handover row for this item. */
   given: number;
-  /** M — students in the level (and track) whose class this item fits. */
+  /** M — students in the level (and track) whose track this item fits. */
   students: number;
   /**
    * Every handover row for the item, whoever holds it (a withdrawn student
@@ -105,11 +113,19 @@ export function buildLevelSupplies(input: {
       ? (tracks.find((t) => t === input.track) ?? tracks[0])
       : null;
 
-  // One row per student, on the chosen track when there is one.
-  const byNumber = new Map<string, LevelStudent>();
-  for (const s of input.students) byNumber.set(s.studentNumber, s);
+  // One row per student, with the track their checklist uses — on the chosen
+  // track when there is one.
+  const byNumber = new Map<
+    string,
+    { studentNumber: string; track: SupplyClassType }
+  >();
+  for (const s of input.students)
+    byNumber.set(s.studentNumber, {
+      studentNumber: s.studentNumber,
+      track: trackOfStudent(s.applicationTrack, s.classType),
+    });
   const students = [...byNumber.values()].filter(
-    (s) => !track || trackOfClass(s.classType) === track
+    (s) => !track || s.track === track
   );
 
   // With a track, the items a class on it gets; without one, anything a class
@@ -129,7 +145,7 @@ export function buildLevelSupplies(input: {
 
   const groups = groupSupplyItems(fits, (item) => {
     const eligible = students.filter((s) =>
-      itemFitsClass(item, levelId, s.classType)
+      itemFitsClass(item, levelId, s.track)
     );
     const handed = given.get(item.id);
     return {
@@ -250,6 +266,16 @@ export async function loadLevelSupplies(
         classType: classTypeOf.get(e.section_id) ?? null,
       });
   }
+
+  // The tracks the students' applications name — one batched read for the
+  // level, not one per student.
+  const tracks = await resolveStudentTracks(
+    service,
+    args.ayCode,
+    students.map((s) => s.studentNumber)
+  );
+  for (const s of students)
+    s.applicationTrack = tracks.get(s.studentNumber) ?? null;
 
   return buildLevelSupplies({
     levelId: args.levelId,

@@ -1,15 +1,18 @@
 // A student's books & supplies list (migration 199).
 //
-// The list = the books for their class's level and track (a book with no
-// track fits both), plus the supplies for their level (a supply with no level
-// fits every level). The class is the student's current section in that AY;
-// without one there is no list — the card asks for a class instead.
+// The list = the books for their class's level and their track (a book with
+// no track fits both), plus the supplies for their level (a supply with no
+// level fits every level). The class is the student's current section in that
+// AY; without one there is no list — the card asks for a class instead. The
+// track is the one their application names (lib/sis/supplies/tracks.ts),
+// else the class's (`trackOfStudent`).
 //
 // `buildStudentSupplies` is the pure half (tested); `loadStudentSupplies`
 // reads the rows and hands them to it.
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { resolveStudentTracks } from '@/lib/sis/supplies/tracks';
 import type {
   StudentSupplies,
   StudentSupplyGroup,
@@ -31,7 +34,22 @@ export function trackOfClass(
   return classType === 'Global' ? 'Global' : 'Standard';
 }
 
-/** Does this item belong on the list of a class at `levelId` / `classType`? */
+/**
+ * A student's track: the one their application resolves to
+ * (`resolveStudentTracks`), else their class's (`trackOfClass`). Shared by the
+ * checklist and the Book list counts, so the two agree on who a book is for.
+ */
+export function trackOfStudent(
+  applicationTrack: SupplyClassType | null | undefined,
+  classType: string | null | undefined
+): SupplyClassType {
+  return applicationTrack ?? trackOfClass(classType);
+}
+
+/**
+ * Does this item belong on the list of a class at `levelId` / `classType`?
+ * `classType` is a track — a student's (`trackOfStudent`) or a section's.
+ */
 export function itemFitsClass(
   item: Pick<SupplyItemRow, 'kind' | 'level_id' | 'class_type'>,
   levelId: string,
@@ -98,15 +116,18 @@ export function groupSupplyItems<T>(
 
 export function buildStudentSupplies(input: {
   section: { levelId: string; classType: string | null } | null;
+  /** The track the application names; null/absent → the class's. */
+  applicationTrack?: SupplyClassType | null;
   items: SupplyItemRow[];
   handovers: SupplyHandoverRow[];
 }): StudentSupplies {
   const { section } = input;
   if (!section) return { needsClass: true };
 
+  const track = trackOfStudent(input.applicationTrack, section.classType);
   const given = new Map(input.handovers.map((h) => [h.item_id, h]));
   const fits = input.items.filter((i) =>
-    itemFitsClass(i, section.levelId, section.classType)
+    itemFitsClass(i, section.levelId, track)
   );
 
   const groups: StudentSupplyGroup[] = groupSupplyItems(fits, (item) => {
@@ -137,7 +158,7 @@ export async function loadStudentSupplies(
 ): Promise<StudentSupplies> {
   if (!args.sectionId) return { needsClass: true };
 
-  const [ayRes, sectionRes] = await Promise.all([
+  const [ayRes, sectionRes, tracks] = await Promise.all([
     service
       .from('academic_years')
       .select('id')
@@ -148,6 +169,7 @@ export async function loadStudentSupplies(
       .select('level_id, class_type')
       .eq('id', args.sectionId)
       .maybeSingle(),
+    resolveStudentTracks(service, args.ayCode, [args.studentNumber]),
   ]);
   if (ayRes.error)
     throw new Error(`Academic year lookup failed: ${ayRes.error.message}`);
@@ -188,6 +210,7 @@ export async function loadStudentSupplies(
 
   return buildStudentSupplies({
     section: { levelId: section.level_id, classType: section.class_type },
+    applicationTrack: tracks.get(args.studentNumber),
     items,
     handovers,
   });

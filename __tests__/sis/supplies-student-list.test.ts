@@ -130,6 +130,60 @@ describe('buildStudentSupplies', () => {
     );
   });
 
+  it('the application track wins over the class', () => {
+    const asGlobal = ids(
+      buildStudentSupplies({
+        section: { levelId: P3, classType: 'Global' },
+        items,
+        handovers: [],
+      })
+    );
+    // A class with no class_type, or the other track, still gets the Global
+    // books when the application says Global.
+    for (const classType of [null, 'Standard']) {
+      expect(
+        ids(
+          buildStudentSupplies({
+            section: { levelId: P3, classType },
+            applicationTrack: 'Global',
+            items,
+            handovers: [],
+          })
+        )
+      ).toEqual(asGlobal);
+    }
+  });
+
+  it('an unresolved application falls back to the class, then Standard', () => {
+    const list = (classType: string | null) =>
+      ids(
+        buildStudentSupplies({
+          section: { levelId: P3, classType },
+          applicationTrack: null,
+          items,
+          handovers: [],
+        })
+      );
+    expect(list('Global')).toEqual(
+      ids(
+        buildStudentSupplies({
+          section: { levelId: P3, classType: 'Global' },
+          items,
+          handovers: [],
+        })
+      )
+    );
+    expect(list(null)).toEqual(
+      ids(
+        buildStudentSupplies({
+          section: { levelId: P3, classType: 'Standard' },
+          items,
+          handovers: [],
+        })
+      )
+    );
+  });
+
   it('a book with no track fits both tracks of its level only', () => {
     const r = buildStudentSupplies({
       section: { levelId: S1, classType: 'Global' },
