@@ -15,7 +15,8 @@ import type { RosterLookupEntry } from '../../lib/sis/backfill/grading/build-gra
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 1;
-const DIR = 'AY2026/T1/Term 1 Grades/Lower Secondary Global Grading Sheets';
+const DIR =
+  'files/AY2026/T1/Term 1 Grades/Lower Secondary Global Grading Sheets';
 
 // Explicit file list — never a directory glob. "Copy of Mathematics
 // Grading Sheet..." is a corrupted duplicate (broken #REF! student names,

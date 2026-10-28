@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync } from 'node:fs';
 import { parseMasterfileGrades } from '@/lib/sis/backfill/grades/masterfile-grades';
 
-const PRIMARY = 'AY2025 Final Report Book_Primary.xlsx';
+const PRIMARY = 'files/AY2025/AY2025 Final Report Book_Primary.xlsx';
 const d = existsSync(PRIMARY) ? describe : describe.skip; // fixture is local/gitignored
 
 d('parseMasterfileGrades (primary)', () => {

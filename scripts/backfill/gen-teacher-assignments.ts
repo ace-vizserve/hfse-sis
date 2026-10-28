@@ -51,7 +51,7 @@ import { createServiceClient } from '../../lib/supabase/service';
 import { listAllAuthUsers } from '../../lib/supabase/paginate';
 
 const WORKBOOK_PATH =
-  'Teachers Deployment_Updated 29 Jun 26_Teacherscopy (1).xlsx';
+  'files/school-lists/Teachers Deployment_Updated 29 Jun 26_Teacherscopy (1).xlsx';
 const AY_CODE = 'AY2026';
 const OUT_PREVIEW = 'scripts/backfill/teacher-assignments-preview.sql';
 const OUT_APPLY = 'scripts/backfill/teacher-assignments-apply.sql';

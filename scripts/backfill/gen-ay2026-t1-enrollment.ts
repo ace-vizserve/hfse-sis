@@ -16,7 +16,7 @@ const AY_CODE = 'AY2026';
 const TERM_NUMBER = 1;
 const TERM_START = '2026-01-08';
 const TERM_END = '2026-03-13';
-const WORKBOOK_PATH = 'AY2026/T1/T1 Attendance Jan-Mar (1).xlsx';
+const WORKBOOK_PATH = 'files/AY2026/T1/T1 Attendance Jan-Mar (1).xlsx';
 const NON_CANDIDATE_STATUSES = new Set(['Cancelled', 'Withdrawn']);
 
 async function main() {

@@ -14,7 +14,7 @@ import type { RosterLookupEntry } from '../../lib/sis/backfill/evaluation/build-
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
-const SOURCE_FILE = 'AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx';
+const SOURCE_FILE = 'files/AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx';
 
 async function main() {
   const svc = createServiceClient();

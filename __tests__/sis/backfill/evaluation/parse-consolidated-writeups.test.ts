@@ -5,7 +5,7 @@ import {
   parseConsolidatedWriteups,
 } from '@/lib/sis/backfill/evaluation/parse-consolidated-writeups';
 
-const REAL_FILE = 'AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx';
+const REAL_FILE = 'files/AY2026/T2/Term 2 CONSOLIDATED FORM.xlsx';
 
 // The AY2026/ source folder holds real student PII and is gitignored — it
 // exists locally but not in CI. Skip (not fail) the real-fixture suite

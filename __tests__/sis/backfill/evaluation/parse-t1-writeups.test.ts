@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { parseT1Writeups } from '@/lib/sis/backfill/evaluation/parse-t1-writeups';
 
 const REAL_FILE =
-  'AY2026/T1/Term 1 Grades/AY2026 T1 Student Evaluation_Subject Checklists.xlsx';
+  'files/AY2026/T1/Term 1 Grades/AY2026 T1 Student Evaluation_Subject Checklists.xlsx';
 
 // The AY2026/ source folder holds real student PII and is gitignored — it
 // exists locally but not in CI. Skip (not fail) this suite when it's absent,

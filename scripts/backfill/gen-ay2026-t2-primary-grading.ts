@@ -20,7 +20,7 @@ import type {
 
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
-const DIR = 'AY2026/T2/Term 2 Grades/GRADES';
+const DIR = 'files/AY2026/T2/Term 2 Grades/GRADES';
 
 // Explicit file list — never a directory glob. "Copy of English..." and
 // "Copy of Science..." are corrupted duplicates (literal #REF! in the

@@ -33,7 +33,7 @@ import { parseWorkbookT3 } from '../../lib/sis/backfill/attendance/attendance-wo
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 3;
 const YEAR = 2026;
-const WORKBOOK = 'AY2026 Term 3 Attendance Latest.xlsx';
+const WORKBOOK = 'files/AY2026/AY2026 Term 3 Attendance Latest.xlsx';
 const APPLY = process.argv.includes('--apply');
 
 const STUDENT_NUMBER = 'H170072';

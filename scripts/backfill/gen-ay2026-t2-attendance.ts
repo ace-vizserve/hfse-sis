@@ -17,7 +17,7 @@ import type { RosterLookupEntry } from '../../lib/sis/backfill/attendance/build-
 const AY_CODE = 'AY2026';
 const TERM_NUMBER = 2;
 const YEAR = 2026;
-const WORKBOOK_PATH = 'AY2026/T2/T2 Attendance Mar-May (1).xlsx';
+const WORKBOOK_PATH = 'files/AY2026/T2/T2 Attendance Mar-May (1).xlsx';
 
 async function main() {
   const svc = createServiceClient();

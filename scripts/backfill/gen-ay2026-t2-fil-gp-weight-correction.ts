@@ -40,9 +40,9 @@ const CORRECT_PT_WEIGHT = 0.5;
 const CORRECT_QA_WEIGHT = 0.2;
 
 const FIL_FILE =
-  'AY2026/T2/Term 2 Grades/GRADES/Filipino Grading AY2026 T2.xlsx';
+  'files/AY2026/T2/Term 2 Grades/GRADES/Filipino Grading AY2026 T2.xlsx';
 const GP_FILE =
-  'AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets/Global Perspectives Grading Sheet Global Class AY2026 T2.xlsx';
+  'files/AY2026/T2/Term 2 Grades/Lower Secondary Global Grading Sheets/Global Perspectives Grading Sheet Global Class AY2026 T2.xlsx';
 
 function toFixed6(n: number | null): string {
   return n == null ? 'null' : n.toFixed(6);

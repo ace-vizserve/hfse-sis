@@ -56,7 +56,7 @@ import {
 import { createServiceClient } from '../../lib/supabase/service';
 
 const CSV =
-  'Student House Color Assignment - Student House Color Assignment.csv';
+  'files/house/Student House Color Assignment - Student House Color Assignment.csv';
 const AY = 'AY2026';
 const APPLY = process.argv.includes('--apply');
 

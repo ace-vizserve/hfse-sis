@@ -19,6 +19,8 @@ export const WORKBOOK_PATH = resolve(
   import.meta.dirname,
   '..',
   '..',
+  'files',
+  'school-lists',
   'Teachers Deployment_Updated 29 Jun 26_Teacherscopy.xlsx'
 );
 export const SHEET = 'Final Update_New';

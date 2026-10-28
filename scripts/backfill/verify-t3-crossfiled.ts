@@ -15,7 +15,7 @@ import { parseWorkbookT3 } from '../../lib/sis/backfill/attendance/attendance-wo
 import { deriveSectionIdentity } from '../../lib/sis/backfill/enrollment/section-identity';
 
 const AY_CODE = 'AY2026';
-const OLD = 'AY2026/T3/AY2026 Term 3 Attendance (1).xlsx';
+const OLD = 'files/AY2026/T3/AY2026 Term 3 Attendance (1).xlsx';
 
 const MONTHS: Record<string, string> = {
   Jan: '01',
