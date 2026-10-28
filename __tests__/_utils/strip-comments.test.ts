@@ -122,7 +122,7 @@ describe('assertScannableFiles', () => {
     expect(message).toContain('double');
   });
 
-  it('⚠ catches the six REAL files in this repo that desync today', () => {
+  it('⚠ catches the five REAL files in this repo that desync today', () => {
     // Not a synthetic fixture: these are live source files, and this is the
     // demonstration that the check catches the class in practice rather than
     // only in a hand-built example. None of them sits in any guard's scan set
@@ -148,7 +148,6 @@ describe('assertScannableFiles', () => {
     const known = [
       // regex-literal class
       'lib/csv.ts',
-      'lib/markbook/masterfile-export.ts',
       'lib/markbook/academic-overview-export.ts',
       'lib/notifications/email-frame.ts',
       // JSX-apostrophe class

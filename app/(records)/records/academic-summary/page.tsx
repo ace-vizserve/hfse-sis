@@ -153,7 +153,20 @@ export default async function AcademicSummaryPage({
               levels. Pick a level to open its full masterfile.
             </p>
           </div>
-          <OverviewExportMenu ayCode={scope.ayCode} />
+          <OverviewExportMenu
+            ayCode={scope.ayCode}
+            // A class picked without a level still belongs to one level.
+            levelId={
+              overview.filters.levelId ??
+              overview.filterOptions.sections.find(
+                (s) => s.id === overview.filters.sectionId
+              )?.levelId ??
+              null
+            }
+            sectionId={overview.filters.sectionId}
+            subjectId={overview.filters.subjectId}
+            termNumber={overview.filters.termNumber}
+          />
         </header>
 
         <OverviewFilterBar
