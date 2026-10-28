@@ -1,6 +1,6 @@
 // scripts/backfill/import-ay2027-book-list.ts
 // Loads AY2027's books and supplies into the tracker (migration 199) from the
-// school's book list workbook, `AY2027 Book List_v02.xlsx` at the repo root.
+// school's book list workbook, `files/AY2027/AY2027 Book List_v02.xlsx`.
 //
 // Reading the workbook is lib/sis/supplies/parse-book-list.ts — which sheets,
 // which columns, which rows are dropped. This script only resolves level codes
@@ -24,7 +24,7 @@ import { parseBookList } from '../../lib/sis/supplies/parse-book-list';
 import type { ParsedSupplyItem } from '../../lib/sis/supplies/types';
 import { createServiceClient } from '../../lib/supabase/service';
 
-const WORKBOOK = 'AY2027 Book List_v02.xlsx';
+const WORKBOOK = 'files/AY2027/AY2027 Book List_v02.xlsx';
 const AY = 'AY2027';
 const APPLY = process.argv.slice(2).includes('--apply');
 
