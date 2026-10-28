@@ -19,12 +19,21 @@ gates, no question rounds.
   - Supplies: sheet `Other Materials List`, column A Item. Every supply is for
     every level, except names starting `YS` (`YS Kit`, `YS Blue Booklet A5`, …)
     → Youngstarters (level code `YS`) only.
-- **A student's list** = the books for their class's level + the class's
-  `sections.class_type` (a book with class_type null fits both), plus the
+- **A student's list** = the books for their class's level + their track (a
+  book with class_type null fits both — see **Track source** below), plus the
   supplies for their level. The class is the student's current section in that
   AY (`currentSectionId` already on the application page). **No class yet** →
   the card says "Assign a class to see this student's books and supplies." and
   shows nothing else.
+- **Track source** (changed 2026-10-28, Mr Ace "do #2"; most production
+  sections have `class_type` blank, so Global books never showed). A
+  student's track = the `track` of that AY's `admission_options` row whose
+  `level_label` / `class_type_label` equal the application's `levelApplied` /
+  `classType` (schedule ignored; rows disagreeing on the track → unresolved).
+  Unresolved → the section's `class_type` → else Standard. One batched helper,
+  `resolveStudentTracks` in `lib/sis/supplies/tracks.ts`, feeds both the
+  checklist (+ the tick allow-list) and the Book list counts. The level still
+  comes from the class.
 - **Stage status is untouched.** Ticking never changes `suppliesStatus`; the
   card's badge shows the stage's own status (Pending / Claimed / Cancelled).
 - **Who can tick** = whoever can edit the student record

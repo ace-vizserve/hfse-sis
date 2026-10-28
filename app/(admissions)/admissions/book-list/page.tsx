@@ -86,8 +86,10 @@ export default async function BookListPage({
       })
     : null;
 
+  // A student's track is the one their application names, not their class's
+  // (lib/sis/supplies/tracks.ts), so a track view counts students, not classes.
   const classesLabel = list?.track
-    ? `${level.label} ${list.track} classes`
+    ? `${level.label} on the ${list.track} track`
     : `${level?.label} classes`;
 
   const hrefFor = (type: string) => {
