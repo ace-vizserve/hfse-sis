@@ -11,35 +11,34 @@ import type {
 } from '@/lib/markbook/masterfile';
 import { toPlainText } from '@/lib/rich-text';
 
-// HFSE Masterfile → the school's AY2026 Consolidated File (KD #95).
+// HFSE Masterfile → the school's CONSOLIDATED FORM (KD #95).
 //
-// The export is a COPY of the file the registrar keeps this year,
-// "AY2026 Consolidated File Primary|Secondary Grades Term N.xlsx" (Mr Ace,
-// 2026-10-28: "just copy the template they have"). Only the layout is copied;
-// every value is the SIS's own computed payload:
+// A COPY of the registrar's own "Term 2 CONSOLIDATED FORM.xlsx"
+// (AY2026/T2/ in the repo; Mr Ace, 2026-10-28: "everything must be a clear
+// copy of their template"). Only the values are the SIS's; the layout, words,
+// colours, fonts, widths and merges are the school's:
 //
-//   One tab per class ("Primary 1 Patience", "Sec 1 Discipline 1").
-//   Rows 1–5  HFSE INTERNATIONAL SCHOOL · CONSOLIDATED FORM · PRIMARY ONE
-//             PATIENCE · AY 2026 - Term Two · Teacher: <form adviser>
-//   Row 6  per subject: T1 T2 T3 T4 Overall Award (letter subjects: T1–T4)
-//   Row 7  No · Name · the subject's name over its columns
-//   Rows 8+ one per student, No counting 1, 2, 3… within the tab
-// After the subjects: each term's attendance (School Days · Present · Late)
-// and the teacher's evaluation comments, T1–T4.
+//   ONE TERM per file, ONE TAB per class ("P1-Patience", "S1-Discipline 1").
+//   A1:O1…A5:O5  " HFSE INTERNATIONAL SCHOOL" · CONSOLIDATED FORM ·
+//                PRIMARY ONE PATIENCE · AY 2026 - Term Two · Teacher: <adviser>
+//   Row 6        a 1.5pt spacer
+//   Rows 7–8     Index Number · NAME · one column per subject (merged down) ·
+//                Attendance over Number of School Days / Days Late / Days
+//                Present · Remarks · Notes/Comment · Student(s) Evaluation
+//   Rows 9+      one per student: index number, name, that term's grade per
+//                subject (letters for STAR / CA / PE), that term's
+//                attendance, Remarks + Notes left for the checker (Remarks
+//                has the school's dropdown), that term's evaluation write-up
+//   Footer       a blank row, "Aligned with DepEd Order No. 8, s. 2015", and
+//                the school's empty notes box below it
 //
-// Subjects run English, Math, Science, then the class's other examinable
-// subjects (MT = whichever of Filipino / Mandarin the student takes), then —
-// Secondary only — the "Academic" Overall · Award (the General Average and the
-// Overall Academic Award), then the letter subjects (STAR / CA / PE). A tab
-// carries only the subjects its students are graded in, which is why Sec 1D1
-// and 1D2 have different columns, as in the school's file. Each column block
-// keeps the school's colour for its position.
+// Subjects sit in columns C–J. Primary takes five (English, Math, Mother
+// Tongue, Science, STAR) and keeps H–J as the school does — hidden — so the
+// attendance block lands in K–M on every tab. Secondary fills all eight.
 //
-// The page's filters narrow the file: grade level and class pick the tabs,
-// subject picks the columns, term fills the terms up to that one (the school's
-// "Grades Term 2" file holds T1–T2), status picks the students.
-//
-// The CSV is the same grid without the colours, tabs one after another.
+// The page's filters narrow it: grade level and class pick the tabs, subject
+// the subject columns, term which term the file is (default: the latest term
+// with grades), status the students. The CSV is the same rows, no styling.
 
 export type ConsolidatedFilters = {
   subjectId?: string | null;
@@ -47,69 +46,64 @@ export type ConsolidatedFilters = {
   status?: 'active' | 'late_enrollee' | 'withdrawn' | null;
 };
 
-type Kind = 'exam' | 'academic' | 'letter' | 'attendance' | 'comments';
-
-/**
- * One column block on a tab: a subject (or MT pair), the Academic GA, one
- * term's attendance, or the teacher's comments.
- */
-type Block = {
-  kind: Kind;
+/** A subject column: its header words, fill, and the SIS subjects behind it. */
+type SubjectCol = {
   label: string;
-  /** The SIS subjects that fill it — two for MT, none for the others. */
-  subjectIds: string[];
-  /** Attendance only: which term. */
-  termNumber?: number;
   fill: string;
+  letter: boolean;
+  subjectIds: string[];
 };
 
 type Tab = {
   name: string;
-  /** The school's title block above the table, one line per row. */
+  secondary: boolean;
   title: string[];
-  blocks: Block[];
+  cols: SubjectCol[];
   rows: (string | number | null)[][];
 };
 
-/** Rows above the table: the five-line title, then the two header rows. */
-const TITLE_ROWS = 5;
+// Each subject in the school's words and header colour, in the school's
+// column order. Spreadsheet colours, not UI tokens — Hard Rule #7 covers
+// app/ and components/.
+type SubjectSpec = { codes: string[]; label: string; fill: string };
 
-const TERMS = [1, 2, 3, 4];
+// Mandarin and Filipino share the form's ONE Mother Tongue column; its
+// header names the language — "Mother Tongue (Mandarin)" — when the class
+// takes just one.
+const MT_CODES = ['MANDARIN', 'FIL'];
+const MT_NAMES: Record<string, string> = {
+  MANDARIN: 'Mandarin',
+  FIL: 'Filipino',
+};
 
-// The school file's short names, and its order within each kind.
-const EXAM_ORDER: [string[], string][] = [
-  [['ENG'], 'English'],
-  [['MATH'], 'Math'],
-  [['SCI'], 'Science'],
-  [['FIL', 'MANDARIN', 'MT'], 'MT'],
-  [['GP'], 'Global Perspectives'],
-  [['HIST'], 'History'],
-  [['HUM'], 'Humanities'],
-  [['SS'], 'Social Studies'],
-  [['LIT'], 'Lit'],
-  [['COMP'], 'Computing'],
-];
-const LETTER_ORDER: [string[], string][] = [
-  [['STAR'], 'STAR'],
-  [['CA'], 'CA'],
-  [['ARTD'], 'Arts & Design'],
-  [['PESTD', 'PEH', 'PE'], 'PE'],
+const PRIMARY_SUBJECTS: SubjectSpec[] = [
+  { codes: ['ENG'], label: 'English', fill: 'FF6AA84F' },
+  { codes: ['MATH'], label: 'Math', fill: 'FFFBBC04' },
+  { codes: MT_CODES, label: 'Mother Tongue', fill: 'FFA70D8C' },
+  { codes: ['SCI'], label: 'Science', fill: 'FFFFF2CC' },
+  { codes: ['STAR'], label: 'STAR', fill: 'FFC9DAF8' },
 ];
 
-// The school file's colours, by position: examinable blocks, the Academic
-// block, letter blocks. Spreadsheet colours, not UI tokens — Hard Rule #7
-// covers app/ and components/.
-const EXAM_FILLS = [
-  'FF00FF99',
-  'FFFFC000',
-  'FFFFFFCC',
-  'FFD76DCC',
-  'FFF1CEEE',
-  'FFFAE2D5',
+const SECONDARY_SUBJECTS: SubjectSpec[] = [
+  { codes: ['ENG'], label: 'English', fill: 'FFFFFF00' },
+  { codes: ['MATH'], label: 'Math', fill: 'FF00FFFF' },
+  { codes: ['SCI'], label: 'Science', fill: 'FF9FC5E8' },
+  { codes: MT_CODES, label: 'Mother Tongue', fill: 'FFFF0000' },
+  { codes: ['HUM'], label: 'Humanities', fill: 'FF1155CC' },
+  { codes: ['SS'], label: 'Social Studies', fill: 'FF4A86E8' },
+  { codes: ['GP'], label: 'Global Perspectives', fill: 'FFEAD1DC' },
+  { codes: ['HIST'], label: 'History', fill: 'FF1155CC' },
+  { codes: ['LIT'], label: 'Literature', fill: 'FFEAD1DC' },
+  { codes: ['COMP'], label: 'Computing', fill: 'FFFF0000' },
+  { codes: ['CA'], label: 'Contemporary Art', fill: 'FFB6D7A8' },
+  { codes: ['ARTD'], label: 'Art & Design', fill: 'FFB6D7A8' },
+  { codes: ['PESTD'], label: 'Physical Education', fill: 'FFB6D7A8' },
+  { codes: ['PEH'], label: 'PE & Health', fill: 'FFB6D7A8' },
 ];
-const ACADEMIC_FILL = 'FFD9F2D0';
-const LETTER_FILLS = ['FFCAEDFB', 'FFFFFF00'];
-const NAME_HEADER_FILL = 'FFE8E8E8';
+
+/** Columns C–J: eight subject columns, the unused ones hidden. */
+const SUBJECT_SLOTS = 8;
+const SPARE_FILL = 'FFE69138';
 
 const NUMBER_WORDS = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six'];
 
@@ -121,14 +115,7 @@ function levelTitle(level: MasterfilePayload['level']): string {
   return `${school} ${NUMBER_WORDS[Number(m[2])].toUpperCase()}`;
 }
 
-/** "P1" → "Primary 1", "S2" → "Sec 2"; anything else → its label. */
-function levelTabPrefix(level: MasterfilePayload['level']): string {
-  const m = /^([PS])(\d)$/i.exec(level.code);
-  if (!m) return level.label;
-  return `${m[1].toUpperCase() === 'S' ? 'Sec' : 'Primary'} ${m[2]}`;
-}
-
-/** "Primary" | "Secondary" — the division word in the school's file name. */
+/** "Primary" | "Secondary" — the division word in a file name. */
 export function divisionName(level: MasterfilePayload['level']): string {
   return /^S/i.test(level.code) ? 'Secondary' : 'Primary';
 }
@@ -181,13 +168,13 @@ function graded(sr: MasterfileSubjectRow | undefined): boolean {
   );
 }
 
-/** The column blocks of one class, from what its students are graded in. */
-function blocksFor(
+/** The subject columns of one class, from what its students are graded in. */
+function columnsFor(
   subjects: MasterfileSubject[],
   rows: MasterfileStudentRow[],
-  isSecondary: boolean,
+  secondary: boolean,
   filters: ConsolidatedFilters
-): Block[] {
+): SubjectCol[] {
   const taken = subjects.filter(
     (s) =>
       (!filters.subjectId || s.id === filters.subjectId) &&
@@ -195,340 +182,341 @@ function blocksFor(
         graded(r.subjectRows.find((sr) => sr.subjectId === s.id))
       )
   );
-  const build = (kind: 'exam' | 'letter', order: [string[], string][]) => {
-    const pool = taken.filter((s) => s.isExaminable === (kind === 'exam'));
-    const out: Omit<Block, 'fill'>[] = [];
-    for (const [codes, label] of order) {
-      const hit = pool.filter((s) => codes.includes(s.code.toUpperCase()));
-      if (hit.length)
-        out.push({ kind, label, subjectIds: hit.map((s) => s.id) });
-    }
-    // Anything the school's file does not name keeps its own name, after.
-    for (const s of pool)
-      if (!order.some(([codes]) => codes.includes(s.code.toUpperCase())))
-        out.push({ kind, label: s.name, subjectIds: [s.id] });
-    return out;
-  };
-  const exam = build('exam', EXAM_ORDER).map((b, i) => ({
-    ...b,
-    fill: EXAM_FILLS[i % EXAM_FILLS.length],
-  }));
-  const letter = build('letter', LETTER_ORDER).map((b, i) => ({
-    ...b,
-    fill: LETTER_FILLS[i % LETTER_FILLS.length],
-  }));
-  const academic: Block[] =
-    isSecondary && !filters.subjectId
-      ? [
-          {
-            kind: 'academic',
-            label: 'Academic',
-            subjectIds: [],
-            fill: ACADEMIC_FILL,
-          },
-        ]
-      : [];
-  // Attendance per term, then the teacher's (evaluation) comments — on every
-  // tab, whatever the subject filter, since they are not subjects.
-  const attendance: Block[] = TERMS.map((n) => ({
-    kind: 'attendance',
-    label: `Attendance T${n}`,
-    subjectIds: [],
-    termNumber: n,
-    fill: NAME_HEADER_FILL,
-  }));
-  const comments: Block = {
-    kind: 'comments',
-    label: "Teacher's Comments",
-    subjectIds: [],
-    fill: NAME_HEADER_FILL,
-  };
-  return [...exam, ...academic, ...letter, ...attendance, comments];
+  const specs = secondary ? SECONDARY_SUBJECTS : PRIMARY_SUBJECTS;
+  const cols: SubjectCol[] = [];
+  for (const spec of specs) {
+    const hit = taken.filter((s) => spec.codes.includes(s.code.toUpperCase()));
+    if (hit.length)
+      cols.push({
+        label:
+          spec.codes === MT_CODES && hit.length === 1
+            ? `${spec.label} (${MT_NAMES[hit[0].code.toUpperCase()]})`
+            : spec.label,
+        fill: spec.fill,
+        letter: !hit[0].isExaminable,
+        subjectIds: hit.map((s) => s.id),
+      });
+  }
+  // A subject the school's form does not name keeps its own name, after.
+  for (const s of taken)
+    if (!specs.some((spec) => spec.codes.includes(s.code.toUpperCase())))
+      cols.push({
+        label: s.name,
+        fill: 'FFD9D9D9',
+        letter: !s.isExaminable,
+        subjectIds: [s.id],
+      });
+  // The school's order: examinable subjects, then the letter-graded ones.
+  return [...cols.filter((c) => !c.letter), ...cols.filter((c) => c.letter)];
 }
 
-function blockWidth(b: Block): number {
-  if (b.kind === 'exam') return 6;
-  if (b.kind === 'academic') return 2;
-  if (b.kind === 'attendance') return 3;
-  return 4;
-}
-
-/** One student's cells across a tab's blocks. */
-function studentCells(
-  row: MasterfileStudentRow,
-  blocks: Block[],
-  lastTerm: number,
-  terms: MasterfilePayload['terms']
-): (string | number | null)[] {
-  const out: (string | number | null)[] = [];
-  for (const b of blocks) {
-    if (b.kind === 'attendance') {
-      const termId = terms.find((t) => t.termNumber === b.termNumber)?.id;
-      const att =
-        (b.termNumber ?? 0) > lastTerm
-          ? undefined
-          : row.attendanceByTerm.find((a) => a.termId === termId);
-      // `?? null` not `|| null` — a real 0 must print as 0.
-      out.push(
-        att?.schoolDays ?? null,
-        att?.present ?? null,
-        att?.late ?? null
-      );
-      continue;
-    }
-    if (b.kind === 'comments') {
-      for (const n of TERMS) {
-        const c = row.commentsByTerm?.find((x) => x.termNumber === n);
-        // The write-up is HTML; a cell shows it as text.
-        out.push(n > lastTerm || !c ? null : toPlainText(c.text) || null);
-      }
-      continue;
-    }
-    if (b.kind === 'academic') {
-      out.push(
-        row.generalAverage != null
-          ? Number(row.generalAverage.toFixed(2))
-          : null,
-        // No average yet → no award, as in the school's file (never "Not
-        // eligible" for a year still being graded).
-        row.generalAverage != null ? (row.overallAward ?? null) : null
-      );
-      continue;
-    }
-    // MT: whichever of the pair this student is graded in.
-    const srs = b.subjectIds
-      .map((id) => row.subjectRows.find((sr) => sr.subjectId === id))
-      .filter((sr): sr is MasterfileSubjectRow => !!sr);
-    const sr = srs.find(graded) ?? srs[0];
-    for (const n of TERMS) {
-      const cell = sr?.cells[n - 1];
-      if (!cell || n > lastTerm) out.push(null);
-      else if (b.kind === 'letter') out.push(termLetter(cell));
-      else if (cell.isNa) out.push('N.A.');
-      else out.push(cell.quarterly);
-    }
-    if (b.kind === 'exam') {
-      const overall = lastTerm >= 4 ? (sr?.overall ?? null) : null;
-      out.push(
-        overall != null ? Number(overall.toFixed(2)) : null,
-        overall != null ? (sr?.award ?? null) : null
-      );
+/** Every term with a grade, attendance or write-up in these classes. */
+function recordedTerms(payloads: MasterfilePayload[]): number[] {
+  const seen = new Set<number>();
+  for (const p of payloads) {
+    const termNo = new Map(p.terms.map((t) => [t.id, t.termNumber]));
+    for (const r of p.rows) {
+      for (const sr of r.subjectRows)
+        sr.cells.forEach((c, i) => {
+          if (c.quarterly != null || c.letter != null) seen.add(i + 1);
+        });
+      for (const a of r.attendanceByTerm)
+        if (a.schoolDays != null) seen.add(termNo.get(a.termId) ?? 0);
+      for (const c of r.commentsByTerm ?? []) seen.add(c.termNumber);
     }
   }
-  return out;
+  const terms = [1, 2, 3, 4].filter((n) => seen.has(n));
+  return terms.length ? terms : [1];
 }
 
-/** The class tabs, in level order then class order. */
 function buildTabs(
   payloads: MasterfilePayload[],
   filters: ConsolidatedFilters
-): Tab[] {
-  const lastTerm = filters.termNumber ?? 4;
+): { terms: number[]; tabs: Tab[] } {
+  // A term picked in the filter → that term's form. "All terms" → every
+  // term with anything recorded, one form each, in term order.
+  const terms = filters.termNumber
+    ? [filters.termNumber]
+    : recordedTerms(payloads);
   const taken = new Set<string>();
   const tabs: Tab[] = [];
-  for (const p of payloads) {
-    const isSecondary = /^S/i.test(p.level.code);
-    for (const section of p.sections) {
-      if (!p.selectedSectionIds.includes(section.id)) continue;
-      const rows = p.rows.filter(
-        (r) =>
-          r.sectionId === section.id &&
-          (!filters.status || r.enrollmentStatus === filters.status)
-      );
-      if (rows.length === 0) continue;
-      const blocks = blocksFor(p.subjects, rows, isSecondary, filters);
-      // The term in the title: the filter's, else the latest term graded.
-      const shownTerm =
-        filters.termNumber ??
-        Math.max(
-          1,
-          ...rows.flatMap((r) =>
-            r.subjectRows.flatMap((sr) =>
-              sr.cells
-                .map((c, i) =>
-                  c.quarterly != null || c.letter != null ? i + 1 : 0
-                )
-                .filter(Boolean)
-            )
-          )
+  for (const term of terms)
+    for (const p of payloads) {
+      const secondary = /^S/i.test(p.level.code);
+      const termId = p.terms.find((t) => t.termNumber === term)?.id;
+      for (const section of p.sections) {
+        if (!p.selectedSectionIds.includes(section.id)) continue;
+        const rows = p.rows.filter(
+          (r) =>
+            r.sectionId === section.id &&
+            (!filters.status || r.enrollmentStatus === filters.status)
         );
-      const teacher = rows.find((r) => r.formClassAdviser)?.formClassAdviser;
-      tabs.push({
-        name: tabName(`${levelTabPrefix(p.level)} ${section.name}`, taken),
-        title: [
-          'HFSE INTERNATIONAL SCHOOL',
-          'CONSOLIDATED FORM',
-          `${levelTitle(p.level)} ${section.name.toUpperCase()}`,
-          `AY ${p.ayCode.replace(/^AY/i, '')} - Term ${NUMBER_WORDS[shownTerm] ?? shownTerm}`,
-          `Teacher: ${teacher ?? ''}`,
-        ],
-        blocks,
-        rows: rows.map((r, i) => [
-          i + 1,
-          schoolName(r),
-          ...studentCells(r, blocks, lastTerm, p.terms),
-        ]),
-      });
+        if (rows.length === 0) continue;
+        const cols = columnsFor(p.subjects, rows, secondary, filters);
+        const teacher = rows.find((r) => r.formClassAdviser)?.formClassAdviser;
+        tabs.push({
+          name: tabName(
+            `${terms.length > 1 ? `T${term} ` : ''}${p.level.code}-${section.name}`,
+            taken
+          ),
+          secondary,
+          title: [
+            ' HFSE INTERNATIONAL SCHOOL',
+            'CONSOLIDATED FORM',
+            `${levelTitle(p.level)} ${section.name.toUpperCase()}`,
+            `AY ${p.ayCode.replace(/^AY/i, '')} - Term ${NUMBER_WORDS[term] ?? term}`,
+            `Teacher: ${teacher ?? ''}`,
+          ],
+          cols,
+          rows: rows.map((r, i) => {
+            const grades = cols.map((col) => {
+              // Mother Tongue etc.: whichever of the subjects this student takes.
+              const srs = col.subjectIds
+                .map((id) => r.subjectRows.find((sr) => sr.subjectId === id))
+                .filter((sr): sr is MasterfileSubjectRow => !!sr);
+              const cell = (srs.find(graded) ?? srs[0])?.cells[term - 1];
+              if (!cell) return null;
+              if (col.letter) return termLetter(cell);
+              return cell.isNa ? 'N.A.' : cell.quarterly;
+            });
+            const att = r.attendanceByTerm.find((a) => a.termId === termId);
+            const comment = r.commentsByTerm?.find(
+              (c) => c.termNumber === term
+            );
+            return [
+              r.indexNumber ?? i + 1,
+              schoolName(r),
+              ...grades,
+              // School Days · Days Late · Days Present — the form's order.
+              // `?? null` not `|| null`: a real 0 prints as 0.
+              att?.schoolDays ?? null,
+              att?.late ?? null,
+              att?.present ?? null,
+              null, // Remarks — the checker's dropdown
+              null, // Notes/Comment
+              comment ? toPlainText(comment.text) || null : null,
+            ];
+          }),
+        });
+      }
     }
-  }
-  return tabs;
-}
-
-/** Row 1 and row 2 of a tab, plus the merges on row 2. */
-function tabHeader(blocks: Block[]) {
-  const row1: (string | null)[] = [null, null];
-  const row2: (string | null)[] = ['No', 'Name'];
-  const merges: [number, number][] = []; // [firstCol, lastCol], 1-based
-  for (const b of blocks) {
-    const start = row1.length + 1;
-    if (b.kind === 'academic') {
-      row1.push('Overall', 'Award');
-      row2.push(b.label, null);
-      merges.push([start, start + 1]);
-      continue;
-    }
-    if (b.kind === 'attendance') {
-      row1.push('School Days', 'Present', 'Late');
-      row2.push(b.label, null, null);
-      merges.push([start, start + 2]);
-      continue;
-    }
-    row1.push('T1', 'T2', 'T3', 'T4');
-    row2.push(b.label, null, null, null);
-    merges.push([start, start + 3]);
-    if (b.kind === 'exam') {
-      row1.push('Overall', 'Award');
-      row2.push(b.label, null);
-      merges.push([start + 4, start + 5]);
-    }
-  }
-  return { row1, row2, merges };
+  return { terms, tabs };
 }
 
 /**
- * Builds the consolidated file as `.xlsx` (Node Buffer). Pass one level's
- * payload or every level of a division, in level order.
+ * Builds the CONSOLIDATED FORM as `.xlsx` (Node Buffer). Pass one level's
+ * payload or several (P1–S4), in level order.
  */
 export async function buildMasterfileWorkbook(
   input: MasterfilePayload | MasterfilePayload[],
   filters: ConsolidatedFilters = {}
 ): Promise<Buffer> {
-  const payloads = Array.isArray(input) ? input : [input];
-  const tabs = buildTabs(payloads, filters);
+  const { tabs } = buildTabs(Array.isArray(input) ? input : [input], filters);
   const wb = new ExcelJS.Workbook();
   if (tabs.length === 0) wb.addWorksheet('No students');
 
   for (const tab of tabs) {
     const ws = wb.addWorksheet(tab.name, {
-      properties: { tabColor: { argb: 'FFFFFF00' }, defaultColWidth: 12.63 },
-      views: [{ state: 'frozen', xSplit: 2, ySplit: 0 }],
+      properties: { tabColor: { argb: 'FF00FF00' } },
+      pageSetup: { paperSize: 9, orientation: 'landscape' },
     });
-    const { row1, row2, merges } = tabHeader(tab.blocks);
-    const totalCols = row2.length;
-    // The fill of each column, by its block.
-    const colFill: (string | null)[] = [null, null];
-    const colKind: (Kind | null)[] = [null, null];
-    for (const b of tab.blocks)
-      for (let i = 0; i < blockWidth(b); i++) {
-        colFill.push(b.fill);
-        colKind.push(b.kind);
-      }
+    // Subject columns fill C onward; Primary's spare slots stay, hidden.
+    const slots = Math.max(SUBJECT_SLOTS, tab.cols.length);
+    const first = 3; // C
+    const att = first + slots; // K on the school's form
+    const remarks = att + 3;
+    const notes = remarks + 1;
+    const evaluation = notes + 1;
+    const lastTitleCol = notes; // the title rows span A:O
 
-    ws.getColumn(1).width = 8.88;
-    ws.getColumn(2).width = 35.75;
-    for (let c = 3; c <= totalCols; c++)
-      ws.getColumn(c).width = colKind[c - 1] === 'comments' ? 45 : 8.88;
+    // Widths, as the school's form sets them.
+    ws.getColumn(1).width = 8.43;
+    ws.getColumn(2).width = tab.secondary ? 33.57 : 27.57;
+    for (let c = first; c < att + 3; c++) ws.getColumn(c).width = 10.14;
+    if (!tab.secondary) ws.getColumn(5).width = 11.71; // Mother Tongue
+    ws.getColumn(notes).width = tab.secondary ? 23.71 : 21.86;
+    ws.getColumn(evaluation).width = tab.secondary ? 45.71 : 40.86;
 
-    // The title block: school, form, class, year and term, teacher.
+    // Title block.
     tab.title.forEach((line, i) => {
+      ws.mergeCells(i + 1, 1, i + 1, lastTitleCol);
       const cell = ws.getCell(i + 1, 1);
       cell.value = line;
-      cell.font = { ...HEADER_FONT, size: i === 0 ? 12 : 10, bold: i < 3 };
+      cell.font = {
+        name: 'Arial',
+        size: i === 4 ? 11 : 16,
+        bold: true,
+        color: BLACK,
+      };
+      cell.alignment = { horizontal: 'center' };
     });
+    ws.getRow(6).height = 1.5;
+    ws.getRow(8).height = 73.5;
 
-    const H = TITLE_ROWS; // the table starts below the title
-    ws.getRow(H + 1).height = 14.25;
-    ws.getRow(H + 2).height = 26.25;
-
-    [row1, row2].forEach((values, r) => {
-      for (let c = 1; c <= totalCols; c++) {
-        const cell = ws.getCell(H + r + 1, c);
-        const v = values[c - 1];
-        if (v != null) cell.value = v;
-        if (r === 0 && c <= 2) continue; // empty above No / Name in the school file
-        cell.font = HEADER_FONT;
-        cell.fill = solid(c <= 2 ? NAME_HEADER_FILL : colFill[c - 1]!);
-        cell.border = BOX;
-        cell.alignment = {
-          horizontal: 'center',
-          vertical: 'middle',
-          wrapText: true,
-        };
-      }
+    // Header rows 7–8.
+    const head = (
+      c: number,
+      value: string | null,
+      fill: string,
+      color = BLACK
+    ) => {
+      const cell = ws.getCell(7, c);
+      cell.value = value;
+      cell.font = { name: 'Arial', size: 11, bold: true, color };
+      cell.fill = solid(fill);
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true,
+      };
+      cell.border = BOX;
+      ws.getCell(8, c).border = BOX;
+      ws.mergeCells(7, c, 8, c);
+    };
+    head(1, 'Index Number', 'FFFFFFFF', NAME_BLUE);
+    head(2, 'NAME', 'FFFFFFFF', NAME_BLUE);
+    for (let i = 0; i < slots; i++) {
+      const col = tab.cols[i];
+      head(first + i, col?.label ?? null, col?.fill ?? SPARE_FILL);
+      if (!col) ws.getColumn(first + i).hidden = true;
+    }
+    ws.mergeCells(7, att, 7, att + 2);
+    const attHead = ws.getCell(7, att);
+    attHead.value = 'Attendance';
+    attHead.font = { name: 'Arial', size: 11, bold: true, color: BLACK };
+    attHead.fill = solid(tab.secondary ? 'FFC9DAF8' : 'FF3D85C6');
+    attHead.alignment = {
+      horizontal: 'center',
+      vertical: 'middle',
+      wrapText: true,
+    };
+    attHead.border = BOX;
+    [
+      'Number of School Days ',
+      'Number of Days Late',
+      'Number of Days Present',
+    ].forEach((label, i) => {
+      const cell = ws.getCell(8, att + i);
+      cell.value = label;
+      cell.font = { name: 'Arial', size: 11, bold: true, color: BLACK };
+      cell.fill = solid(tab.secondary ? 'FFC9DAF8' : 'FFD9D2E9');
+      cell.alignment = {
+        horizontal: 'center',
+        vertical: 'middle',
+        wrapText: true,
+      };
+      cell.border = BOX;
     });
-    for (const [a, b] of merges) ws.mergeCells(H + 2, a, H + 2, b);
+    head(remarks, 'Remarks', 'FFFFE599');
+    head(notes, 'Notes/Comment', 'FFB4A7D6');
+    head(
+      evaluation,
+      tab.secondary ? 'Student Evaluation' : 'Students Evaluation',
+      'FFC9DAF8'
+    );
 
+    // Student rows.
     tab.rows.forEach((values, i) => {
-      const r = H + i + 3;
-      for (let c = 1; c <= totalCols; c++) {
+      const r = 9 + i;
+      const put = (c: number, v: string | number | null) => {
         const cell = ws.getCell(r, c);
-        const v = values[c - 1];
-        if (v != null && v !== '') cell.value = v;
+        if (v != null) cell.value = v;
         cell.border = BOX;
-        if (c === 2) {
-          cell.font = NAME_FONT;
-          cell.alignment = { vertical: 'bottom' };
-          continue;
-        }
-        const kind = colKind[c - 1];
-        if (kind === 'comments') {
-          cell.font = NAME_FONT;
-          cell.alignment = { vertical: 'top', wrapText: true };
-          continue;
-        }
-        // Letter grades are Arial 10 in the school file; numbers Aptos Narrow.
-        cell.font = kind === 'letter' ? NAME_FONT : NUMBER_FONT;
-        cell.alignment = { horizontal: 'center', vertical: 'middle' };
-        if (kind !== 'attendance') cell.fill = solid(colFill[c - 1]!);
+        return cell;
+      };
+      const [index, name, ...rest] = values;
+      const grades = rest.slice(0, tab.cols.length);
+      const [days, late, present, , , evalText] = rest.slice(tab.cols.length);
+
+      Object.assign(put(1, index), {
+        font: { name: 'Arial', size: 11, color: BLACK },
+        alignment: { horizontal: 'center' },
+      });
+      Object.assign(put(2, name), {
+        font: { name: 'Arial', size: 10, color: BLACK },
+        fill: solid('FFFFFFFF'),
+      });
+      for (let k = 0; k < slots; k++) {
+        const col = tab.cols[k];
+        const cell = put(first + k, col ? (grades[k] ?? null) : null);
+        cell.alignment = { horizontal: 'center' };
+        cell.font = col?.letter
+          ? { name: 'Arial', size: 12, bold: true, color: LETTER_BLUE }
+          : { name: 'Arial', size: 10, color: BLACK };
+        if (col && !col.letter) cell.numFmt = '0';
       }
+      [days, late, present].forEach((v, k) =>
+        Object.assign(put(att + k, v ?? null), {
+          font: { name: 'Calibri', size: 13, bold: true, color: BLACK },
+          alignment: { horizontal: 'center' },
+        })
+      );
+      const remark = put(remarks, null);
+      remark.font = { name: 'Calibri', size: 11, color: BLACK };
+      remark.dataValidation = REMARKS_LIST;
+      put(notes, null).font = { name: 'Calibri', size: 11, color: BLACK };
+      Object.assign(put(evaluation, evalText ?? null), {
+        font: { name: 'Arial', size: 10, color: BLACK },
+        alignment: { horizontal: 'left', vertical: 'top', wrapText: true },
+      });
     });
+
+    // Footer: a blank row, the DepEd line across A:N, the empty notes box A:O.
+    const footer = 9 + tab.rows.length + 1;
+    ws.mergeCells(footer, 1, footer, remarks);
+    const deped = ws.getCell(footer, 1);
+    deped.value = 'Aligned with DepEd Order No. 8, s. 2015';
+    deped.font = {
+      name: 'Arial',
+      size: 11,
+      bold: true,
+      italic: true,
+      color: BLACK,
+    };
+    deped.alignment = { horizontal: 'center' };
+    ws.mergeCells(footer + 1, 1, footer + 17, notes);
   }
 
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
-/** The tab names the file would carry — for the route's filename and tests. */
+/** The tab names the file would carry — for tests. */
 export function consolidatedTabNames(
   input: MasterfilePayload | MasterfilePayload[],
   filters: ConsolidatedFilters = {}
 ): string[] {
-  return buildTabs(Array.isArray(input) ? input : [input], filters).map(
+  return buildTabs(Array.isArray(input) ? input : [input], filters).tabs.map(
     (t) => t.name
   );
 }
 
-const HEADER_FONT = {
-  name: 'Arial',
-  size: 10,
-  bold: true,
-  color: { argb: 'FF000000' },
-};
-const NAME_FONT = { name: 'Arial', size: 10, color: { argb: 'FF000000' } };
-const NUMBER_FONT = {
-  name: 'Aptos Narrow',
-  size: 11,
-  color: { argb: 'FF000000' },
-};
+/** The terms the file holds — the route names the file with them. */
+export function consolidatedTerms(
+  input: MasterfilePayload | MasterfilePayload[],
+  filters: ConsolidatedFilters = {}
+): number[] {
+  return buildTabs(Array.isArray(input) ? input : [input], filters).terms;
+}
+
+const BLACK = { argb: 'FF000000' };
+const NAME_BLUE = { argb: 'FF548DD4' };
+const LETTER_BLUE = { argb: 'FF0066CC' };
 const thin = { style: 'thin' as const, color: { argb: 'FF000000' } };
 const BOX = { top: thin, left: thin, bottom: thin, right: thin };
+const REMARKS_LIST: ExcelJS.DataValidation = {
+  type: 'list',
+  allowBlank: true,
+  showErrorMessage: true,
+  formulae: ['"No Correction (Verified),With Correction (See Notes/Comment)"'],
+};
 
 function solid(argb: string): ExcelJS.Fill {
   return { type: 'pattern', pattern: 'solid', fgColor: { argb } };
 }
 
 // ---------------------------------------------------------------------------
-// CSV — the same grid, without the colours. A CSV has no tabs, so each tab
-// follows the last under its own name, a blank row between.
+// CSV — the same rows, without the styling. A CSV has no tabs, so each class
+// follows the last, a blank row between.
 // ---------------------------------------------------------------------------
 
 /** RFC-4180 escape: wrap fields containing , " or newlines in double-quotes. */
@@ -547,20 +535,50 @@ function csvEscape(v: string | number | null | undefined): string {
 }
 
 /**
- * The consolidated file as an RFC-4180 CSV with a leading UTF-8 BOM (so Excel
+ * The CONSOLIDATED FORM as an RFC-4180 CSV with a leading UTF-8 BOM (so Excel
  * opens it correctly — the project's drill CSV convention, KD #56).
  */
 export function masterfileToCsv(
   input: MasterfilePayload | MasterfilePayload[],
   filters: ConsolidatedFilters = {}
 ): string {
-  const tabs = buildTabs(Array.isArray(input) ? input : [input], filters);
+  const { tabs } = buildTabs(Array.isArray(input) ? input : [input], filters);
   const lines: string[] = [];
   tabs.forEach((tab, i) => {
     if (i > 0) lines.push('');
     for (const line of tab.title) lines.push(csvEscape(line));
-    const { row1, row2 } = tabHeader(tab.blocks);
-    for (const row of [row1, row2, ...tab.rows])
+    const subjects = tab.cols.map((c) => c.label);
+    const blanks = subjects.map(() => '');
+    const evalLabel = tab.secondary
+      ? 'Student Evaluation'
+      : 'Students Evaluation';
+    for (const row of [
+      [
+        'Index Number',
+        'NAME',
+        ...subjects,
+        'Attendance',
+        '',
+        '',
+        'Remarks',
+        'Notes/Comment',
+        evalLabel,
+      ],
+      [
+        '',
+        '',
+        ...blanks,
+        'Number of School Days ',
+        'Number of Days Late',
+        'Number of Days Present',
+        '',
+        '',
+        '',
+      ],
+      ...tab.rows,
+      [],
+      ['Aligned with DepEd Order No. 8, s. 2015'],
+    ])
       lines.push(row.map(csvEscape).join(','));
   });
   return '﻿' + lines.join('\r\n');
