@@ -26,9 +26,16 @@ const title = z
   .min(1, 'Enter the title.')
   .max(300, 'Keep the title under 300 characters.');
 
-/** A book's fields. `classType` null = both tracks. */
+/**
+ * A book's fields. `classType` null = both tracks. A book always has a
+ * subject — the list is grouped by it on the page and on each student's list.
+ */
 export const SupplyBookFieldsSchema = z.object({
-  subject: optionalText(120),
+  subject: z
+    .string()
+    .trim()
+    .min(1, 'Pick a subject, or type a new one.')
+    .max(120, 'Keep the subject under 120 characters.'),
   title,
   publisher: optionalText(200),
   isbn: optionalText(40),

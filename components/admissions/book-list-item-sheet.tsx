@@ -163,7 +163,7 @@ function BookListItemSheet({
   const body = isBook
     ? {
         kind,
-        subject: subject || null,
+        subject,
         title: form.title.trim(),
         publisher: form.publisher.trim() || null,
         isbn: form.isbn.trim() || null,
@@ -194,12 +194,15 @@ function BookListItemSheet({
   });
 
   const titleError = form.title.trim() ? null : 'Enter the title.';
+  // "A new subject…" picked but left empty is no subject at all.
+  const subjectError =
+    isBook && !subject ? 'Pick a subject, or type a new one.' : null;
   const noun = isBook ? 'book' : 'supply';
   const name = form.title.trim();
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    if (titleError) {
+    if (titleError || subjectError) {
       setShowErrors(true);
       return;
     }
@@ -241,7 +244,7 @@ function BookListItemSheet({
           <div className="min-h-0 flex-1 overflow-y-auto p-5">
             <FieldGroup>
               {isBook && (
-                <Field>
+                <Field data-invalid={showErrors && !!subjectError}>
                   <FieldLabel htmlFor="bl-subject">Subject</FieldLabel>
                   {subjects.length > 0 && (
                     <Select
@@ -276,6 +279,9 @@ function BookListItemSheet({
                       }
                       placeholder="Science"
                     />
+                  )}
+                  {showErrors && subjectError && (
+                    <FieldError>{subjectError}</FieldError>
                   )}
                   <FieldDescription>
                     Books are grouped by subject on the page and on each
