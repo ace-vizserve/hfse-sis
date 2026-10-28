@@ -78,9 +78,13 @@ function student(
     indexNumber: 1,
     generalAverage: 91.25,
     overallAward: 'Bronze',
-    attendanceByTerm: [],
+    attendanceByTerm: [
+      { termId: 't1', schoolDays: 40, present: 39, late: 1, excused: 0 },
+    ],
     attendanceTotal: { schoolDays: 0, present: 0, late: 0, excused: 0 },
-    commentsByTerm: [],
+    commentsByTerm: [
+      { termNumber: 1, text: '<p>Doing well.</p>', submitted: true },
+    ],
     lateEnrolleeTermNumber: null,
     enrolledTermNumbers: [1, 2, 3, 4],
     ...over,
@@ -150,19 +154,64 @@ async function readTabs(
   const wb = XLSX.read(await buildMasterfileWorkbook(payload, filters), {
     type: 'buffer',
   });
+  // The table only (below the five title rows), cut to the subject columns.
   return Object.fromEntries(
     wb.SheetNames.map((n) => [
       n,
-      XLSX.utils.sheet_to_json<(string | number)[]>(wb.Sheets[n], {
-        header: 1,
-        defval: '',
-        blankrows: true,
-      }),
+      XLSX.utils
+        .sheet_to_json<(string | number)[]>(wb.Sheets[n], {
+          header: 1,
+          defval: '',
+          blankrows: true,
+        })
+        .slice(TITLE)
+        .map((r) => r.slice(0, SUBJECT_COLS)),
     ])
   );
 }
 
+const TITLE = 5;
+// No · Name · English 6 · Math 6 · MT 6 · STAR 4 on the Primary fixture.
+const SUBJECT_COLS = 2 + 6 * 3 + 4;
+
 describe('the export copies the school Consolidated File', () => {
+  it('carries the school title block above the table', async () => {
+    const wb = XLSX.read(await buildMasterfileWorkbook(primary()), {
+      type: 'buffer',
+    });
+    const aoa = XLSX.utils.sheet_to_json<string[]>(
+      wb.Sheets['Primary 1 Patience'],
+      { header: 1, defval: '', blankrows: true }
+    );
+    expect(aoa.slice(0, TITLE).map((r) => r[0])).toEqual([
+      'HFSE INTERNATIONAL SCHOOL',
+      'CONSOLIDATED FORM',
+      'PRIMARY ONE PATIENCE',
+      'AY 2026 - Term Four',
+      'Teacher: Ms Lee',
+    ]);
+  });
+
+  it('ends with attendance per term and the teacher comments', async () => {
+    const wb = XLSX.read(await buildMasterfileWorkbook(primary()), {
+      type: 'buffer',
+    });
+    const aoa = XLSX.utils.sheet_to_json<(string | number)[]>(
+      wb.Sheets['Primary 1 Patience'],
+      { header: 1, defval: '', blankrows: true }
+    );
+    const at = 2 + 6 * 3 + 4; // first column after STAR
+    expect(aoa[TITLE + 1][at]).toBe('Attendance T1');
+    expect(aoa[TITLE].slice(at, at + 3)).toEqual([
+      'School Days',
+      'Present',
+      'Late',
+    ]);
+    expect(aoa[TITLE + 2].slice(at, at + 3)).toEqual([40, 39, 1]);
+    expect(aoa[TITLE + 1][at + 12]).toBe("Teacher's Comments");
+    expect(aoa[TITLE + 2][at + 12]).toBe('Doing well.');
+  });
+
   it('has one tab per class, named as the school names them', async () => {
     expect(Object.keys(await readTabs(primary()))).toEqual([
       'Primary 1 Patience',
@@ -262,10 +311,10 @@ describe('the export copies the school Consolidated File', () => {
     });
     const ws = wb.Sheets['Primary 1 Patience'];
     const rgb = (a: string) => ws[a]?.s?.fgColor?.rgb;
-    expect(rgb('C1')).toBe('00FF99');
-    expect(rgb('I1')).toBe('FFC000');
-    expect(rgb('O3')).toBe('FFFFCC');
-    expect(rgb('U2')).toBe('CAEDFB');
+    expect(rgb('C6')).toBe('00FF99');
+    expect(rgb('I6')).toBe('FFC000');
+    expect(rgb('O8')).toBe('FFFFCC');
+    expect(rgb('U7')).toBe('CAEDFB');
   });
 });
 
@@ -274,7 +323,14 @@ describe('the page filters narrow the file', () => {
     const tab = (await readTabs(primary(), { subjectId: 'math' }))[
       'Primary 1 Patience'
     ];
-    expect(tab[1].filter(Boolean)).toEqual(['No', 'Name', 'Math', 'Math']);
+    // Attendance and comments are not subjects, so they stay.
+    expect(tab[1].filter(Boolean).slice(0, 5)).toEqual([
+      'No',
+      'Name',
+      'Math',
+      'Math',
+      'Attendance T1',
+    ]);
   });
 
   it('term → terms after it stay blank, Overall waits for Term 4', async () => {
@@ -309,25 +365,26 @@ describe('the page filters narrow the file', () => {
 });
 
 describe('the CSV is the same grid', () => {
-  it('writes each tab under its name with the same rows', () => {
+  it('writes each tab with its title block and the same rows', () => {
     const lines = masterfileToCsv(primary()).replace(/^﻿/, '').split('\r\n');
-    expect(lines[0]).toBe('Primary 1 Patience');
-    expect(lines[1]).toBe(
-      ',,T1,T2,T3,T4,Overall,Award,' +
-        'T1,T2,T3,T4,Overall,Award,'.repeat(2) +
-        'T1,T2,T3,T4'
-    );
-    expect(lines[2].startsWith('No,Name,English,,,,English,')).toBe(true);
+    expect(lines.slice(0, 5)).toEqual([
+      'HFSE INTERNATIONAL SCHOOL',
+      'CONSOLIDATED FORM',
+      'PRIMARY ONE PATIENCE',
+      'AY 2026 - Term Four',
+      'Teacher: Ms Lee',
+    ]);
     expect(
-      lines[3].startsWith('1,"BANTA, Stephanie Louise S.",80,79,85,90,84.5')
+      lines[5].startsWith(
+        ',,T1,T2,T3,T4,Overall,Award,' +
+          'T1,T2,T3,T4,Overall,Award,'.repeat(2) +
+          'T1,T2,T3,T4,School Days,Present,Late'
+      )
     ).toBe(true);
-    expect(lines).toContain('Primary 1 Obedience');
-  });
-
-  it('a single tab has no name line', () => {
-    const p = primary();
-    p.selectedSectionIds = ['sec-a'];
-    const lines = masterfileToCsv(p).replace(/^﻿/, '').split('\r\n');
-    expect(lines[0].startsWith(',,T1')).toBe(true);
+    expect(lines[6].startsWith('No,Name,English,,,,English,')).toBe(true);
+    expect(
+      lines[7].startsWith('1,"BANTA, Stephanie Louise S.",80,79,85,90,84.5')
+    ).toBe(true);
+    expect(lines).toContain('PRIMARY ONE OBEDIENCE');
   });
 });
