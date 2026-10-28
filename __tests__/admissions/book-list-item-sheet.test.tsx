@@ -130,10 +130,37 @@ describe('Add book', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add book' }));
     await screen.findByRole('dialog');
     expect(screen.queryByText('Which classes get it')).toBeNull();
+    fireEvent.change(screen.getByLabelText('New subject'), {
+      target: { value: 'Mathematics' },
+    });
     type('Title', 'Maths 1');
     fireEvent.click(screen.getByRole('button', { name: 'Add book' }));
     await waitFor(() => expect(calls).toHaveLength(1));
-    expect(calls[0].body).toMatchObject({ classType: null, subject: null });
+    expect(calls[0].body).toMatchObject({
+      classType: null,
+      subject: 'Mathematics',
+    });
+  });
+
+  it('refuses a book whose new subject is left empty', async () => {
+    const calls = stubApi();
+    renderWithClient(
+      <AddBookListItemButton
+        kind="book"
+        ayCode="AY2027"
+        level={S1}
+        subjects={[]}
+        defaultTrack={null}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Add book' }));
+    await screen.findByRole('dialog');
+    type('Title', 'Maths 1');
+    fireEvent.click(screen.getByRole('button', { name: 'Add book' }));
+    expect(
+      await screen.findByText('Pick a subject, or type a new one.')
+    ).toBeTruthy();
+    expect(calls).toEqual([]);
   });
 });
 
