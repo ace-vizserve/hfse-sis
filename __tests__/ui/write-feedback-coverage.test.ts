@@ -134,6 +134,10 @@ const PENDING_FALSE: Record<string, Exemption> = {
     decided: '2026-08-17',
     why: 'The tile repaints in the new house colour on click, before the round-trip — a pending toast would narrate a change the user is looking at. It reverts from the prop if the save fails.',
   },
+  'components/sis/books-supplies-card.tsx': {
+    decided: '2026-10-28',
+    why: 'Each tick flips its checkbox and the "N of M given" bar on click, before the round-trip — a pending or success toast per tick would narrate a change the user is looking at. A failed tick rolls back and still toasts the error.',
+  },
   'components/sis/stp-status-editor.tsx': {
     decided: '2026-08-17',
     why: 'Optimistic Select — the new status is displayed immediately and rolled back by onError if the write fails, so a pending toast would describe something already on screen.',

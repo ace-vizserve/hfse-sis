@@ -75,6 +75,8 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
     prefixes: [
       'admissions.',
       'sis.stage.',
+      // Books & supplies handed over on the Supplies stage (migration 199).
+      'sis.supplies.',
       'sis.stp.',
       'sis.precourse.',
       'sis.discount_code.',

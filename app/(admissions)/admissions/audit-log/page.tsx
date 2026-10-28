@@ -30,6 +30,12 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.profile.update',
   'sis.family.update',
   'sis.stage.update',
+  'sis.supplies.given',
+  'sis.supplies.ungiven',
+  'sis.supplies.item_create',
+  'sis.supplies.item_update',
+  'sis.supplies.item_delete',
+  'sis.supplies.copy_year',
   'sis.stp.update',
   'sis.precourse.update',
   // lib/audit/modules.ts files discount codes under Admissions, but this list

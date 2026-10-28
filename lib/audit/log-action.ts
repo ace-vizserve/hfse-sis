@@ -93,6 +93,17 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.profile.update',
   'sis.family.update',
   'sis.stage.update',
+  // A book or supply ticked as handed over, or the tick taken back
+  // (migration 199). One row per item; entity_id is the supply_items id.
+  'sis.supplies.given',
+  'sis.supplies.ungiven',
+  // A year's book list changed on the Admissions Book list page: one item
+  // added, changed or removed (entity_id = the supply_items id), or a whole
+  // list copied from another year (entity_id = the target academic_years id).
+  'sis.supplies.item_create',
+  'sis.supplies.item_update',
+  'sis.supplies.item_delete',
+  'sis.supplies.copy_year',
   'sis.stp.update',
   'sis.precourse.update',
   'sis.discount_code.create',
@@ -286,6 +297,8 @@ export type AuditEntityType =
   | 'enrolment_document'
   | 'enrolment_application'
   | 'enrolment_status'
+  // One row of `supply_items` (migration 199); the student is in context.
+  | 'supply_item'
   | 'discount_code'
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.

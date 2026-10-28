@@ -16,6 +16,7 @@ import {
   FileCheck,
   FileClock,
   FilePen,
+  Library,
   FilePlus2,
   FileQuestion,
   FileStack,
@@ -359,6 +360,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       // Next year's funnel running in parallel with this one (KD #77) — the
       // same list of applications, held for a year that hasn't started.
       '/admissions/upcoming/applications': FileClock,
+      // The year's books and supplies per level.
+      '/admissions/book-list': Library,
       '/admissions/applications/closed': Archive,
       '/admissions/document-validation': ICON_DOC_VALIDATION,
       // Enrolled with steps still open — a checklist not yet ticked off.

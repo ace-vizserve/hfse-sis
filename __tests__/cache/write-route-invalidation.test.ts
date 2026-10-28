@@ -59,6 +59,9 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // Books & supplies tracker (migration 199).
+  'app/api/sis/students/[enroleeNumber]/supplies/route.ts':
+    'Writes supply_handovers, read uncached by lib/sis/supplies/student-list.ts through this same route; the stage status is not touched.',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached

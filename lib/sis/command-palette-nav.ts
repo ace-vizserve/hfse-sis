@@ -6,6 +6,7 @@ import {
   GraduationCapIcon,
   HomeIcon,
   InboxIcon,
+  LibraryIcon,
   ListTodoIcon,
   PlaneIcon,
   Settings2Icon,
@@ -93,6 +94,13 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Admissions — Upcoming AY Applications',
     group: 'Modules',
     icon: InboxIcon,
+  },
+  {
+    // Student-record writers = the /admissions prefix — isRouteAllowed() decides.
+    href: '/admissions/book-list',
+    label: 'Admissions — Book list',
+    group: 'Modules',
+    icon: LibraryIcon,
   },
   {
     href: '/admissions/document-validation',
