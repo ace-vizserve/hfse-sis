@@ -37,6 +37,7 @@ import {
   Landmark,
   LayoutDashboard,
   LayoutGrid,
+  Library,
   ListChecks,
   ListTodo,
   MessageSquare,
@@ -413,6 +414,8 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/admissions/enrolled-open-steps': ListTodo,
       // Stages waiting for an invoice to be created.
       '/admissions/ready-for-invoicing': ReceiptText,
+      // The year's books and supplies per level.
+      '/admissions/book-list': Library,
       '/admissions/cohorts/stp': ICON_STP,
       '/admissions/cohorts/medical': ICON_MEDICAL,
       // Documents a parent committed to send by a date they named.

@@ -470,6 +470,11 @@ const ADMISSIONS_NAV: NavSection[] = [
           'superadmin',
         ],
       },
+      // The year's books and supplies per level, and how many of each have
+      // been handed over (books & supplies tracker, 2026-10-28). The page
+      // admits the application page's audience — student-record writers, the
+      // same four roles as the /admissions prefix — so no gate here.
+      { href: '/admissions/book-list', label: 'Book list' },
       // KD #77: surfaces the parallel pipeline for the AY where
       // accepting_applications=true AND is_current=false. The page itself
       // renders an empty state when no such AY exists, so the entry can

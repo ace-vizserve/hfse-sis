@@ -59,6 +59,9 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // Books & supplies tracker (migration 199).
+  'app/api/sis/students/[enroleeNumber]/supplies/route.ts':
+    'Writes supply_handovers, read uncached by lib/sis/supplies/student-list.ts through this same route; the stage status is not touched.',
   // ── QuickBooks (migration 188, Billing KD #232) ───────────────────────
   // Every route that can move a Registration/Fees stage does it through
   // writeStageFromQbo (lib/qbo/stage-write.ts), which expires sis:<AY> and the

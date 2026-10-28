@@ -10,6 +10,10 @@ import { toast } from 'sonner';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { AssessmentScoreField } from '@/components/sis/assessment-score-field';
+import {
+  openSuppliesChecklist,
+  SuppliesSummary,
+} from '@/components/sis/books-supplies-card';
 import { LateEnrolleePrompt } from '@/components/sis/late-enrollee-prompt';
 import type { MidTermPayload } from '@/lib/sis/placement-completion';
 import { Button } from '@/components/ui/button';
@@ -870,6 +874,26 @@ export function EditStageDialog({
                     )}
                     <FormMessage />
                   </FormItem>
+
+                  {/* The Supplies stage's books & supplies, in brief. The full
+                      checklist is a sheet on the stage tile: the button closes
+                      this dialog first, then asks the tile to open it, so the
+                      two never stack. */}
+                  {stageKey === 'supplies' && (
+                    <SuppliesSummary
+                      ayCode={ayCode}
+                      enroleeNumber={enroleeNumber}
+                      onOpen={() => {
+                        setOpen(false);
+                        // After the dialog's close has run, so focus does
+                        // not return to the Edit button over the sheet.
+                        setTimeout(
+                          () => openSuppliesChecklist(enroleeNumber),
+                          150
+                        );
+                      }}
+                    />
+                  )}
 
                   {stageKey === 'application' && isTerminalStatus && (
                     <div className="space-y-4 rounded-lg border border-hairline p-4">

@@ -27,6 +27,7 @@ import {
   type SiblingSection,
 } from '@/components/sis/section-transfer-dialog';
 import { BillingStagePanel } from '@/components/sis/billing-stage-panel';
+import { SuppliesChecklist } from '@/components/sis/books-supplies-card';
 import { StageScrollLink } from '@/components/sis/stage-scroll-link';
 import { StageStatusBadge } from '@/components/sis/status-badge';
 import { Badge } from '@/components/ui/badge';
@@ -1301,6 +1302,14 @@ function StageStatusTile({
         html={stage.remarks}
         className="ml-1 rounded-md bg-muted/40 px-2 py-1.5 text-[11px] leading-relaxed text-foreground"
       />
+      {/* The Supplies stage carries its own books & supplies checklist. */}
+      {stage.key === 'supplies' && (
+        <SuppliesChecklist
+          ayCode={ayCode}
+          enroleeNumber={enroleeNumber}
+          canEdit={canEdit}
+        />
+      )}
       {/* Both controls are placement actions, so both gate on the placement
           role, not merely on canEdit. The move opens in place rather than
           linking to /sis/sections/[id]: admissions holds the placement right

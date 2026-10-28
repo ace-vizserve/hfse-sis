@@ -6,6 +6,7 @@ import {
   GraduationCapIcon,
   HomeIcon,
   InboxIcon,
+  LibraryIcon,
   ListTodoIcon,
   PlaneIcon,
   ReceiptTextIcon,
@@ -120,6 +121,13 @@ export const NAV_ENTRIES: NavEntry[] = [
     label: 'Admissions — Ready for invoicing',
     group: 'Modules',
     icon: ReceiptTextIcon,
+  },
+  {
+    // Student-record writers = the /admissions prefix — isRouteAllowed() decides.
+    href: '/admissions/book-list',
+    label: 'Admissions — Book list',
+    group: 'Modules',
+    icon: LibraryIcon,
   },
   {
     href: '/records',

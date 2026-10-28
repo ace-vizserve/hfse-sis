@@ -64,6 +64,9 @@ export const queryKeys = {
     ['sis-records-drill', target, range] as const,
   sisAdminDrill: (target: string, range: DrillRange) =>
     ['sis-admin-drill', target, range] as const,
+  /** The books & supplies tracker on the Supplies stage (migration 199). */
+  studentSupplies: (ayCode: string, enroleeNumber: string) =>
+    ['student-supplies', ayCode, enroleeNumber] as const,
   pfileRevisions: (enroleeNumber: string) =>
     ['pfile-revisions', enroleeNumber] as const,
   pfilesDrill: (target: string, range: DrillRange) =>
