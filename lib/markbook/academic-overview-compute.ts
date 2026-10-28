@@ -148,6 +148,17 @@ export type AcademicOverviewInput = {
   /** Rows in `subjects` — the catalogue, whether or not taught this year. */
   subjectsConfigured: number;
   sheets: { total: number; locked: number };
+  /**
+   * Every grading sheet with where it sits, so the locked-sheets tile follows
+   * the filters. Absent → the school-wide `sheets` totals are shown as given.
+   */
+  sheetRows?: {
+    levelId: string;
+    sectionId: string;
+    subjectId: string;
+    termId: string;
+    locked: boolean;
+  }[];
 };
 
 // ---------------------------------------------------------------------------
@@ -489,13 +500,14 @@ export function computeAcademicOverview(
       (filters.subjectId == null || g.subjectId === filters.subjectId)
   ) as (OverviewGradeInput & { quarterly: number })[];
 
-  // The reported scope: completed terms only, plus the term filter if set.
-  const scoped = graded.filter(
-    (g) =>
-      completedTermIds.has(g.termId) &&
-      (filters.termNumber == null ||
-        termNumberByIdAll.get(g.termId) === filters.termNumber)
-  );
+  // The reported scope: with no term picked, the completed terms; with a term
+  // picked, that term — including one still being taught, so picking the
+  // current term shows what is graded so far rather than nothing.
+  const inReportedTerm = (termId: string) =>
+    filters.termNumber == null
+      ? completedTermIds.has(termId)
+      : termNumberByIdAll.get(termId) === filters.termNumber;
+  const scoped = graded.filter((g) => inReportedTerm(g.termId));
 
   // ---- per-student and per-(student, subject) means -----------------------
   const studentTotals = new Map<string, { sum: number; n: number }>();
@@ -593,11 +605,8 @@ export function computeAcademicOverview(
       (filters.levelId == null || a.levelId === filters.levelId) &&
       (filters.sectionId == null || a.sectionId === filters.sectionId)
   );
-  const attendanceRows = attendanceInCohort.filter(
-    (a) =>
-      completedTermIds.has(a.termId) &&
-      (filters.termNumber == null ||
-        termNumberByIdAll.get(a.termId) === filters.termNumber)
+  const attendanceRows = attendanceInCohort.filter((a) =>
+    inReportedTerm(a.termId)
   );
   const attendanceByLevel = new Map<
     string,
@@ -701,12 +710,16 @@ export function computeAcademicOverview(
   const completedNumbers = terms
     .filter((t) => statusByTermId.get(t.id) === 'completed')
     .map((t) => t.termNumber);
+  // What the figures cover — the picked term when there is one, so the label
+  // above a table never names terms the filter has left out.
   const reportedRangeLabel =
-    completedNumbers.length === 0
-      ? null
-      : completedNumbers.length === 1
-        ? `Term ${completedNumbers[0]}`
-        : `Term ${completedNumbers[0]} – Term ${completedNumbers[completedNumbers.length - 1]}`;
+    filters.termNumber != null
+      ? `Term ${filters.termNumber}`
+      : completedNumbers.length === 0
+        ? null
+        : completedNumbers.length === 1
+          ? `Term ${completedNumbers[0]}`
+          : `Term ${completedNumbers[0]} – Term ${completedNumbers[completedNumbers.length - 1]}`;
 
   const needsSupport = distributionBands.dnm;
   const outstanding = distributionBands.o;
@@ -765,7 +778,25 @@ export function computeAcademicOverview(
       subjectsConfigured: input.subjectsConfigured,
       levels: input.levels.length,
     },
-    sheets: input.sheets,
+    // Locked sheets in the filtered scope: level, class, subject and term.
+    sheets: input.sheetRows
+      ? (() => {
+          const rows = input.sheetRows.filter(
+            (s) =>
+              (filters.levelId == null || s.levelId === filters.levelId) &&
+              (filters.sectionId == null ||
+                s.sectionId === filters.sectionId) &&
+              (filters.subjectId == null ||
+                s.subjectId === filters.subjectId) &&
+              (filters.termNumber == null ||
+                termNumberByIdAll.get(s.termId) === filters.termNumber)
+          );
+          return {
+            total: rows.length,
+            locked: rows.filter((s) => s.locked).length,
+          };
+        })()
+      : input.sheets,
     termProgress: {
       current: currentTerm
         ? {
