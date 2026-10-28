@@ -4,6 +4,7 @@ import { unstable_cache } from 'next/cache';
 
 import { type AwardThresholds } from '@/lib/compute/awards';
 import {
+  type AcademicOverviewInput,
   type OverviewAttendanceInput,
   type OverviewGradeInput,
   type OverviewLevelInput,
@@ -58,6 +59,8 @@ export type OverviewData = {
   subjectsTaught: number;
   subjectsConfigured: number;
   sheets: { total: number; locked: number };
+  /** Each sheet's level / class / subject / term, for the filtered tile. */
+  sheetRows: AcademicOverviewInput['sheetRows'];
   /** Award cut-offs in effect, from School config — HFSE tunes these. */
   thresholds: AwardThresholds;
 };
@@ -210,6 +213,7 @@ export async function loadOverviewDataUncached(
       subjectsTaught: 0,
       subjectsConfigured: subjects.length,
       sheets: { total: 0, locked: 0 },
+      sheetRows: [],
       thresholds,
     };
   }
@@ -392,6 +396,13 @@ export async function loadOverviewDataUncached(
       total: sheets.length,
       locked: sheets.filter((s) => s.is_locked === true).length,
     },
+    sheetRows: sheets.map((s) => ({
+      levelId: levelBySectionId.get(s.section_id) ?? '',
+      sectionId: s.section_id,
+      subjectId: s.subject_id,
+      termId: s.term_id,
+      locked: s.is_locked === true,
+    })),
     thresholds,
   };
 }
@@ -409,7 +420,9 @@ export function getOverviewData(
 ): Promise<OverviewData> {
   return unstable_cache(
     () => loadOverviewDataUncached(ayCode, academicYearId),
-    ['markbook', 'overview-data', ayCode, academicYearId],
+    // 'v2': the payload gained `sheetRows` (2026-10-28). A new key, so no
+    // entry cached in the old shape is served after the deploy.
+    ['markbook', 'overview-data', 'v2', ayCode, academicYearId],
     {
       revalidate: CACHE_TTL_SECONDS,
       // ⚠ KEYED ON THE AY CODE, NOT THE UUID, AND THAT IS THE WHOLE POINT.

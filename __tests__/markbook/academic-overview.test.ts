@@ -222,6 +222,63 @@ describe('what counts as a grade', () => {
     );
     expect(overview.kpis.average).toBe(90);
   });
+
+  it('picking the term still being taught shows what is graded so far', () => {
+    const overview = computeAcademicOverview(
+      baseInput({
+        filters: { ...NO_FILTERS, termNumber: 3 },
+        grades: [
+          grade('t1', 'math', 'p1', 's1', 90),
+          grade('t3', 'math', 'p1', 's1', 80),
+        ],
+      })
+    );
+    expect(overview.kpis.average).toBe(80);
+    expect(overview.termProgress.reportedRangeLabel).toBe('Term 3');
+  });
+});
+
+describe('the locked-sheets tile', () => {
+  const sheetRows = [
+    {
+      levelId: 'p1',
+      sectionId: 'p1-a',
+      subjectId: 'math',
+      termId: 't1',
+      locked: true,
+    },
+    {
+      levelId: 'p1',
+      sectionId: 'p1-a',
+      subjectId: 'eng',
+      termId: 't2',
+      locked: false,
+    },
+    {
+      levelId: 'p2',
+      sectionId: 'p2-a',
+      subjectId: 'math',
+      termId: 't1',
+      locked: true,
+    },
+  ];
+
+  it('counts the whole school with no filter', () => {
+    expect(computeAcademicOverview(baseInput({ sheetRows })).sheets).toEqual({
+      total: 3,
+      locked: 2,
+    });
+  });
+
+  it('follows the level, subject and term filters', () => {
+    const at = (filters: Partial<typeof NO_FILTERS>) =>
+      computeAcademicOverview(
+        baseInput({ sheetRows, filters: { ...NO_FILTERS, ...filters } })
+      ).sheets;
+    expect(at({ levelId: 'p1' })).toEqual({ total: 2, locked: 1 });
+    expect(at({ subjectId: 'math' })).toEqual({ total: 2, locked: 2 });
+    expect(at({ termNumber: 2 })).toEqual({ total: 1, locked: 0 });
+  });
 });
 
 describe('per-term rows', () => {
