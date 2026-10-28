@@ -114,7 +114,7 @@ export async function loadSowView(
   const { data, error } = await service
     .from('schemes_of_work')
     .select(
-      'id, academic_year_id, term_id, subject_id, level_id, track, state, module, updated_at, current_submission_id, copied_from_sow_id, approved_snapshot'
+      'id, academic_year_id, term_id, subject_id, level_id, state, module, updated_at, current_submission_id, copied_from_sow_id, approved_snapshot'
     )
     .eq('id', sowId)
     .maybeSingle();
@@ -127,7 +127,6 @@ export async function loadSowView(
     term_id: string;
     subject_id: string;
     level_id: string;
-    track: SowKey['track'];
     state: SowState;
     module: Record<string, unknown> | null;
     updated_at: string;
@@ -268,7 +267,6 @@ export async function loadSowView(
       termId: sow.term_id,
       subjectId: sow.subject_id,
       levelId: sow.level_id,
-      track: sow.track,
     },
     state: sow.state,
     module: sow.module ?? {},

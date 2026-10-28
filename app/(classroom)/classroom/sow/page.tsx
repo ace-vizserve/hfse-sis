@@ -9,7 +9,7 @@ import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { getTermsForAy } from '@/lib/classroom/queries';
 import { sgToday } from '@/lib/dates';
 import { resolveCurrentTermId } from '@/lib/sis/current-term';
-import { listMySowRows, trackOf } from '@/lib/sow/access';
+import { listMySowRows } from '@/lib/sow/access';
 import { findLastYearSow } from '@/lib/sow/create';
 import { loadSowStepLabels } from '@/lib/sow/review';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -52,14 +52,15 @@ export default async function MySchemesOfWorkPage({
   const service = createServiceClient();
   const base = term ? await listMySowRows(service, view.id, term.id) : [];
 
-  // The drawer's checkboxes: every class of the row's level and track this
-  // year, not only the teacher's own (a scheme can cover a colleague's class).
+  // The drawer's checkboxes: every class of the row's level this year, any
+  // class type, not only the teacher's own (a scheme can cover a colleague's
+  // class).
   const levelIds = [...new Set(base.map((r) => r.levelId))];
   const { data: sectionRows } =
     levelIds.length > 0
       ? await service
           .from('sections')
-          .select('id, name, level_id, class_type')
+          .select('id, name, level_id')
           .eq('academic_year_id', ay.id)
           .in('level_id', levelIds)
       : { data: [] };
@@ -67,7 +68,6 @@ export default async function MySchemesOfWorkPage({
     id: string;
     name: string;
     level_id: string;
-    class_type: string | null;
   }[];
 
   // The step each sent scheme waits on, or that returned it — one ladder read
@@ -95,12 +95,9 @@ export default async function MySchemesOfWorkPage({
             termId: r.termId,
             subjectId: r.subjectId,
             levelId: r.levelId,
-            track: r.track,
           }),
       groupSections: sections
-        .filter(
-          (s) => s.level_id === r.levelId && trackOf(s.class_type) === r.track
-        )
+        .filter((s) => s.level_id === r.levelId)
         .map((s) => ({ sectionId: s.id, name: s.name }))
         .sort((a, b) => a.name.localeCompare(b.name)),
     }))
@@ -118,8 +115,8 @@ export default async function MySchemesOfWorkPage({
           My schemes of work.
         </h1>
         <p className="max-w-2xl text-[15px] leading-relaxed text-muted-foreground">
-          One per subject, level and track each term. Start from last
-          year&rsquo;s, change what&rsquo;s different, then send it for review.
+          One per subject and level each term. Start from last year&rsquo;s,
+          change what&rsquo;s different, then send it for review.
         </p>
       </header>
 

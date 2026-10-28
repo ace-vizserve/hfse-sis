@@ -25,7 +25,6 @@ type Group = {
   subjectName: string;
   levelId: string;
   levelLabel: string;
-  track: 'Standard' | 'Global';
   mine: { id: string; name: string }[];
 };
 
@@ -52,7 +51,6 @@ async function sowIdsFor(g: Group): Promise<string[]> {
     .match({
       subject_id: g.subjectId,
       level_id: g.levelId,
-      track: g.track,
     });
   if (error) throw error;
   return (data ?? []).map((r) => r.id as string);
@@ -130,7 +128,7 @@ test.beforeAll(async () => {
   const { data: assigns, error: assignErr } = await db
     .from('teacher_assignments')
     .select(
-      'subject_id, section_id, sections!inner(id, name, level_id, class_type, academic_year_id, levels(label)), subjects(name)'
+      'subject_id, section_id, sections!inner(id, name, level_id, academic_year_id, levels(label)), subjects(name)'
     )
     .eq('teacher_user_id', teacherId)
     .in('role', ['subject_teacher', 'co_teacher'])
@@ -158,21 +156,18 @@ test.beforeAll(async () => {
       id: string;
       name: string;
       level_id: string;
-      class_type: string | null;
       academic_year_id: string;
       levels: { label: string };
     };
     if (s.academic_year_id !== ayId) continue;
     if (!configured.has(a.subject_id)) continue;
-    if (!offered.has(`${a.subject_id}|${s.level_id}`)) continue;
-    const track = s.class_type === 'Global' ? 'Global' : 'Standard';
-    const key = `${a.subject_id}|${s.level_id}|${track}`;
+    const key = `${a.subject_id}|${s.level_id}`;
+    if (!offered.has(key)) continue;
     const g = groups.get(key) ?? {
       subjectId: a.subject_id as string,
       subjectName: (a.subjects as unknown as { name: string }).name,
       levelId: s.level_id,
       levelLabel: s.levels.label,
-      track: track as 'Standard' | 'Global',
       mine: [],
     };
     g.mine.push({ id: s.id, name: s.name });
@@ -205,7 +200,7 @@ test.beforeAll(async () => {
   }
   if (rest.length < 1) {
     throw new Error(
-      `${TEACHER} needs a subject x level x track group with no scheme of work in Term ${termNumber}.`
+      `${TEACHER} needs a subject x level group with no scheme of work in Term ${termNumber}.`
     );
   }
   group = rest[0];
@@ -271,7 +266,7 @@ async function shot(page: Page, name: string) {
 function listRow(page: Page, g: Group) {
   return page.getByRole('row').filter({
     has: page.getByText(g.subjectName, { exact: true }),
-    hasText: `${g.levelLabel} · ${g.track}`,
+    hasText: `· ${g.levelLabel}`,
   });
 }
 

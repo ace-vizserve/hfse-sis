@@ -19,7 +19,6 @@ type Group = {
   subjectName: string;
   levelId: string;
   levelLabel: string;
-  track: 'Standard' | 'Global';
   /** The teacher's own classes in the group (ticked by default). */
   mine: { id: string; name: string }[];
 };
@@ -42,7 +41,6 @@ test.describe.configure({ mode: 'serial' });
 const keyOf = (g: Group) => ({
   subject_id: g.subjectId,
   level_id: g.levelId,
-  track: g.track,
 });
 
 async function sowIdsFor(g: Group, forTermId: string): Promise<string[]> {
@@ -124,7 +122,7 @@ test.beforeAll(async () => {
   const { data: assigns, error: assignErr } = await db
     .from('teacher_assignments')
     .select(
-      'subject_id, role, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, class_type, academic_year_id, levels(label)), subjects(name)'
+      'subject_id, role, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, academic_year_id, levels(label)), subjects(name)'
     )
     .eq('teacher_user_id', teacherId)
     .in('role', ['subject_teacher', 'co_teacher'])
@@ -152,21 +150,18 @@ test.beforeAll(async () => {
       id: string;
       name: string;
       level_id: string;
-      class_type: string | null;
       academic_year_id: string;
       levels: { label: string };
     };
     if (s.academic_year_id !== ayId) continue;
     if (!configured.has(a.subject_id)) continue;
-    if (!offered.has(`${a.subject_id}|${s.level_id}`)) continue;
-    const track = s.class_type === 'Global' ? 'Global' : 'Standard';
-    const key = `${a.subject_id}|${s.level_id}|${track}`;
+    const key = `${a.subject_id}|${s.level_id}`;
+    if (!offered.has(key)) continue;
     const g = groups.get(key) ?? {
       subjectId: a.subject_id as string,
       subjectName: (a.subjects as unknown as { name: string }).name,
       levelId: s.level_id,
       levelLabel: s.levels.label,
-      track: track as 'Standard' | 'Global',
       mine: [],
     };
     g.mine.push({ id: s.id, name: s.name });
@@ -181,7 +176,7 @@ test.beforeAll(async () => {
   }
   if (free.length < 2) {
     throw new Error(
-      `${TEACHER} needs two subject x level x track groups with no scheme of work in Term ${termNumber}; found ${free.length}.`
+      `${TEACHER} needs two subject x level groups with no scheme of work in Term ${termNumber}; found ${free.length}.`
     );
   }
   [blank, copy] = free;
@@ -211,7 +206,7 @@ async function shot(page: Page, name: string) {
 function listRow(page: Page, g: Group) {
   return page.getByRole('row').filter({
     has: page.getByText(g.subjectName, { exact: true }),
-    hasText: `${g.levelLabel} · ${g.track}`,
+    hasText: `· ${g.levelLabel}`,
   });
 }
 
@@ -299,7 +294,6 @@ test('start blank: the draft has a row for every week of the term', async ({
   for (const [label, value] of [
     ['Subject', blank.subjectName],
     ['Level', blank.levelLabel],
-    ['Track', blank.track],
     ['Term', `Term ${termNumber}`],
   ]) {
     await expect(
@@ -309,15 +303,14 @@ test('start blank: the draft has a row for every week of the term', async ({
     ).toHaveText(value);
   }
 
-  // The classes: the teacher's own are ticked, the rest of the group are not.
+  // The classes: every class of the level, whatever its class type; the
+  // teacher's own are ticked, the rest are not.
   const { data: sections } = await db
     .from('sections')
-    .select('id, name, class_type')
+    .select('id, name')
     .eq('academic_year_id', ayId)
     .eq('level_id', blank.levelId);
-  const inGroup = (sections ?? []).filter(
-    (s) => (s.class_type === 'Global' ? 'Global' : 'Standard') === blank.track
-  );
+  const inGroup = sections ?? [];
   const mineIds = new Set(blank.mine.map((m) => m.id));
   expect(inGroup.length).toBeGreaterThan(0);
   for (const s of inGroup) {
@@ -524,7 +517,6 @@ test('copy from last year: topics come across and the extra week can go', async 
       term_id: prevTermId,
       subject_id: copy.subjectId,
       level_id: copy.levelId,
-      track: copy.track,
       state: 'approved',
       module: snapshot.module,
       approved_snapshot: snapshot,

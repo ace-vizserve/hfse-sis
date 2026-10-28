@@ -204,7 +204,6 @@ function world(
             subject_id: 'sci',
             level_id: 'L1',
             term_id: 't1',
-            track: 'Standard',
             state: over.state ?? 'approved',
             approved_snapshot:
               over.snapshot === undefined ? snapshot() : over.snapshot,

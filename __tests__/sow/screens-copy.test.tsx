@@ -19,7 +19,6 @@ import {
 const base = {
   termId: '00000000-0000-4000-8000-000000000001',
   subjectId: '00000000-0000-4000-8000-000000000002',
-  track: 'Standard' as const,
   subjectName: 'Science',
   myClassesNotOnSow: [],
   lastYear: null,
@@ -70,7 +69,7 @@ describe('MySowsTable', () => {
   it('names each row action and the "This week" state', () => {
     render(<MySowsTable rows={rows} termLabel="Term 2" />);
     const rowFor = (level: string) =>
-      screen.getByText(new RegExp(`· ${level} ·`)).closest('tr') as HTMLElement;
+      screen.getByText(new RegExp(`· ${level}$`)).closest('tr') as HTMLElement;
 
     expect(within(rowFor('Secondary 1')).getByText('Open')).toBeInTheDocument();
     expect(

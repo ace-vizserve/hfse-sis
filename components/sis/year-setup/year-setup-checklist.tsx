@@ -13,9 +13,11 @@ import {
   Clock,
   LayoutGrid,
   ListChecks,
+  ListOrdered,
   School,
   Sparkles,
   Stamp,
+  UserCheck,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -69,6 +71,8 @@ const ITEM_ICONS: Record<ReadinessStepId, LucideIcon> = {
   advisers: Users,
   'section-subjects': BookOpen,
   'grading-sheets': ClipboardList,
+  'subject-heads': UserCheck,
+  'sow-approved': ListOrdered,
   'virtue-themes': Sparkles,
   letterhead: Stamp,
   'app-window': ListChecks,
@@ -266,7 +270,7 @@ export function YearSetupChecklist({
 
   const firstOptionalId = steps.find((s) => !s.required)?.id ?? null;
 
-  // Sub-group the 10 flat rows into 3 clusters (Miller's Law — layout
+  // Sub-group the 12 flat rows into 4 clusters (Miller's Law — layout
   // redesign pass): the ids genuinely span different domains (dates/
   // calendar/staffing vs grading vs branding/admissions) with no visual
   // grouping today. Purely a label inserted between rows, same mechanism
@@ -277,6 +281,7 @@ export function YearSetupChecklist({
   const CLUSTER_LABEL_BEFORE: Partial<Record<ReadinessStepId, string>> = {
     'ay-setup': 'Core setup',
     sections: 'Grading & staffing',
+    'subject-heads': 'Schemes of work',
     'virtue-themes': 'Branding & admissions',
   };
 
@@ -459,6 +464,26 @@ export function YearSetupChecklist({
                       )}
                     </div>
                   </CollapsibleContent>
+                );
+                break;
+
+              case 'subject-heads':
+                action = (
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open Subject heads <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
+                );
+                break;
+
+              case 'sow-approved':
+                action = (
+                  <Button variant={primaryVariant} size="sm" asChild>
+                    <Link href={step.href}>
+                      Open SOW oversight <ArrowUpRight className="size-3.5" />
+                    </Link>
+                  </Button>
                 );
                 break;
 

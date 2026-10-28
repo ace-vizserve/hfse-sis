@@ -122,6 +122,24 @@ export function checklistSummary(
       return `${done} of ${total} grading sheet${total === 1 ? '' : 's'} created.`;
     }
 
+    case 'subject-heads': {
+      if (!step.fraction || step.fraction.total === 0)
+        return 'No subjects attached to this year yet.';
+      const { done, total } = step.fraction;
+      if (done >= total) return `Every subject has a head (${total}/${total}).`;
+      const gap = total - done;
+      return `${gap} of ${total} subject${total === 1 ? '' : 's'} still need a head — their schemes of work stop at the subject head step until one is set.`;
+    }
+
+    case 'sow-approved': {
+      if (!step.fraction || step.fraction.total === 0)
+        return 'No subjects assigned to teachers this year yet.';
+      const { done, total } = step.fraction;
+      if (done >= total)
+        return `All ${total} scheme${total === 1 ? '' : 's'} of work approved.`;
+      return `${done} of ${total} scheme${total === 1 ? '' : 's'} of work approved.`;
+    }
+
     case 'virtue-themes': {
       if (!step.fraction) return 'No Terms 1–3 yet.';
       const { done, total } = step.fraction;

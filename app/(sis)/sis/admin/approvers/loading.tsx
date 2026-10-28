@@ -8,9 +8,9 @@ import { STAGED_APPROVAL_FLOWS } from '@/lib/schemas/approval-flows';
  * Mirrors `app/(sis)/sis/admin/approvers/page.tsx` — change this file when that
  * page changes.
  *
- * Counts are not guesses: the page renders one card per entry in
+ * Counts are not guesses: the page renders one tab per entry in
  * `STAGED_APPROVAL_FLOWS` (declarations, the two grade-change kinds and the
- * scheme of work), and
+ * scheme of work) and one flow's card under them, and
  * the rules panel holds exactly four rules. The two-approver pool's readiness
  * card and table were removed from the page, so their placeholders went too.
  */
@@ -45,10 +45,11 @@ export default function Loading() {
         </div>
       </section>
 
-      {/* StagedFlowEditor — one Card per kind of request: header with its
-          description, a muted meta strip, and a divide-y list of steps. */}
+      {/* StagedFlowEditor — the tabs, then the chosen flow's Card: header with
+          its description, a muted meta strip, and a divide-y list of steps. */}
       <section className="space-y-4">
-        {STAGED_APPROVAL_FLOWS.map((flow) => (
+        <Skeleton className="h-9 w-[44rem] max-w-full" />
+        {STAGED_APPROVAL_FLOWS.slice(0, 1).map((flow) => (
           <Card key={flow} className="gap-0 py-0">
             <CardHeader className="border-b border-border py-5">
               <div className="flex items-start justify-between gap-3">

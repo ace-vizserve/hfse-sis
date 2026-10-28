@@ -155,7 +155,7 @@ function Review({
     <div className="flex min-h-0 flex-1 flex-col">
       <SheetHeader className="shrink-0 gap-1.5 border-b border-border px-6 pb-5 pt-6 pr-14">
         <p className="text-[13px] text-muted-foreground">
-          {row.className} · {row.subjectName} · {row.track}
+          {row.className} · {row.subjectName}
         </p>
         <SheetTitle className="font-serif text-[24px] leading-tight tracking-tight">
           Week {n} · {formatRange(cell.startsOn, cell.endsOn)}

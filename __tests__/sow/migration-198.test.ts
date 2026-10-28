@@ -50,7 +50,8 @@ describe('migration 198 — scheme of work tables', () => {
     );
   });
 
-  it('keeps one scheme per term, subject, level and track', () => {
+  // As 198 wrote it; migration 200 drops the track (migration-200.test.ts).
+  it('kept one scheme per term, subject, level and track', () => {
     expect(sql).toMatch(
       /constraint schemes_of_work_term_subject_level_track_key\s+unique \(term_id, subject_id, level_id, track\)/
     );

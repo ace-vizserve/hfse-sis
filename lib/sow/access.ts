@@ -20,22 +20,12 @@ import { compareLevelLabels } from '@/lib/sis/levels';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
 
 export type SowState = 'draft' | 'in_review' | 'returned' | 'approved';
-export type SowTrack = 'Standard' | 'Global';
 
-/**
- * The track a class follows, from its `sections.class_type`. A class with no
- * class type set (null) is a Standard class. The one rule every SOW reader
- * uses — keep it here.
- */
-export function trackOf(classType: string | null | undefined): SowTrack {
-  return classType === 'Global' ? 'Global' : 'Standard';
-}
-
+/** One scheme of work is a subject x level in one term (migration 200). */
 export type SowKey = {
   termId: string;
   subjectId: string;
   levelId: string;
-  track: SowTrack;
 };
 
 export type SowCapability = 'edit' | 'read' | 'none';
@@ -129,12 +119,11 @@ type SectionRow = {
   id: string;
   name: string;
   level_id: string;
-  class_type: string | null;
   academic_year_id: string;
 };
 
 /**
- * One row per subject x level x track in which the teacher holds a substantive
+ * One row per subject x level in which the teacher holds a substantive
  * subject or co-teacher assignment. Limited to subjects the AY has set up: a
  * `subject_configs` row for the AY (it has no level column) and a
  * `subject_level_offerings` row for the level.
@@ -178,7 +167,7 @@ export async function listMySowRows(
   const [sections, configs, offerings, subjects, schemes] = await Promise.all([
     service
       .from('sections')
-      .select('id, name, level_id, class_type, academic_year_id')
+      .select('id, name, level_id, academic_year_id')
       .in('id', sectionIds),
     service
       .from('subject_configs')
@@ -194,7 +183,7 @@ export async function listMySowRows(
     service
       .from('schemes_of_work')
       .select(
-        'id, state, current_submission_id, subject_id, level_id, track, scheme_of_work_classes(section_id)'
+        'id, state, current_submission_id, subject_id, level_id, scheme_of_work_classes(section_id)'
       )
       .eq('term_id', termId),
   ]);
@@ -235,7 +224,6 @@ export async function listMySowRows(
   type Group = {
     subjectId: string;
     levelId: string;
-    track: SowTrack;
     classes: Map<string, string>;
   };
   const groups = new Map<string, Group>();
@@ -244,12 +232,11 @@ export async function listMySowRows(
     if (!section) continue;
     const subjectId = a.subject_id!;
     if (!configured.has(subjectId)) continue;
-    if (!offered.has(`${subjectId}|${section.level_id}`)) continue;
-    const track = trackOf(section.class_type);
-    const key = `${subjectId}|${section.level_id}|${track}`;
+    const key = `${subjectId}|${section.level_id}`;
+    if (!offered.has(key)) continue;
     let g = groups.get(key);
     if (!g) {
-      g = { subjectId, levelId: section.level_id, track, classes: new Map() };
+      g = { subjectId, levelId: section.level_id, classes: new Map() };
       groups.set(key, g);
     }
     g.classes.set(section.id, section.name);
@@ -275,12 +262,11 @@ export async function listMySowRows(
     current_submission_id?: string | null;
     subject_id: string;
     level_id: string;
-    track: SowTrack;
     scheme_of_work_classes: { section_id: string }[] | null;
   };
   const schemeByKey = new Map(
     ((schemes.data ?? []) as SchemeRow[]).map((s) => [
-      `${s.subject_id}|${s.level_id}|${s.track}`,
+      `${s.subject_id}|${s.level_id}`,
       s,
     ])
   );
@@ -328,7 +314,6 @@ export async function listMySowRows(
       termId,
       subjectId: g.subjectId,
       levelId: g.levelId,
-      track: g.track,
       subjectName: subjectName.get(g.subjectId) ?? '',
       levelLabel: levelLabel.get(g.levelId) ?? '',
       classes: scheme
@@ -355,7 +340,6 @@ export async function listMySowRows(
   return rows.sort(
     (x, y) =>
       compareLevelLabels(x.levelLabel, y.levelLabel) ||
-      x.subjectName.localeCompare(y.subjectName) ||
-      x.track.localeCompare(y.track)
+      x.subjectName.localeCompare(y.subjectName)
   );
 }

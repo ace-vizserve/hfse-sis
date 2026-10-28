@@ -14,7 +14,7 @@ import type { MySowRow } from '@/lib/sow/access';
 
 export { SowStatusBadge };
 
-// "My schemes of work" (board 1): one row per subject x level x track the
+// "My schemes of work" (board 1): one row per subject x level the
 // teacher holds this term, with the scheme's state and what to do next.
 //
 // The ONE primary button on this screen is "New SOW". Row actions are outline
@@ -24,7 +24,7 @@ export { SowStatusBadge };
 export type MySowListRow = MySowRow & {
   /** Last year's approved scheme to copy from, for a row not started yet. */
   lastYear: { label: string } | null;
-  /** Every class of this level and track this year: the drawer's checkboxes. */
+  /** Every class of this level this year, any class type: the drawer's checkboxes. */
   groupSections: { sectionId: string; name: string }[];
   /**
    * The approval step it waits on (in review) or that returned it (returned),
@@ -33,8 +33,8 @@ export type MySowListRow = MySowRow & {
   stepLabel?: string | null;
 };
 
-export const rowKey = (r: Pick<MySowRow, 'subjectId' | 'levelId' | 'track'>) =>
-  `${r.subjectId}|${r.levelId}|${r.track}`;
+export const rowKey = (r: Pick<MySowRow, 'subjectId' | 'levelId'>) =>
+  `${r.subjectId}|${r.levelId}`;
 
 /** What the "This week" column says for a row. */
 export function thisWeekText(
@@ -80,9 +80,9 @@ export function MySowsTable({
     () => [
       {
         id: 'subject',
-        accessorFn: (r) => `${r.subjectName} ${r.levelLabel} ${r.track}`,
-        header: 'Subject · level · track',
-        meta: { label: 'Subject, level and track' },
+        accessorFn: (r) => `${r.subjectName} ${r.levelLabel}`,
+        header: 'Subject · level',
+        meta: { label: 'Subject and level' },
         enableSorting: false,
         cell: ({ row }) => (
           <span>
@@ -90,7 +90,7 @@ export function MySowsTable({
               {row.original.subjectName}
             </span>{' '}
             <span className="text-muted-foreground">
-              · {row.original.levelLabel} · {row.original.track}
+              · {row.original.levelLabel}
             </span>
           </span>
         ),

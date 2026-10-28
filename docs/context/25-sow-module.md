@@ -1,10 +1,10 @@
 # 25 — Scheme of Work (SOW) module
 
-Built 2026-10-26/27 on local `main`, **not pushed**; migration 198 is on the local stack only. The decision record is **KD #234** (`docs/key-decisions/markbook-sow.md`, which also keeps the history of the two earlier builds, KD #108 and #110). The approved design is `docs/superpowers/specs/2026-10-26-sow-design.md`; the plan is `docs/superpowers/plans/2026-10-26-sow-module.md`.
+Built 2026-10-26/27 on local `main`, **not pushed**; migrations 198 and 200 are on the local stack only. The decision record is **KD #234** (`docs/key-decisions/markbook-sow.md`, which also keeps the history of the two earlier builds, KD #108 and #110). The approved design is `docs/superpowers/specs/2026-10-26-sow-design.md`; the plan is `docs/superpowers/plans/2026-10-26-sow-module.md`.
 
 ## What it is for
 
-A teacher writes one Scheme of Work for each subject, level, track and term. It is the lesson plan: week by week the topic, learning outcomes, activities and assessment. It is vetted by the subject head, the OIC and the Assistant Principal, then approved by the AEB. During the term each teacher says how every week went, a relief teacher reads this week's lesson and records what they covered, and the subject head reviews and signs each week.
+A teacher writes one Scheme of Work for each subject, level and term — the school's own SOW is one workbook per subject per term with one tab per level. (There is no Standard / Global split: the first build had a "track", dropped by Mr Ace on 2026-10-28, migration 200.) It is the lesson plan: week by week the topic, learning outcomes, activities and assessment. It is vetted by the subject head, the OIC and the Assistant Principal, then approved by the AEB. During the term each teacher says how every week went, a relief teacher reads this week's lesson and records what they covered, and the subject head reviews and signs each week.
 
 It is built around three readers, because the two earlier builds had none and were removed: the relief teacher, the approvers, and the supervisor (the subject head). It lives in **Classroom** (staff only; there is no student or parent view).
 
@@ -12,7 +12,7 @@ It is built around three readers, because the two earlier builds had none and we
 
 | Person                                                        | What they do                                                                                                                                                                                |
 | ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Subject teacher or co-teacher                                 | Start a SOW for their subject, level and track; tick the classes it covers; write it; send it; fix and resend when returned; check each week for each class they teach once it is approved. |
+| Subject teacher or co-teacher                                 | Start a SOW for their subject and level; tick which classes the SOW covers; write it; send it; fix and resend when returned; check each week for each class they teach once it is approved. |
 | Subject head                                                  | Vets at step 1 (the `subject_head` step), then reviews the weekly checks of their subject and **signs a week** or **asks the teacher**. Only the subject head signs.                        |
 | OIC, Assistant Principal, AEB                                 | Vet (OIC, Asst P) or approve (AEB) in turn. The OIC step is per half: the OIC Primary for Primary SOWs, the OIC Secondary for Secondary ones. They can also read SOWs in their scope.       |
 | Relief teacher                                                | On the "You're covering" panel: **See today's lesson** (this week's plan, last week's check), and **Save what I covered**. Recording is asked for, never enforced.                          |
@@ -24,7 +24,7 @@ A write is admitted at the route for `teacher`, `academic_coordinator`, `school_
 
 | Route                                                     | What it is                                                                                                                     |
 | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `/classroom/sow`                                          | My schemes of work. Term tabs; one row per subject, level and track the teacher is assigned to, including not started.         |
+| `/classroom/sow`                                          | My schemes of work. Term tabs; one row per subject and level the teacher is assigned to, including not started.                |
 | `/classroom/sow/[sowId]`                                  | The SOW: module details, week list, edit drawers, the step rail, Send / Return / Vet / Approve, "How did Week N go?".          |
 | `/classroom/sow/review`                                   | "Waiting for you": SOWs on the current user's approval step.                                                                   |
 | `/classroom/sow/oversight`                                | Supervisor page. SOWs tab and Weekly checks grid; one level at a time; Needs a look; Review and sign drawer.                   |
@@ -39,9 +39,9 @@ A write is admitted at the route for `teacher`, `academic_coordinator`, `school_
 
 Vet, Approve and Return go through the shared approvals decide route (`/api/approvals/[id]/decide`).
 
-## Tables (migration 198)
+## Tables (migrations 198, 200)
 
-- `schemes_of_work`: AY, term, subject, level, track, `state` (`draft | in_review | returned | approved`), module details, `approved_snapshot`, `current_submission_id`, `started_from` (`blank | copy | import`), `copied_from_sow_id`. Unique on (term, subject, level, track).
+- `schemes_of_work`: AY, term, subject, level, `state` (`draft | in_review | returned | approved`), module details, `approved_snapshot`, `current_submission_id`, `started_from` (`blank | copy | import`), `copied_from_sow_id`. Unique on (term, subject, level) — migration 200 dropped 198's `track` column and its key.
 - `scheme_of_work_classes`: the SOW and the sections that follow it.
 - `scheme_of_work_weeks`: week number, dates, and the teacher-written fields. School events are read live from the calendar, not stored.
 - `scheme_of_work_submissions`: one row per send; it is the approval request's subject. Holds the outcome and the return note and week.
@@ -83,4 +83,4 @@ They run on the **local stack only**, with `next dev` on `http://localhost:3000`
 
 ## Before go-live
 
-Apply migration 198 to production **before** deploying; set the subject heads and the SOW approval steps in production SIS Admin (the readiness check on the approvers page flags an empty step); the `xlsx` advisories are Mr Ace's call; tell teachers which term starts it. KD #234 still needs its row in `.claude/rules/key-decisions.md`.
+Apply migrations 198 and 200 to production **before** deploying; set the subject heads and the SOW approval steps in production SIS Admin (the readiness check on the approvers page flags an empty step); the `xlsx` advisories are Mr Ace's call; tell teachers which term starts it. KD #234 still needs its row in `.claude/rules/key-decisions.md`.

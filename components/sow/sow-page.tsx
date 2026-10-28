@@ -81,7 +81,6 @@ export function SowPage({ view }: { view: SowView }) {
   const sowTitle = `${name} · ${termName}`;
   const termDates = formatTermRange(d.termStart, d.termEnd);
   const meta = [
-    view.key.track,
     termDates ? `${termName}, ${termDates}` : termName,
     view.classes.map((c) => c.name).join(', '),
   ].filter(Boolean);
@@ -97,7 +96,7 @@ export function SowPage({ view }: { view: SowView }) {
   const live = inReview ? (review?.live ?? null) : null;
   // The approver's view (board 5): the live step names this reader.
   const approver = inReview && review?.canDecide === true && live != null;
-  const decideLabel = live?.isLast ? 'Approve' : 'Vet';
+  const decideLabel = live?.isLast ? 'Approve' : 'Looks good, send on';
   const startsOver = view.firstStepLabel
     ? `the ${view.firstStepLabel}`
     : 'the first step';
@@ -118,7 +117,7 @@ export function SowPage({ view }: { view: SowView }) {
           jsonInit('POST', { action: 'approve' })
         ),
       {
-        pending: live?.isLast ? 'Approving…' : 'Vetting…',
+        pending: live?.isLast ? 'Approving…' : 'Sending on…',
         // The handler says what the decision did ("Vetted — it's gone to the
         // OIC.", "Approved."), which is better news than a fixed word.
         success: (r) => r?.message ?? (live?.isLast ? 'Approved.' : 'Vetted.'),
@@ -271,7 +270,7 @@ export function SowPage({ view }: { view: SowView }) {
               <Button
                 onClick={() => void decide()}
                 loading={deciding}
-                loadingText={live?.isLast ? 'Approving…' : 'Vetting…'}
+                loadingText={live?.isLast ? 'Approving…' : 'Sending on…'}
               >
                 {!deciding && <Check className="size-4" />}
                 {decideLabel}

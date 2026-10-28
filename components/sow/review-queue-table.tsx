@@ -23,9 +23,9 @@ export function ReviewQueueTable({ rows }: { rows: SowQueueRow[] }) {
     () => [
       {
         id: 'subject',
-        accessorFn: (r) => `${r.subjectName} ${r.levelLabel} ${r.track}`,
-        header: 'Subject · level · track',
-        meta: { label: 'Subject, level and track' },
+        accessorFn: (r) => `${r.subjectName} ${r.levelLabel}`,
+        header: 'Subject · level',
+        meta: { label: 'Subject and level' },
         enableSorting: false,
         cell: ({ row }) => (
           <span>
@@ -33,8 +33,7 @@ export function ReviewQueueTable({ rows }: { rows: SowQueueRow[] }) {
               {row.original.subjectName}
             </span>{' '}
             <span className="text-muted-foreground">
-              · {row.original.levelLabel} · {row.original.track} · Term{' '}
-              {row.original.termNumber}
+              · {row.original.levelLabel} · Term {row.original.termNumber}
             </span>
           </span>
         ),

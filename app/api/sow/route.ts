@@ -5,8 +5,8 @@ import { CreateSowSchema } from '@/lib/schemas/sow';
 import { createSow } from '@/lib/sow/create';
 import { createServiceClient } from '@/lib/supabase/service';
 
-// POST /api/sow — start a scheme of work for a subject, level and track in a
-// term, blank or copied from last year's approved one.
+// POST /api/sow — start a scheme of work for a subject and level in a term,
+// blank or copied from last year's approved one.
 //
 // Any role can be a teacher, so the gate admits them all and `createSow`
 // decides: the caller must hold the subject (substantive subject or co-teacher

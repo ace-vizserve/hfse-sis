@@ -7,9 +7,9 @@ import { buildGradingSheetScopes } from '@/lib/markbook/grading-sheet-scope';
 
 // Order matches the user-approved AY-Setup workflow: Academic Year ->
 // Calendar -> Sections -> Subject Weights -> Form Advisers -> Section
-// Subjects -> Grading Sheets -> Virtue Themes -> Report-card Letterhead,
-// with 'app-window' (early-bird applications) as the lone optional item
-// after the core 9. The 'grade-levels' step (matching applicant-named
+// Subjects -> Grading Sheets -> Subject Heads -> Scheme of Work Approval ->
+// Virtue Themes -> Report-card Letterhead, with 'app-window' (early-bird
+// applications) as the lone optional item after the core 11. The 'grade-levels' step (matching applicant-named
 // levels to the catalog) was removed by migration 086 alongside the whole
 // Grade Levels admin page — the level catalog is now a fixed 10 core
 // levels (P1-P6, S1-S4), nothing to reconcile against applicant demand.
@@ -34,6 +34,8 @@ export type ReadinessStepId =
   | 'advisers'
   | 'section-subjects'
   | 'grading-sheets'
+  | 'subject-heads'
+  | 'sow-approved'
   | 'virtue-themes'
   | 'letterhead'
   | 'app-window';
@@ -120,9 +122,28 @@ const STEP_META: Record<
     href: '/markbook/sections',
     required: true,
   },
+  // Schemes of work (migration 198). A year is ready once its schemes of work
+  // are approved; the subject heads are the people who approve them first.
+  'subject-heads': {
+    id: 'subject-heads',
+    step: 8,
+    label: 'Subject heads',
+    description: 'Name who heads each subject taught this year',
+    href: '/sis/admin/subject-heads',
+    required: true,
+  },
+  'sow-approved': {
+    id: 'sow-approved',
+    step: 9,
+    label: 'Schemes of work approved',
+    description:
+      'Every subject, level and term taught this year has an approved scheme of work',
+    href: '/classroom/sow/oversight',
+    required: true,
+  },
   'virtue-themes': {
     id: 'virtue-themes',
-    step: 8,
+    step: 10,
     label: 'Virtue themes',
     description: 'Set virtue themes for each term',
     href: '/evaluation/virtue-themes',
@@ -130,7 +151,7 @@ const STEP_META: Record<
   },
   letterhead: {
     id: 'letterhead',
-    step: 9,
+    step: 11,
     label: 'Report-card letterhead',
     description: 'Configure school letterhead and branding',
     href: '/sis/admin/school-config',
@@ -138,7 +159,7 @@ const STEP_META: Record<
   },
   'app-window': {
     id: 'app-window',
-    step: 10,
+    step: 12,
     label: 'Application window',
     description: 'Open early-bird application window (optional)',
     href: '/sis/ay-setup',
@@ -363,6 +384,44 @@ export function resolveGradingSheetsStep(input: {
     status,
     fraction,
   };
+}
+
+// "Done" once every subject offered this year has a head for each half it is
+// taught in — the same test as the Subject heads screen's red "Needs a head"
+// (`components/sis/subject-heads-client.tsx`), so the two never disagree. A
+// subject with no head stops every one of its schemes of work at step 1.
+export function resolveSubjectHeadsStep(input: {
+  subjectCount: number;
+  coveredCount: number;
+}): ReadinessStep {
+  const { subjectCount, coveredCount } = input;
+  const fraction = { done: coveredCount, total: subjectCount };
+  const status: ReadinessStatus =
+    subjectCount === 0 || coveredCount === 0
+      ? 'not_started'
+      : coveredCount >= subjectCount
+        ? 'done'
+        : 'partial';
+  return { ...STEP_META['subject-heads'], status, fraction };
+}
+
+// "Done" once every scheme of work the year needs is approved — one per
+// subject × level × term, the same set the oversight page lists as
+// "Not started" when none exists. A reopened scheme still counts: its
+// approved plan stays in force until the new version is approved.
+export function resolveSowApprovedStep(input: {
+  expectedCount: number;
+  approvedCount: number;
+}): ReadinessStep {
+  const { expectedCount, approvedCount } = input;
+  const fraction = { done: approvedCount, total: expectedCount };
+  const status: ReadinessStatus =
+    expectedCount === 0 || approvedCount === 0
+      ? 'not_started'
+      : approvedCount >= expectedCount
+        ? 'done'
+        : 'partial';
+  return { ...STEP_META['sow-approved'], status, fraction };
 }
 
 export function resolveVirtueThemesStep(input: {
@@ -845,6 +904,153 @@ async function fetchVirtueThemes(
   return { termsRequiringTheme, termsWithTheme };
 }
 
+// Mirrors `loadSubjectHeadsScreen` (lib/sow/subject-heads.ts — server-only, so
+// not importable here; see the KD #94 note on fetchSubjectWeights): a subject
+// is offered this year when it has a `subject_configs` row, its halves come
+// from `subject_level_offerings`, and it is covered when a head is set for
+// every level or for each half. A subject with no half needs any head.
+async function fetchSubjectHeads(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ subjectCount: number; coveredCount: number }> {
+  const [
+    { data: cfgRows, error: cfgErr },
+    { data: offerRows, error: offerErr },
+    { data: levelRows, error: levelErr },
+    { data: headRows, error: headErr },
+  ] = await Promise.all([
+    db
+      .from('subject_configs')
+      .select('subject_id')
+      .eq('academic_year_id', ayId),
+    db
+      .from('subject_level_offerings')
+      .select('subject_id, level_id')
+      .eq('academic_year_id', ayId),
+    db.from('levels').select('id, level_type'),
+    db.from('subject_heads').select('subject_id, applies_to_level_type'),
+  ]);
+  if (cfgErr) throw cfgErr;
+  if (offerErr) throw offerErr;
+  if (levelErr) throw levelErr;
+  if (headErr) throw headErr;
+
+  const levelType = new Map(
+    ((levelRows as any[]) ?? []).map((l) => [l.id as string, l.level_type])
+  );
+  const halves = new Map<string, Set<string>>();
+  for (const id of new Set(((cfgRows as any[]) ?? []).map((c) => c.subject_id)))
+    halves.set(id as string, new Set());
+  for (const o of (offerRows as any[]) ?? []) {
+    const lt = levelType.get(o.level_id);
+    if (lt === 'primary' || lt === 'secondary')
+      halves.get(o.subject_id)?.add(lt);
+  }
+  const heads = new Map<string, Array<string | null>>();
+  for (const h of (headRows as any[]) ?? []) {
+    const list = heads.get(h.subject_id) ?? [];
+    list.push(h.applies_to_level_type ?? null);
+    heads.set(h.subject_id, list);
+  }
+
+  let coveredCount = 0;
+  for (const [subjectId, taught] of halves) {
+    const scopes = heads.get(subjectId) ?? [];
+    if (scopes.length === 0) continue;
+    if (scopes.includes(null) || [...taught].every((h) => scopes.includes(h)))
+      coveredCount += 1;
+  }
+  return { subjectCount: halves.size, coveredCount };
+}
+
+// The schemes of work the year needs, and how many are approved. Needed =
+// every subject × level some class is taught this year — a subject
+// teacher on a section, the subject set up for the year and offered to that
+// level — once per term. The same rule as the oversight page's "Not started"
+// (lib/sow/oversight.ts, server-only so not importable here) and the
+// teacher's own list. Approved = `approved_snapshot` set, so a reopened
+// scheme whose approved plan is still in force counts.
+async function fetchSowApproved(
+  db: SupabaseClient,
+  ayId: string
+): Promise<{ expectedCount: number; approvedCount: number }> {
+  const [
+    { data: termRows, error: termErr },
+    { data: sectionRows, error: secErr },
+    { data: cfgRows, error: cfgErr },
+    { data: offerRows, error: offerErr },
+    { data: sowRows, error: sowErr },
+  ] = await Promise.all([
+    db.from('terms').select('id').eq('academic_year_id', ayId),
+    db.from('sections').select('id, level_id').eq('academic_year_id', ayId),
+    db
+      .from('subject_configs')
+      .select('subject_id')
+      .eq('academic_year_id', ayId),
+    db
+      .from('subject_level_offerings')
+      .select('subject_id, level_id')
+      .eq('academic_year_id', ayId),
+    db
+      .from('schemes_of_work')
+      .select('term_id, subject_id, level_id')
+      .eq('academic_year_id', ayId)
+      .not('approved_snapshot', 'is', null),
+  ]);
+  if (termErr) throw termErr;
+  if (secErr) throw secErr;
+  if (cfgErr) throw cfgErr;
+  if (offerErr) throw offerErr;
+  if (sowErr) throw sowErr;
+
+  const terms = ((termRows as any[]) ?? []).map((t) => t.id as string);
+  const sections = new Map(
+    ((sectionRows as any[]) ?? []).map((s) => [s.id as string, s])
+  );
+  if (terms.length === 0 || sections.size === 0)
+    return { expectedCount: 0, approvedCount: 0 };
+
+  // Paged: a year's subject assignments can pass PostgREST's 1,000-row cap.
+  const assignments: Array<{ section_id: string; subject_id: string | null }> =
+    [];
+  for (let from = 0; ; from += 1000) {
+    const { data, error } = await db
+      .from('teacher_assignments')
+      .select('section_id, subject_id, sections!inner(academic_year_id)')
+      .eq('sections.academic_year_id', ayId)
+      .in('role', ['subject_teacher', 'co_teacher'])
+      .range(from, from + 999);
+    if (error) throw error;
+    assignments.push(...((data as any[]) ?? []));
+    if ((data ?? []).length < 1000) break;
+  }
+
+  const configured = new Set(
+    ((cfgRows as any[]) ?? []).map((c) => c.subject_id as string)
+  );
+  const offered = new Set(
+    ((offerRows as any[]) ?? []).map((o) => `${o.subject_id}|${o.level_id}`)
+  );
+  const needed = new Set<string>();
+  for (const a of assignments) {
+    const section = sections.get(a.section_id);
+    if (!section || !a.subject_id || !configured.has(a.subject_id)) continue;
+    const key = `${a.subject_id}|${section.level_id}`;
+    if (offered.has(key)) needed.add(key);
+  }
+
+  const approved = new Set(
+    ((sowRows as any[]) ?? []).map(
+      (s) => `${s.term_id}|${s.subject_id}|${s.level_id}`
+    )
+  );
+  let approvedCount = 0;
+  for (const termId of terms)
+    for (const key of needed)
+      if (approved.has(`${termId}|${key}`)) approvedCount += 1;
+  return { expectedCount: terms.length * needed.size, approvedCount };
+}
+
 async function fetchLetterhead(
   db: SupabaseClient
 ): Promise<{ hasOrgName: boolean; hasAddress: boolean }> {
@@ -899,6 +1105,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
         totalExpectedSheets: 0,
         totalActualSheets: 0,
       }),
+      resolveSubjectHeadsStep({ subjectCount: 0, coveredCount: 0 }),
+      resolveSowApprovedStep({ expectedCount: 0, approvedCount: 0 }),
       resolveVirtueThemesStep({ termsRequiringTheme: 0, termsWithTheme: 0 }),
       resolveLetterheadStep({ hasOrgName: false, hasAddress: false }),
       resolveAppWindowStep({ accepting: false }),
@@ -908,7 +1116,7 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const ayId = (ayRow as any).id;
   const accepting = (ayRow as any).accepting_applications ?? false;
 
-  // Fan out 9 fetchers
+  // Fan out 11 fetchers
   const [
     aySetup,
     calendar,
@@ -917,6 +1125,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     advisers,
     sectionSubjects,
     gradingSheets,
+    subjectHeads,
+    sowApproved,
     virtueThemes,
     letterhead,
   ] = await Promise.all([
@@ -927,6 +1137,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     fetchAdvisers(db, ayId),
     fetchSectionSubjects(db, ayId),
     fetchGradingSheets(db, ayId),
+    fetchSubjectHeads(db, ayId),
+    fetchSowApproved(db, ayId),
     fetchVirtueThemes(db, ayId),
     fetchLetterhead(db),
   ]);
@@ -939,9 +1151,11 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
   const step5 = resolveAdvisersStep(advisers);
   const step6 = resolveSectionSubjectsStep(sectionSubjects);
   const step7 = resolveGradingSheetsStep(gradingSheets);
-  const step8 = resolveVirtueThemesStep(virtueThemes);
-  const step9 = resolveLetterheadStep(letterhead);
-  const step10 = resolveAppWindowStep({ accepting });
+  const step8 = resolveSubjectHeadsStep(subjectHeads);
+  const step9 = resolveSowApprovedStep(sowApproved);
+  const step10 = resolveVirtueThemesStep(virtueThemes);
+  const step11 = resolveLetterheadStep(letterhead);
+  const step12 = resolveAppWindowStep({ accepting });
 
   return buildReadiness(ayCode, [
     step1,
@@ -954,6 +1168,8 @@ async function getAyReadinessUncached(ayCode: string): Promise<AyReadiness> {
     step8,
     step9,
     step10,
+    step11,
+    step12,
   ]);
 }
 
@@ -963,5 +1179,7 @@ export const getAyReadiness = (ayCode: string) =>
   unstable_cache(
     () => getAyReadinessUncached(ayCode),
     [`sis-readiness-${ayCode}`],
-    { tags: [`sis:${ayCode}`], revalidate: 60 }
+    // 'sis-health' too: the subject-heads and approval-step routes bust that
+    // tag on every save, and neither knows a year code.
+    { tags: [`sis:${ayCode}`, 'sis-health'], revalidate: 60 }
   )();

@@ -30,7 +30,6 @@ type Group = {
   levelId: string;
   levelLabel: string;
   levelType: 'primary' | 'secondary';
-  track: 'Standard' | 'Global';
   mine: { id: string; name: string }[];
 };
 
@@ -57,7 +56,6 @@ test.describe.configure({ mode: 'serial' });
 const keyOf = (g: Group) => ({
   subject_id: g.subjectId,
   level_id: g.levelId,
-  track: g.track,
 });
 
 async function sowIdsFor(g: Group): Promise<string[]> {
@@ -176,7 +174,6 @@ async function createDraftSow(g: Group, label: string): Promise<string> {
       term_id: termId,
       subject_id: g.subjectId,
       level_id: g.levelId,
-      track: g.track,
       state: 'draft',
       module: { title: `E2E ${label} module`, hoursPerWeek: '4' },
       started_from: 'blank',
@@ -253,7 +250,7 @@ test.beforeAll(async () => {
   const { data: assigns, error: assignErr } = await db
     .from('teacher_assignments')
     .select(
-      'subject_id, section_id, sections!inner(id, name, level_id, class_type, academic_year_id, levels(label, level_type)), subjects(name)'
+      'subject_id, section_id, sections!inner(id, name, level_id, academic_year_id, levels(label, level_type)), subjects(name)'
     )
     .eq('teacher_user_id', teacherId)
     .in('role', ['subject_teacher', 'co_teacher'])
@@ -281,7 +278,6 @@ test.beforeAll(async () => {
       id: string;
       name: string;
       level_id: string;
-      class_type: string | null;
       academic_year_id: string;
       levels: { label: string; level_type: string };
     };
@@ -293,15 +289,13 @@ test.beforeAll(async () => {
       s.levels.level_type !== 'secondary'
     )
       continue;
-    const track = s.class_type === 'Global' ? 'Global' : 'Standard';
-    const key = `${a.subject_id}|${s.level_id}|${track}`;
+    const key = `${a.subject_id}|${s.level_id}`;
     const g = groups.get(key) ?? {
       subjectId: a.subject_id as string,
       subjectName: (a.subjects as unknown as { name: string }).name,
       levelId: s.level_id,
       levelLabel: s.levels.label,
       levelType: s.levels.level_type as 'primary' | 'secondary',
-      track: track as 'Standard' | 'Global',
       mine: [],
     };
     g.mine.push({ id: s.id, name: s.name });
@@ -316,7 +310,7 @@ test.beforeAll(async () => {
   }
   if (free.length < 2) {
     throw new Error(
-      `${TEACHER} needs two subject x level x track groups with no scheme of work in Term ${termNumber}; found ${free.length}.`
+      `${TEACHER} needs two subject x level groups with no scheme of work in Term ${termNumber}; found ${free.length}.`
     );
   }
   [groupA, groupB] = free;
@@ -407,7 +401,7 @@ async function shot(page: Page, name: string) {
 function queueRow(page: Page, g: Group) {
   return page.getByRole('row').filter({
     has: page.getByText(g.subjectName, { exact: true }),
-    hasText: `${g.levelLabel} · ${g.track}`,
+    hasText: `· ${g.levelLabel}`,
   });
 }
 
@@ -452,7 +446,7 @@ async function decideAs(
   email: string,
   g: Group,
   sowId: string,
-  buttonName: 'Vet' | 'Approve'
+  buttonName: 'Looks good, send on' | 'Approve'
 ) {
   await signIn(page, email);
   await openFromQueue(page, g, sowId);
@@ -520,7 +514,7 @@ test('the teacher sends it: In review, at the Subject head, with the step rail',
   // The sender is told it is waiting, and has no controls to decide it.
   await expect(page.getByText(/Waiting on the Subject head/)).toBeVisible();
   await expect(
-    page.getByRole('button', { name: 'Vet', exact: true })
+    page.getByRole('button', { name: 'Looks good, send on', exact: true })
   ).toHaveCount(0);
   await shot(page, 'sow-a-in-review.png');
 
@@ -548,7 +542,7 @@ test('the teacher sends it: In review, at the Subject head, with the step rail',
 // ── 2 ──────────────────────────────────────────────────────────────────────
 
 test('the subject head vets it and it moves to the OIC', async ({ page }) => {
-  await decideAs(page, SUBJECT_HEAD, groupA, sowA, 'Vet');
+  await decideAs(page, SUBJECT_HEAD, groupA, sowA, 'Looks good, send on');
 
   const live = await liveRequest(sowA);
   expect(statusOf(live.stages)).toEqual([
@@ -582,7 +576,7 @@ test('nobody off the step sees decide controls', async ({ page }) => {
     await expect(
       page.getByText('In review · OIC', { exact: true })
     ).toBeVisible();
-    for (const name of ['Vet', 'Approve']) {
+    for (const name of ['Looks good, send on', 'Approve']) {
       await expect(page.getByRole('button', { name, exact: true })).toHaveCount(
         0
       );
@@ -602,8 +596,8 @@ test('nobody off the step sees decide controls', async ({ page }) => {
 test('OIC, Assistant Principal and AEB in turn: it is approved', async ({
   page,
 }) => {
-  await decideAs(page, oicOf(groupA), groupA, sowA, 'Vet');
-  await decideAs(page, ASST_P, groupA, sowA, 'Vet');
+  await decideAs(page, oicOf(groupA), groupA, sowA, 'Looks good, send on');
+  await decideAs(page, ASST_P, groupA, sowA, 'Looks good, send on');
   // The last step is the one that says Approve.
   await decideAs(page, AEB, groupA, sowA, 'Approve');
 
@@ -660,7 +654,7 @@ test('a return, an edit and a resend: the new send starts at step 1', async ({
   ).toBeVisible();
   const first = await liveRequest(sowB);
 
-  await decideAs(page, SUBJECT_HEAD, groupB, sowB, 'Vet');
+  await decideAs(page, SUBJECT_HEAD, groupB, sowB, 'Looks good, send on');
 
   // The OIC returns it, naming Week 2.
   await signIn(page, oicOf(groupB));

@@ -9,8 +9,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
  *   2. Nobody edits in review or once approved; relief cover only reads.
  *   3. Office roles and anyone on a step of the current request read.
  *   4. A teacher whose assignment is gone gets nothing.
- *   5. The "My schemes of work" rows group sections by subject x level x
- *      track and skip subjects the AY has not set up.
+ *   5. The "My schemes of work" rows group sections by subject x level
+ *      (whatever their class type) and skip subjects the AY has not set up.
  */
 
 const { loadMock } = vi.hoisted(() => ({ loadMock: vi.fn() }));
@@ -151,7 +151,8 @@ const baseTables = (): Tables => ({
       id: 's2',
       name: 'P1 Courage',
       level_id: 'p1',
-      class_type: 'Standard',
+      // A Global class of the same level joins the same scheme (migration 200).
+      class_type: 'Global',
       academic_year_id: 'ay',
     },
     {
@@ -181,7 +182,7 @@ const baseTables = (): Tables => ({
 describe('listMySowRows', () => {
   beforeEach(() => loadMock.mockReset());
 
-  it('groups two sections of one level and track into one row', async () => {
+  it('groups two sections of one level into one row, whatever their class type', async () => {
     loadMock.mockResolvedValue([
       assignment({ section_id: 's1' }),
       assignment({ id: 'a2', section_id: 's2' }),
@@ -194,23 +195,22 @@ describe('listMySowRows', () => {
         state: 'draft',
         subject_id: 'math',
         level_id: 'p1',
-        track: 'Standard',
         scheme_of_work_classes: [{ section_id: 's1' }, { section_id: 's2' }],
       },
     ];
     const rows = await listMySowRows(fakeService(tables), 'u1', 'term');
     expect(rows).toHaveLength(2);
+    expect(rows[0]).not.toHaveProperty('track');
     expect(rows[0]).toMatchObject({
       subjectName: 'Mathematics',
       levelLabel: 'Primary 1',
-      track: 'Standard',
       classes: [
         { sectionId: 's2', name: 'P1 Courage' },
         { sectionId: 's1', name: 'P1 Patience' },
       ],
       sow: { id: 'w1', state: 'draft' },
     });
-    expect(rows[1]).toMatchObject({ track: 'Global', sow: null });
+    expect(rows[1]).toMatchObject({ levelLabel: 'Secondary 1', sow: null });
   });
 
   it('shows the SOW classes, and flags my sections that are not on it', async () => {
@@ -225,7 +225,6 @@ describe('listMySowRows', () => {
         state: 'draft',
         subject_id: 'math',
         level_id: 'p1',
-        track: 'Standard',
         scheme_of_work_classes: [{ section_id: 's1' }, { section_id: 'sX' }],
       },
     ];

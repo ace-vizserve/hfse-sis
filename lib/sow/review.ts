@@ -14,7 +14,7 @@ import type { Role } from '@/lib/auth/roles';
 import { getStaffDisplayNameById } from '@/lib/auth/staff-list';
 import { SOW_APPROVAL_FLOW } from '@/lib/schemas/approval-flows';
 import { subjectDisplayNameResolver } from '@/lib/sis/subjects/display-names-for-ay';
-import { SOW_APPROVAL_SUBJECT_TYPE, type SowTrack } from '@/lib/sow/access';
+import { SOW_APPROVAL_SUBJECT_TYPE } from '@/lib/sow/access';
 
 // The review side of a scheme of work (Task 10): the "Waiting for you" queue,
 // the ladder the SOW page draws, and the step names the teacher's list shows.
@@ -49,7 +49,6 @@ export type SowQueueRow = {
   requestId: string;
   subjectName: string;
   levelLabel: string;
-  track: SowTrack;
   termNumber: number;
   classes: string[];
   /** Who sent it. */
@@ -97,7 +96,7 @@ export async function listSowReviewQueue(
   const { data: schemeRows, error: sowErr } = await service
     .from('schemes_of_work')
     .select(
-      'id, academic_year_id, state, current_submission_id, subject_id, level_id, term_id, track, scheme_of_work_classes(section_id)'
+      'id, academic_year_id, state, current_submission_id, subject_id, level_id, term_id, scheme_of_work_classes(section_id)'
     )
     .in('id', sowIds);
   if (sowErr) throw new Error(sowErr.message);
@@ -109,7 +108,6 @@ export async function listSowReviewQueue(
     subject_id: string;
     level_id: string;
     term_id: string;
-    track: SowTrack;
     scheme_of_work_classes: { section_id: string }[] | null;
   };
   const schemes = (schemeRows ?? []) as Scheme[];
@@ -209,7 +207,6 @@ export async function listSowReviewQueue(
       requestId: stage.requestId,
       subjectName: subjectNameOf(scheme),
       levelLabel: levelLabel.get(scheme.level_id) ?? '',
-      track: scheme.track,
       termNumber: Number(termNumber.get(scheme.term_id) ?? 0),
       classes: (scheme.scheme_of_work_classes ?? [])
         .map((c) => sectionName.get(c.section_id) ?? '')

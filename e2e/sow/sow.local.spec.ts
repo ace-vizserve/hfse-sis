@@ -48,7 +48,6 @@ let levelLabel = '';
 let levelType: 'primary' | 'secondary' = 'primary';
 let subjectId = '';
 let subjectName = '';
-let track: 'Standard' | 'Global' = 'Standard';
 let weekN = 0;
 let A: Person; // the teacher who writes the scheme (holds S1, co-teaches S2)
 let B: Person; // holds S2 (covered by the relief teacher today), co-teaches S1
@@ -79,7 +78,6 @@ type State = {
   termId: string | null;
   subjectId: string | null;
   levelId: string | null;
-  track: string | null;
   assignmentIds: string[];
   reliefAssignmentId: string | null;
   headRowId: string | null;
@@ -92,7 +90,6 @@ const emptyState = (): State => ({
   termId: null,
   subjectId: null,
   levelId: null,
-  track: null,
   assignmentIds: [],
   reliefAssignmentId: null,
   headRowId: null,
@@ -150,14 +147,13 @@ async function cleanup() {
   // The scheme the walk made, found by the group it was made for.
   const sowIds = new Set<string>();
   if (sowId) sowIds.add(sowId);
-  if (s.termId && s.subjectId && s.levelId && s.track) {
+  if (s.termId && s.subjectId && s.levelId) {
     const { data } = await db
       .from('schemes_of_work')
       .select('id')
       .eq('term_id', s.termId)
       .eq('subject_id', s.subjectId)
-      .eq('level_id', s.levelId)
-      .eq('track', s.track);
+      .eq('level_id', s.levelId);
     for (const r of data ?? []) sowIds.add(r.id as string);
   }
   if (sowIds.size > 0) {
@@ -264,7 +260,7 @@ test.beforeAll(async () => {
       db
         .from('teacher_assignments')
         .select(
-          'id, teacher_user_id, role, subject_id, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, class_type, academic_year_id, levels(label, level_type)), subjects(name)'
+          'id, teacher_user_id, role, subject_id, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, academic_year_id, levels(label, level_type)), subjects(name)'
         )
         .in('role', ['subject_teacher', 'co_teacher'])
         .not('subject_id', 'is', null)
@@ -276,10 +272,10 @@ test.beforeAll(async () => {
   );
   const { data: existingSows } = await db
     .from('schemes_of_work')
-    .select('subject_id, level_id, track')
+    .select('subject_id, level_id')
     .eq('term_id', termId);
   const taken = new Set(
-    (existingSows ?? []).map((s) => `${s.subject_id}|${s.level_id}|${s.track}`)
+    (existingSows ?? []).map((s) => `${s.subject_id}|${s.level_id}`)
   );
   const { data: heads } = await db.from('subject_heads').select('subject_id');
   const hasHead = new Set((heads ?? []).map((h) => h.subject_id));
@@ -300,7 +296,6 @@ test.beforeAll(async () => {
       id: string;
       name: string;
       level_id: string;
-      class_type: string | null;
       levels: { label: string; level_type: string };
     };
     subjects: { name: string };
@@ -316,12 +311,11 @@ test.beforeAll(async () => {
     ) {
       continue;
     }
-    const t = r.sections.class_type === 'Global' ? 'Global' : 'Standard';
-    const key = `${r.subject_id}|${r.sections.level_id}|${t}`;
+    const key = `${r.subject_id}|${r.sections.level_id}`;
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
 
-  // One subject x level x track with exactly two classes, each held by a
+  // One subject x level with exactly two classes, each held by a
   // different teacher, nothing else on either, no head yet, no cover booked.
   let picked: { rows: Row[]; headCandidate: string } | null = null;
   for (const [key, rows] of groups) {
@@ -352,7 +346,7 @@ test.beforeAll(async () => {
   }
   if (!picked) {
     throw new Error(
-      'No subject x level x track with two classes and two different teachers is free of a scheme this term.'
+      'No subject x level with two classes and two different teachers is free of a scheme this term.'
     );
   }
 
@@ -362,7 +356,6 @@ test.beforeAll(async () => {
   levelId = r1.sections.level_id;
   levelLabel = r1.sections.levels.label;
   levelType = r1.sections.levels.level_type as 'primary' | 'secondary';
-  track = r1.sections.class_type === 'Global' ? 'Global' : 'Standard';
   S1 = { id: r1.section_id, name: r1.sections.name };
   S2 = { id: r2.section_id, name: r2.sections.name };
   A = { id: r1.teacher_user_id, email: emailOf.get(r1.teacher_user_id)! };
@@ -392,7 +385,6 @@ test.beforeAll(async () => {
     termId,
     subjectId,
     levelId,
-    track,
     sectionIds: [S1.id, S2.id],
   };
   saveState();
@@ -540,7 +532,7 @@ const isDecide = (r: { url(): string; request(): { method(): string } }) =>
 function queueRow(page: Page) {
   return page.getByRole('row').filter({
     has: page.getByText(subjectName, { exact: true }),
-    hasText: `${levelLabel} · ${track}`,
+    hasText: `· ${levelLabel}`,
   });
 }
 
@@ -556,7 +548,7 @@ async function expectNotInQueue(page: Page) {
 async function decideAs(
   page: Page,
   email: string,
-  buttonName: 'Vet' | 'Approve'
+  buttonName: 'Looks good, send on' | 'Approve'
 ) {
   await signIn(page, email);
   await page.goto(`${SIS}/classroom/sow/review`);
@@ -615,7 +607,7 @@ test('the teacher starts a blank scheme and writes Week 1', async ({
   await page.goto(`${SIS}/classroom/sow?term=${termNumber}`);
   const row = page.getByRole('row').filter({
     has: page.getByText(subjectName, { exact: true }),
-    hasText: `${levelLabel} · ${track}`,
+    hasText: `· ${levelLabel}`,
   });
   await expect(row.getByText('Not started', { exact: true })).toBeVisible();
   await row.getByRole('button', { name: 'Start SOW' }).click();
@@ -715,15 +707,15 @@ test('the teacher sends it: in review at the Subject head', async ({
 test('subject head, OIC, Assistant Principal and AEB: approved', async ({
   page,
 }) => {
-  await decideAs(page, HEAD.email, 'Vet');
+  await decideAs(page, HEAD.email, 'Looks good, send on');
   expect((await liveRequest()).stages).toEqual([
     '1:approved',
     '2:pending',
     '3:waiting',
     '4:waiting',
   ]);
-  await decideAs(page, OIC[levelType], 'Vet');
-  await decideAs(page, ASST_P, 'Vet');
+  await decideAs(page, OIC[levelType], 'Looks good, send on');
+  await decideAs(page, ASST_P, 'Looks good, send on');
   await decideAs(page, AEB, 'Approve');
 
   await signIn(page, A.email);

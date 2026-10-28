@@ -57,6 +57,7 @@ import {
   PopoverTrigger,
 } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { apiFetch } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
@@ -225,24 +226,65 @@ export function StagedFlowEditor({
    */
   levelTypesInUse?: ApproverLevelScope[];
 }) {
+  // ⚠ ONE KIND OF REQUEST AT A TIME, on tabs. Four cards stacked made the page
+  // several screens tall. It opens on the first flow that cannot finish,
+  // because that is the work; a dot marks every tab that needs setting up.
+  const notReady = new Set(
+    flows
+      .filter(
+        (f) =>
+          classifyStagedFlowReadiness(f.stages, levelTypesInUse, f.flow)
+            .tone !== 'mint'
+      )
+      .map((f) => f.flow)
+  );
+  const [tab, setTab] = useState<string>(
+    () => (flows.find((f) => notReady.has(f.flow)) ?? flows[0])?.flow ?? ''
+  );
+
   if (flows.length === 0) return null;
 
   // No section intro of its own: the page header above says how every
   // approval works, and what happens to a turned-down request differs by who
   // filed it, so that sentence lives on each card instead.
   return (
-    <section className="space-y-4">
+    <Tabs value={tab} onValueChange={setTab} className="gap-4">
+      <TabsList aria-label="Kinds of request">
+        {flows.map((flow) => (
+          <TabsTrigger key={flow.flow} value={flow.flow}>
+            {STAGED_FLOW_TAB_LABELS[flow.flow]}
+            {notReady.has(flow.flow) && (
+              <>
+                <span
+                  className="size-1.5 rounded-full bg-destructive"
+                  aria-hidden
+                />
+                <span className="sr-only">(needs setting up)</span>
+              </>
+            )}
+          </TabsTrigger>
+        ))}
+      </TabsList>
       {flows.map((flow) => (
-        <FlowCard
-          key={flow.flow}
-          flow={flow}
-          staff={staff}
-          levelTypesInUse={levelTypesInUse}
-        />
+        <TabsContent key={flow.flow} value={flow.flow}>
+          <FlowCard
+            flow={flow}
+            staff={staff}
+            levelTypesInUse={levelTypesInUse}
+          />
+        </TabsContent>
       ))}
-    </section>
+    </Tabs>
   );
 }
+
+// Short names for the tabs; the card under each still carries the full one.
+const STAGED_FLOW_TAB_LABELS: Record<StagedApprovalFlow, string> = {
+  'attendance.student_declaration': 'Absence declarations',
+  'markbook.grade_change': 'Grade changes before publication',
+  'markbook.grade_change_aeb': 'Grade changes after publication',
+  'markbook.scheme_of_work': 'Scheme of work',
+};
 
 function FlowCard({
   flow,

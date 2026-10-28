@@ -4,7 +4,7 @@ import { SkeletonText } from '@/components/ui/skeleton-layouts';
 
 /**
  * Mirrors `app/(sis)/sis/admin/subject-heads/page.tsx` — change this file when
- * that page changes. Header, the one-line summary, the toolbar and tabs, then
+ * that page changes. Header, then the titled card: summary line, toolbar and
  * the table of subjects.
  *
  * ⚠ ALSO THE PAGE'S SUSPENSE BOUNDARY. With `cacheComponents` on, a page that
@@ -23,25 +23,39 @@ export default function Loading() {
         </header>
       </div>
 
-      <div className="space-y-4">
+      {/* The titled card: eyebrow, tile + title, summary line, then the
+          toolbar (search, Status, Taught in · Export CSV, Columns) and rows. */}
+      <div className="space-y-4 rounded-xl border border-border p-6">
+        <SkeletonText variant="micro" className="w-[140px]" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="size-9 rounded-xl" />
+          <SkeletonText variant="title" className="w-[120px]" />
+        </div>
         <SkeletonText variant="label" className="w-[28rem] max-w-full" />
         <div className="flex items-center justify-between gap-3">
-          <Skeleton className="h-8 w-[224px]" />
-          <Skeleton className="h-8 w-[112px]" />
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-[224px]" />
+            <Skeleton className="h-8 w-[96px]" />
+            <Skeleton className="h-8 w-[112px]" />
+          </div>
+          <div className="flex gap-2">
+            <Skeleton className="h-8 w-[128px]" />
+            <Skeleton className="h-8 w-[112px]" />
+          </div>
         </div>
-        <Skeleton className="h-9 w-[288px]" />
         <div className="rounded-xl border border-border">
           {Array.from({ length: 8 }).map((_, i) => (
             <div
               key={i}
               className="flex items-center gap-4 border-b border-border px-4 py-3 last:border-b-0"
             >
-              <div className="w-1/3 space-y-1.5">
-                <SkeletonText variant="body" className="w-[60%]" />
-                <SkeletonText variant="label" className="w-[45%]" />
-              </div>
-              <Skeleton className="h-8 w-[136px]" />
-              <Skeleton className="ml-auto h-6 w-[150px]" />
+              <SkeletonText variant="body" className="w-1/4" />
+              <SkeletonText variant="label" className="w-[8%]" />
+              <SkeletonText variant="label" className="w-[12%]" />
+              <SkeletonText variant="label" className="w-[12%]" />
+              <SkeletonText variant="label" className="w-[12%]" />
+              <Skeleton className="h-6 w-[96px]" />
+              <Skeleton className="ml-auto h-8 w-[56px]" />
             </div>
           ))}
         </div>

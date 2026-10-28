@@ -114,7 +114,6 @@ function sowRow(over: Partial<MySowRow> & Pick<MySowRow, 'sow'>): MySowRow {
     termId: 't2',
     subjectId: 'sci',
     levelId: 'L1',
-    track: 'Standard',
     subjectName: 'Science',
     levelLabel: 'Secondary 1',
     classes: [
@@ -356,7 +355,6 @@ describe('loadSowHome', () => {
       sowRow({
         levelId: 'L2',
         levelLabel: 'Secondary 2',
-        track: 'Global',
         classes: [{ sectionId: 'g1', name: 'Integrity 1' }],
         sow: null,
       }),
@@ -369,7 +367,7 @@ describe('loadSowHome', () => {
     expect(home.todos).toEqual([
       expect.objectContaining({
         kind: 'start',
-        text: 'Start the Secondary 2 Global Science SOW',
+        text: 'Start the Secondary 2 Science SOW',
         href: '/classroom/sow',
       }),
     ]);

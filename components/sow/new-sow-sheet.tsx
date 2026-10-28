@@ -38,11 +38,11 @@ import {
   SOW_IMPORT_TOO_BIG_MESSAGE,
 } from '@/lib/schemas/sow';
 
-// New SOW (board 2). Starts a draft for one subject x level x track this term,
+// New SOW (board 2). Starts a draft for one subject x level this term,
 // blank, copied from last year's approved scheme, or imported once from the
 // school's Excel template, and opens it.
 //
-// Opened from a row ("Start SOW"), the subject, level, track and term are that
+// Opened from a row ("Start SOW"), the subject, level and term are that
 // row's and are shown, not picked. Opened from "New SOW", one select offers
 // the rows not started yet — the only combinations the teacher can create.
 //
@@ -60,7 +60,7 @@ type ImportPreview = {
 const CHOICE_CLASS =
   'flex cursor-pointer items-start gap-3 rounded-lg border border-border bg-card p-3 transition-colors hover:bg-muted/40 has-[[data-state=checked]]:border-brand-indigo/40 has-[[data-state=checked]]:bg-brand-indigo/5';
 
-const keyOf = (r: MySowListRow) => `${r.subjectId}|${r.levelId}|${r.track}`;
+const keyOf = (r: MySowListRow) => `${r.subjectId}|${r.levelId}`;
 
 export function NewSowSheet({
   open,
@@ -163,7 +163,6 @@ function NewSowForm({
           termId: row!.termId,
           subjectId: row!.subjectId,
           levelId: row!.levelId,
-          track: row!.track,
         },
         sectionIds: [...ticked],
         start: 'import',
@@ -242,7 +241,6 @@ function NewSowForm({
                   termId: row.termId,
                   subjectId: row.subjectId,
                   levelId: row.levelId,
-                  track: row.track,
                 },
                 sectionIds: [...ticked],
                 start,
@@ -285,14 +283,13 @@ function NewSowForm({
                 <dl className="grid grid-cols-2 gap-4">
                   <Fact label="Subject" value={row.subjectName} />
                   <Fact label="Level" value={row.levelLabel} />
-                  <Fact label="Track" value={row.track} />
                   <Fact label="Term" value={termLabel} />
                 </dl>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-[minmax(0,1fr)_auto]">
                   <Field>
                     <FieldLabel htmlFor="new-sow-which">
-                      Subject, level and track
+                      Subject and level
                     </FieldLabel>
                     <Select value={key ?? undefined} onValueChange={pick}>
                       <SelectTrigger id="new-sow-which" className="w-full">
@@ -301,7 +298,7 @@ function NewSowForm({
                       <SelectContent>
                         {rows.map((r) => (
                           <SelectItem key={keyOf(r)} value={keyOf(r)}>
-                            {r.subjectName} · {r.levelLabel} · {r.track}
+                            {r.subjectName} · {r.levelLabel}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -482,7 +479,7 @@ function NewSowForm({
                 <div className="space-y-1.5 rounded-lg border border-border bg-muted/40 p-3.5 text-[13px] text-ink-2">
                   <p className="font-medium text-foreground">
                     Copy from {row.lastYear.label} · {row.levelLabel}{' '}
-                    {row.subjectName} ({row.track}), approved
+                    {row.subjectName}, approved
                   </p>
                   <FieldDescription>
                     Brings across the module details and every week. Week dates

@@ -12,7 +12,7 @@ import {
   SowSnapshotSchema,
 } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
-import { type SowKey, trackOf } from '@/lib/sow/access';
+import type { SowKey } from '@/lib/sow/access';
 import type { ParsedSow } from '@/lib/sow/excel-import';
 import { loadTermWeeks, reconcileWeeks } from '@/lib/sow/weeks';
 
@@ -45,7 +45,7 @@ export type CreateSowResult =
   | { ok: false; status: 400 | 403 | 409; error: string };
 
 const DUPLICATE_KEY_MESSAGE =
-  'A scheme of work already exists for this subject, level and track this term.';
+  'A scheme of work already exists for this subject and level this term.';
 
 const fail = (
   status: 400 | 403 | 409,
@@ -59,8 +59,8 @@ const fail = (
 type LastYear = { id: string; label: string; snapshot: unknown };
 
 /**
- * Last year's APPROVED scheme for the same term number, subject, level and
- * track. "Last year" is the academic year with the next-lower `ay_code` (the
+ * Last year's APPROVED scheme for the same term number, subject and level.
+ * "Last year" is the academic year with the next-lower `ay_code` (the
  * ordering the rest of the app uses for years).
  */
 async function loadLastYear(
@@ -106,7 +106,6 @@ async function loadLastYear(
     .eq('term_id', (priorTerm as { id: string }).id)
     .eq('subject_id', key.subjectId)
     .eq('level_id', key.levelId)
-    .eq('track', key.track)
     // "Approved" = it has an approved snapshot, as everywhere else: a scheme
     // reopened for revision is back in draft, but its approved plan stands.
     .not('approved_snapshot', 'is', null)
@@ -204,29 +203,23 @@ export async function createSow(
 
   const { data: sectionData, error: sectionErr } = await service
     .from('sections')
-    .select('id, name, level_id, class_type, academic_year_id')
+    .select('id, name, level_id, academic_year_id')
     .in('id', sectionIds);
   if (sectionErr) throw new Error(sectionErr.message);
   const sections = (sectionData ?? []) as {
     id: string;
     name: string;
     level_id: string;
-    class_type: string | null;
     academic_year_id: string;
   }[];
   if (sections.length !== sectionIds.length) {
     return fail(400, 'One of the classes you ticked could not be found.');
   }
   for (const s of sections) {
-    const track = trackOf(s.class_type);
-    if (
-      s.academic_year_id !== ayId ||
-      s.level_id !== key.levelId ||
-      track !== key.track
-    ) {
+    if (s.academic_year_id !== ayId || s.level_id !== key.levelId) {
       return fail(
         400,
-        `${s.name} does not belong with this level and track, so it cannot be on this scheme of work.`
+        `${s.name} does not belong with this level, so it cannot be on this scheme of work.`
       );
     }
   }
@@ -235,24 +228,21 @@ export async function createSow(
   // under another scheme for this subject and term.
   const { data: sameTermData, error: sameTermErr } = await service
     .from('schemes_of_work')
-    .select('id, level_id, track')
+    .select('id, level_id')
     .eq('term_id', key.termId)
     .eq('subject_id', key.subjectId);
   if (sameTermErr) throw new Error(sameTermErr.message);
   const sameTerm = (sameTermData ?? []) as {
     id: string;
     level_id: string;
-    track: string;
   }[];
-  if (
-    sameTerm.some((s) => s.level_id === key.levelId && s.track === key.track)
-  ) {
+  if (sameTerm.some((s) => s.level_id === key.levelId)) {
     return fail(409, DUPLICATE_KEY_MESSAGE);
   }
-  // A race here needs no extra handling: a section has one level and one
-  // class type, and every ticked section was just checked against the key's
-  // level and track, so two schemes that could share a section share the whole
-  // (term, subject, level, track) key. The loser of a race hits that unique key
+  // A race here needs no extra handling: a section has one level, and every
+  // ticked section was just checked against the key's level, so two schemes
+  // that could share a section share the whole (term, subject, level) key
+  // (migration 200). The loser of a race hits that unique key
   // on the schemes_of_work insert below (23505 -> the duplicate 409), before
   // any class row is written. scheme_of_work_classes is unique only on
   // (sow_id, section_id), so it cannot raise a cross-scheme conflict itself.
@@ -314,7 +304,7 @@ export async function createSow(
     if (!last) {
       return fail(
         400,
-        'There is no approved scheme of work from last year to copy for this subject, level and track.'
+        'There is no approved scheme of work from last year to copy for this subject and level.'
       );
     }
     const parsed = SowSnapshotSchema.safeParse(last.snapshot);
@@ -407,7 +397,6 @@ export async function createSow(
       term_id: key.termId,
       subject_id: key.subjectId,
       level_id: key.levelId,
-      track: key.track,
       state: 'draft',
       module: moduleDetails,
       started_from: start,

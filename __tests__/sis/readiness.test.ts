@@ -7,6 +7,8 @@ import {
   resolveAdvisersStep,
   resolveSectionSubjectsStep,
   resolveGradingSheetsStep,
+  resolveSubjectHeadsStep,
+  resolveSowApprovedStep,
   resolveVirtueThemesStep,
   resolveLetterheadStep,
   resolveAppWindowStep,
@@ -256,6 +258,54 @@ describe('resolveGradingSheetsStep', () => {
     expect(s.fraction).toEqual({ done: 0, total: 0 });
     expect(Number.isFinite(s.fraction!.done)).toBe(true);
     expect(Number.isFinite(s.fraction!.total)).toBe(true);
+  });
+});
+
+describe('resolveSubjectHeadsStep', () => {
+  it('not_started when no subjects are attached to the year', () => {
+    const s = resolveSubjectHeadsStep({ subjectCount: 0, coveredCount: 0 });
+    expect(s.status).toBe('not_started');
+    expect(s.required).toBe(true);
+    expect(s.href).toBe('/sis/admin/subject-heads');
+  });
+  it('not_started when no subject has a head', () => {
+    const s = resolveSubjectHeadsStep({ subjectCount: 19, coveredCount: 0 });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 19 });
+  });
+  it('partial when some subjects have a head', () => {
+    const s = resolveSubjectHeadsStep({ subjectCount: 19, coveredCount: 3 });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 3, total: 19 });
+  });
+  it('done when every subject has a head', () => {
+    expect(
+      resolveSubjectHeadsStep({ subjectCount: 19, coveredCount: 19 }).status
+    ).toBe('done');
+  });
+});
+
+describe('resolveSowApprovedStep', () => {
+  it('not_started when the year needs no schemes yet', () => {
+    const s = resolveSowApprovedStep({ expectedCount: 0, approvedCount: 0 });
+    expect(s.status).toBe('not_started');
+    expect(s.required).toBe(true);
+    expect(s.href).toBe('/classroom/sow/oversight');
+  });
+  it('not_started when none is approved', () => {
+    const s = resolveSowApprovedStep({ expectedCount: 120, approvedCount: 0 });
+    expect(s.status).toBe('not_started');
+    expect(s.fraction).toEqual({ done: 0, total: 120 });
+  });
+  it('partial when some are approved', () => {
+    const s = resolveSowApprovedStep({ expectedCount: 120, approvedCount: 30 });
+    expect(s.status).toBe('partial');
+    expect(s.fraction).toEqual({ done: 30, total: 120 });
+  });
+  it('done when every needed scheme is approved', () => {
+    expect(
+      resolveSowApprovedStep({ expectedCount: 120, approvedCount: 120 }).status
+    ).toBe('done');
   });
 });
 

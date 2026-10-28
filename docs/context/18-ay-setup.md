@@ -114,18 +114,22 @@ Per-row `Switch` on the AY list (`components/sis/ay-accepting-applications-toggl
 
 A separate floating readiness indicator in the SIS layout (`app/(sis)/layout.tsx`), visible to school_admin + superadmin. Not the same as the Year Setup checklist — this is a header-bar chip that opens a dialog. **It is suppressed on `/sis/ay-setup` itself** (2026-07-08) since the checklist dashboard on that page already renders the same readiness data in place — the pill stays everywhere else and deep-links here.
 
-The readiness engine (`lib/sis/readiness.ts`) tracks **8 items** (7 required + 1 optional), not 4 — `STEP_META`'s `ReadinessStepId` union is `'ay-setup' | 'calendar' | 'classes' | 'advisers' | 'grading-sheets' | 'virtue-themes' | 'letterhead' | 'app-window'`:
+The readiness engine (`lib/sis/readiness.ts`) tracks **12 items** (11 required + 1 optional) — `STEP_META`'s `ReadinessStepId` union, in display order:
 
-1. **AY Setup** (required) — terms exist with dated start/end.
-2. **School Calendar** (required) — school_day-type rows present for all terms.
-3. **Classes & subjects** (required) — sections + subject_configs exist for the AY.
-4. **Form advisers** (required) — every section has a form adviser assigned.
-5. **Grading Sheets** (required) — all sections have grading sheets created.
-6. **Virtue themes** (required) — T1–T3 terms each have a `virtue_theme` set.
-7. **Report-card letterhead** (required) — `school_config` has an organization name + address.
-8. **Application window** (optional) — the AY's early-bird `accepting_applications` window is open.
+1. **Academic year & term dates** (required) — terms exist with dated start/end.
+2. **School calendar** (required) — school_day-type rows present for all terms.
+3. **Sections** (required) — every grade level has at least one section.
+4. **Subjects attached** (required) — every grade level has at least one subject this AY.
+5. **Form advisers** (required) — every section has a form adviser assigned.
+6. **Section subjects** (required) — every section has subjects attached.
+7. **Grading sheets** (required) — every expected (section, subject, term) sheet exists.
+8. **Subject heads** (required, "Schemes of work" group) — every subject offered this AY has a head for each half it is taught in (same test as the Subject heads screen). Heads are not per-AY; they carry over.
+9. **Schemes of work approved** (required, "Schemes of work" group) — every subject × level taught this AY (a subject teacher on a section, the subject configured and offered to that level — oversight's "Not started" rule) has an approved scheme of work for every term. A reopened scheme counts (`approved_snapshot` set). Opens SOW oversight.
+10. **Virtue themes** (required) — T1–T3 terms each have a `virtue_theme` set.
+11. **Report-card letterhead** (required) — `school_config` has an organization name + address.
+12. **Application window** (optional) — the AY's early-bird `accepting_applications` window is open.
 
-`complete`/`total` on `AyReadiness` count **required items only** (currently 7) — the optional Application-window item never blocks "all set." Pill turns amber "Setup needed" when any required item is incomplete. Source: `lib/sis/readiness.ts::getAyReadiness(ayCode)` (`unstable_cache`, tag `sis:${ayCode}`).
+`complete`/`total` on `AyReadiness` count **required items only** (currently 11) — the optional Application-window item never blocks "all set." Pill turns amber "Setup needed" when any required item is incomplete. Source: `lib/sis/readiness.ts::getAyReadiness(ayCode)` (`unstable_cache`, tags `sis:${ayCode}` + `sis-health` — the subject-heads and approval-step routes bust `sis-health`).
 
 ### Delete-AY flow (superadmin only)
 

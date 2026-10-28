@@ -654,13 +654,30 @@ const CLASSROOM_NAV: NavSection[] = [
   {
     items: [
       { href: '/classroom', label: 'All classes' },
+      // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
+      // this page does not (its own ROUTE_ACCESS row is narrower), so without
+      // this every teacher would see a link that bounces them to `/` — the
+      // visible-but-bounces bug three separate pages carried until 2026-09-10.
+      // The list must stay in step with that ROUTE_ACCESS row.
+      {
+        href: '/classroom/discipline',
+        label: 'Discipline',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+    ],
+  },
+  {
+    // The three scheme-of-work pages, grouped under one label so the item
+    // names can drop the repeated "scheme of work".
+    label: 'Schemes of work',
+    items: [
       // Schemes of work. Admits the same roles as the module (and its own
       // ROUTE_ACCESS row says so too), so `requiresRoles` matches the module
       // list rather than narrowing it — kept explicit so the two rows are
       // edited together if either changes.
       {
         href: '/classroom/sow',
-        label: 'Schemes of work',
+        label: 'My schemes',
         requiresRoles: [
           'teacher',
           'academic_coordinator',
@@ -675,7 +692,7 @@ const CLASSROOM_NAV: NavSection[] = [
       // and the badge says how many are waiting before they click.
       {
         href: '/classroom/sow/review',
-        label: 'Schemes to review',
+        label: 'To review',
         requiresRoles: [
           'teacher',
           'academic_coordinator',
@@ -695,17 +712,7 @@ const CLASSROOM_NAV: NavSection[] = [
       // `/classroom/sow`'s, which admits teachers, so the link never bounces.
       {
         href: '/classroom/sow/oversight',
-        label: 'Scheme of work oversight',
-        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
-      },
-      // ⚠ `requiresRoles` IS LOAD-BEARING HERE. Classroom admits teachers,
-      // this page does not (its own ROUTE_ACCESS row is narrower), so without
-      // this every teacher would see a link that bounces them to `/` — the
-      // visible-but-bounces bug three separate pages carried until 2026-09-10.
-      // The list must stay in step with that ROUTE_ACCESS row.
-      {
-        href: '/classroom/discipline',
-        label: 'Discipline',
+        label: 'Oversight',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
       },
     ],

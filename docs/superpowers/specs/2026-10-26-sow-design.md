@@ -44,9 +44,11 @@ Teachers write a Scheme of Work for each subject, level and term. It is the less
 
 ### 3.1 What one SOW covers
 
-**One SOW per academic year × term × subject × level × track.** Track is `sections.class_type` ('Standard' / 'Global'). It is called "track" on screen, as in the mockup.
+**One SOW per academic year × term × subject × level.**
 
-Each SOW lists the **classes that follow it**: the sections of that level and track ticked when it is created. A teacher teaching Science to Sec 1 Discipline 1 and Discipline 2 writes one SOW for both.
+> **2026-10-28 — track dropped (Mr Ace).** This section first made one SOW per subject × level × **track** (track = `sections.class_type`, 'Standard' / 'Global'). The school never split it that way: its scheme of work is one workbook per subject per term, one tab per level. Migration 200 dropped `schemes_of_work.track`; the unique key is now (term, subject, level), and the class picker offers every section of the level whatever its class type. Where this spec still says "track" below, read it as gone.
+
+Each SOW lists the **classes that follow it**: the sections of that level (any class type) ticked when it is created. A teacher teaching Science to Sec 1 Discipline 1 and Discipline 2 writes one SOW for both.
 
 ### 3.2 Contents
 
@@ -92,13 +94,12 @@ A drawer on the "My schemes of work" page asks for:
 
 - subject
 - level
-- track
 - term
 - the classes that follow it (checkboxes)
 
 It then offers three ways to start:
 
-1. **Copy from last year** (the default when one exists). This starts from the approved SOW for the same subject, level, track and term in the previous academic year.
+1. **Copy from last year** (the default when one exists). This starts from the approved SOW for the same subject, level and term in the previous academic year.
    - The module details and the content of every week are copied across.
    - Week dates and events are recalculated from this year's calendar.
    - Weekly checks and notes are **not** copied.
@@ -270,14 +271,14 @@ The existing class list is unchanged.
 
 ### 5.5 "My schemes of work" (mockup board 1)
 
-The page has term tabs. Each row is a subject · level · track, showing:
+The page has term tabs. Each row is a subject · level, showing:
 
 - its classes
 - its state
 - this week's status
 - the next action: Open / Fix and resend / Start SOW
 
-A row is listed for every subject × level × track the teacher is assigned to, **including ones not started**, so nothing is missed.
+A row is listed for every subject × level the teacher is assigned to, **including ones not started**, so nothing is missed.
 
 ## 6. Excel
 
@@ -292,7 +293,7 @@ The design agreed in T12 says **"no grading sheet config without an approved SOW
 
 **New tables:**
 
-- `schemes_of_work`: AY, term, subject, level, track, state, module details, the approved snapshot, the current approval request id, and who created it. Unique on (term, subject, level, track).
+- `schemes_of_work`: AY, term, subject, level, state, module details, the approved snapshot, the current approval request id, and who created it. Unique on (term, subject, level) — migration 200 dropped the track column on 2026-10-28 (§3.1).
 - `scheme_of_work_classes`: the SOW and its sections.
 - `scheme_of_work_weeks`: the SOW, week number, dates, and the teacher-written fields. Events are read live from the calendar and not stored.
 - `scheme_of_work_checks`: the SOW week, section, teacher, option, and note. One row per teacher per class per week. This is an append-only ledger, and the newest row wins, like `attendance_daily`.

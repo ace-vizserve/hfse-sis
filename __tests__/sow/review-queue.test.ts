@@ -176,7 +176,6 @@ beforeEach(() => {
         subject_id: 'sci',
         level_id: 'sec1',
         term_id: 't2',
-        track: 'Standard',
         scheme_of_work_classes: [{ section_id: 'd1' }, { section_id: 'd2' }],
       },
       {
@@ -186,7 +185,6 @@ beforeEach(() => {
         subject_id: 'sci',
         level_id: 'sec2',
         term_id: 't2',
-        track: 'Global',
         scheme_of_work_classes: [{ section_id: 'g1' }],
       },
     ],
@@ -216,7 +214,6 @@ describe('listSowReviewQueue', () => {
         requestId: 'req-a',
         subjectName: 'Science',
         levelLabel: 'Secondary 1',
-        track: 'Standard',
         termNumber: 2,
         classes: ['Discipline 1', 'Discipline 2'],
         teacher: 'Ms Teacher',

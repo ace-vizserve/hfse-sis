@@ -34,6 +34,7 @@ const POPOVER_CLUSTERS: Array<{ label: string; stepIds: ReadinessStepId[] }> = [
       'grading-sheets',
     ],
   },
+  { label: 'Schemes of work', stepIds: ['subject-heads', 'sow-approved'] },
   { label: 'Branding & admissions', stepIds: ['virtue-themes', 'letterhead'] },
   { label: 'Optional', stepIds: ['app-window'] },
 ];

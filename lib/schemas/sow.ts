@@ -4,14 +4,11 @@ import { CHECK_OPTIONS } from '@/lib/sow/check-options';
 
 // Scheme of Work — the shapes every SOW route and writer shares.
 
-export const SowTrackSchema = z.enum(['Standard', 'Global']);
-
-/** One scheme of work is a subject x level x track in one term. */
+/** One scheme of work is a subject x level in one term. */
 export const SowKeySchema = z.object({
   termId: z.string().uuid(),
   subjectId: z.string().uuid(),
   levelId: z.string().uuid(),
-  track: SowTrackSchema,
 });
 
 export const CreateSowSchema = z.object({

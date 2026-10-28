@@ -59,8 +59,7 @@ function fakeService(tables: Tables, opts: { failInsert?: string } = {}) {
                 (r) =>
                   r.term_id === p.term_id &&
                   r.subject_id === p.subject_id &&
-                  r.level_id === p.level_id &&
-                  r.track === p.track
+                  r.level_id === p.level_id
               )
             ) {
               return {
@@ -152,7 +151,6 @@ const KEY = {
   termId: 't27',
   subjectId: 'math',
   levelId: 'L1',
-  track: 'Standard' as const,
 };
 const ACTOR = { id: 'u1', email: 'u1@x.sg', role: 'teacher' as const };
 
@@ -225,7 +223,6 @@ function world(): Tables {
         term_id: 't26',
         subject_id: 'math',
         level_id: 'L1',
-        track: 'Standard',
         state: 'approved',
         approved_snapshot: {
           module: { title: 'Maths P1' },
@@ -275,7 +272,6 @@ function world(): Tables {
         term_id: 't26b',
         subject_id: 'math',
         level_id: 'L1',
-        track: 'Standard',
         state: 'draft',
         approved_snapshot: null,
       },
@@ -433,7 +429,6 @@ describe('createSow', () => {
       term_id: 't27',
       subject_id: 'math',
       level_id: 'L1',
-      track: 'Standard',
       state: 'draft',
     });
     const { service } = fakeService(t);
@@ -446,19 +441,20 @@ describe('createSow', () => {
       ok: false,
       status: 409,
       error:
-        'A scheme of work already exists for this subject, level and track this term.',
+        'A scheme of work already exists for this subject and level this term.',
     });
   });
 
   it('a class already on another SOW for the subject is a 409 naming it', async () => {
+    // The other scheme is another level's: the class was on it before it
+    // moved level.
     const t = world();
     t.schemes_of_work.push({
       id: 'other',
       academic_year_id: 'ay27',
       term_id: 't27',
       subject_id: 'math',
-      level_id: 'L1',
-      track: 'Global',
+      level_id: 'L2',
       state: 'draft',
     });
     t.scheme_of_work_classes.push({ sow_id: 'other', section_id: 's2' });
@@ -508,26 +504,38 @@ describe('createSow', () => {
     );
   });
 
-  it('a ticked class from another level or track is a 400', async () => {
+  it('a ticked class from another level is a 400', async () => {
     const { service } = fakeService(world());
-    for (const sectionIds of [['s4'], ['s3']]) {
-      loadMock.mockResolvedValue(
-        sectionIds.map((section_id) => ({
-          id: 'a',
-          teacher_user_id: 'u1',
-          section_id,
-          subject_id: 'math',
-          role: 'subject_teacher',
-          via: 'substantive',
-        }))
-      );
-      const res = await createSow(service, ACTOR, {
-        key: KEY,
-        sectionIds,
-        start: 'blank',
-      });
-      expect(res).toMatchObject({ ok: false, status: 400 });
-    }
+    loadMock.mockResolvedValue([
+      {
+        id: 'a',
+        teacher_user_id: 'u1',
+        section_id: 's4',
+        subject_id: 'math',
+        role: 'subject_teacher',
+        via: 'substantive',
+      },
+    ]);
+    const res = await createSow(service, ACTOR, {
+      key: KEY,
+      sectionIds: ['s4'],
+      start: 'blank',
+    });
+    expect(res).toMatchObject({ ok: false, status: 400 });
+  });
+
+  it('a Global and a Standard class of the level share one scheme', async () => {
+    const { service, inserts } = fakeService(world());
+    const res = await createSow(service, ACTOR, {
+      key: KEY,
+      sectionIds: ['s2', 's3'],
+      start: 'blank',
+    });
+    expect(res.ok).toBe(true);
+    expect(
+      (inserts.scheme_of_work_classes ?? []).map((r) => r.section_id).sort()
+    ).toEqual(['s2', 's3']);
+    expect(inserts.schemes_of_work?.[0]).not.toHaveProperty('track');
   });
 
   it('removes the scheme when the weeks cannot be saved', async () => {

@@ -11,7 +11,7 @@ import { DataTable } from '@/components/ui/data-table';
 import type { OversightSowRow } from '@/lib/sow/oversight';
 
 // The "SOWs" tab of oversight (board 9): every scheme of work of the term in
-// the viewer's scope, plus each subject × level × track the year teaches that
+// the viewer's scope, plus each subject × level the year teaches that
 // has none yet. Each row opens the scheme; nothing is decided from the list,
 // so every action is the same outline button and the page has no primary.
 
@@ -53,9 +53,9 @@ export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
     () => [
       {
         id: 'subject',
-        accessorFn: (r) => `${r.subjectName} ${r.levelLabel} ${r.track}`,
-        header: 'Subject · level · track',
-        meta: { label: 'Subject, level and track' },
+        accessorFn: (r) => `${r.subjectName} ${r.levelLabel}`,
+        header: 'Subject · level',
+        meta: { label: 'Subject and level' },
         enableSorting: false,
         enableHiding: false,
         cell: ({ row }) => (
@@ -64,7 +64,7 @@ export function OversightSowsTable({ rows }: { rows: OversightSowRow[] }) {
               {row.original.subjectName}
             </span>{' '}
             <span className="text-muted-foreground">
-              · {row.original.levelLabel} · {row.original.track}
+              · {row.original.levelLabel}
             </span>
           </span>
         ),

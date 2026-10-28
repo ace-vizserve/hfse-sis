@@ -16,7 +16,7 @@ import { LOCAL_PASSWORD, localDb } from '../parent-portal/local-db';
 // a person takes is done in the browser.
 //
 // SETUP (all removed afterwards, even after a crash — see STATE_FILE):
-//   - one subject x level x track with two classes, S1 and S2;
+//   - one subject x level with two classes, S1 and S2;
 //   - teacher A holds S1 (their own seat) and co-teaches S2 (added); teacher B
 //     holds S2 (their own seat) and co-teaches S1 (added);
 //   - an APPROVED scheme for the term covering every numbered week;
@@ -40,7 +40,6 @@ let levelId = '';
 let levelLabel = '';
 let subjectId = '';
 let subjectName = '';
-let track: 'Standard' | 'Global' = 'Standard';
 let weekN = 0; // the week today falls in
 let weekCount = 0; // numbered weeks in the term
 let prevWeekN: number | null = null; // N - 1, when it exists
@@ -194,7 +193,7 @@ test.beforeAll(async () => {
       db
         .from('teacher_assignments')
         .select(
-          'id, teacher_user_id, role, subject_id, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, class_type, academic_year_id, levels(label)), subjects(name)'
+          'id, teacher_user_id, role, subject_id, relief_teacher_user_id, section_id, sections!inner(id, name, level_id, academic_year_id, levels(label)), subjects(name)'
         )
         .in('role', ['subject_teacher', 'co_teacher'])
         .not('subject_id', 'is', null)
@@ -206,10 +205,10 @@ test.beforeAll(async () => {
   );
   const { data: existingSows } = await db
     .from('schemes_of_work')
-    .select('subject_id, level_id, track')
+    .select('subject_id, level_id')
     .eq('term_id', termId);
   const taken = new Set(
-    (existingSows ?? []).map((s) => `${s.subject_id}|${s.level_id}|${s.track}`)
+    (existingSows ?? []).map((s) => `${s.subject_id}|${s.level_id}`)
   );
   const { data: heads } = await db.from('subject_heads').select('subject_id');
   const hasHead = new Set((heads ?? []).map((h) => h.subject_id));
@@ -225,7 +224,6 @@ test.beforeAll(async () => {
       id: string;
       name: string;
       level_id: string;
-      class_type: string | null;
       levels: { label: string };
     };
     subjects: { name: string };
@@ -233,9 +231,8 @@ test.beforeAll(async () => {
   const groups = new Map<string, Row[]>();
   for (const r of (assigns ?? []) as unknown as Row[]) {
     if (!configured.has(r.subject_id)) continue;
-    if (!offered.has(`${r.subject_id}|${r.sections.level_id}`)) continue;
-    const t = r.sections.class_type === 'Global' ? 'Global' : 'Standard';
-    const key = `${r.subject_id}|${r.sections.level_id}|${t}`;
+    const key = `${r.subject_id}|${r.sections.level_id}`;
+    if (!offered.has(key)) continue;
     groups.set(key, [...(groups.get(key) ?? []), r]);
   }
 
@@ -289,7 +286,7 @@ test.beforeAll(async () => {
   }
   if (!picked) {
     throw new Error(
-      'No subject x level x track with two classes and two different teachers is free of a scheme this term.'
+      'No subject x level with two classes and two different teachers is free of a scheme this term.'
     );
   }
 
@@ -298,7 +295,6 @@ test.beforeAll(async () => {
   subjectName = r1.subjects.name;
   levelId = r1.sections.level_id;
   levelLabel = r1.sections.levels.label;
-  track = r1.sections.class_type === 'Global' ? 'Global' : 'Standard';
   S1 = { id: r1.section_id, name: r1.sections.name };
   S2 = { id: r2.section_id, name: r2.sections.name };
   A = { id: r1.teacher_user_id, email: byId.get(r1.teacher_user_id)!.email! };
@@ -379,7 +375,6 @@ test.beforeAll(async () => {
       term_id: termId,
       subject_id: subjectId,
       level_id: levelId,
-      track,
       state: 'approved',
       module: snapshot.module,
       approved_snapshot: snapshot,
@@ -543,8 +538,10 @@ test("classroom home shows this week's lessons and what is due", async ({
   const lessons = page.locator('section[aria-labelledby="this-week-heading"]');
   await expect(lessons).toContainText(`Week ${weekN}`);
   for (const c of [S1, S2]) {
+    // The class and the subject: a teacher may teach the class another
+    // subject too, which is its own lesson row.
     const row = lessons.getByRole('listitem').filter({
-      hasText: `${className(c)} ·`,
+      hasText: `${className(c)} · ${subjectName}`,
     });
     await expect(row).toHaveCount(1);
     await expect(row).toContainText(`E2E P5 topic ${weekN}`);
@@ -608,7 +605,7 @@ test('two teachers check the week and the home follows', async ({ page }) => {
   const lessons = page.locator('section[aria-labelledby="this-week-heading"]');
   for (const c of [S1, S2]) {
     const row = lessons.getByRole('listitem').filter({
-      hasText: `${className(c)} ·`,
+      hasText: `${className(c)} · ${subjectName}`,
     });
     await expect(row).toContainText('Checked');
     await expect(row).not.toContainText('Check due');

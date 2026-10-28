@@ -165,7 +165,7 @@ type NumberedWeek = Extract<TermWeek, { kind: 'week' }>;
 /**
  * The class's approved scheme for the subject in the term today falls in, and
  * the term's weeks. One scheme at most: a scheme is unique per term × subject
- * × level × track, and a class has one level and one track.
+ * × level, and a class has one level.
  */
 async function resolvePlan(
   service: SupabaseClient,

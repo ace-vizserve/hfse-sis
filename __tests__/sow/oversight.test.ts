@@ -232,7 +232,6 @@ const SOW: GridSow = {
   levelId: 'L1',
   levelLabel: 'Secondary 1',
   levelType: 'secondary',
-  track: 'Standard',
   snapshot: SNAPSHOT,
   sectionIds: ['secA'],
 };

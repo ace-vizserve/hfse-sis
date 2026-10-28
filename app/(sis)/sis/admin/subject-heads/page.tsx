@@ -16,8 +16,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 // approve its schemes of work. The primary action is adding a person.
 //
 // ── PATTERN ────────────────────────────────────────────────────────────────
-// SIS Admin settings page: header, one `DataTable` (one row per subject), and
-// an inline picker per row — one or two fields, so no drawer.
+// SIS Admin settings page: header, then a titled card holding one `DataTable`
+// (one row per subject), like Staff; "Edit" opens a drawer to set its heads.
 //
 // ⚠ GATED LIKE APPROVERS (superadmin; the route checks `approvers.manage`).
 // A subject head step on the approvers screen lists nobody: this screen is
@@ -44,6 +44,7 @@ export default async function SubjectHeadsPage() {
       />
       <SubjectHeadsClient
         rows={rows}
+        ayCode={ay?.ay_code ?? null}
         // Switched-off accounts are passed too, so a head whose account was
         // turned off still shows by name; the picker leaves them out.
         staff={staff

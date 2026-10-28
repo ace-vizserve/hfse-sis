@@ -44,7 +44,7 @@ KD #108 and #110 died because nobody read the SOW; the work fell on the teacher 
 
 **The shape.**
 
-- **Eight tables, all in migration 198:** `schemes_of_work`, `scheme_of_work_classes`, `scheme_of_work_weeks`, `scheme_of_work_submissions`, `scheme_of_work_checks`, `scheme_of_work_relief_notes`, `scheme_of_work_signoffs`, `subject_heads`. One SOW per academic year x term x subject x level x track (track = `sections.class_type`). Writes go through service-role routes that check the caller's assignment; the tables are closed to the browser.
+- **Eight tables, all in migration 198:** `schemes_of_work`, `scheme_of_work_classes`, `scheme_of_work_weeks`, `scheme_of_work_submissions`, `scheme_of_work_checks`, `scheme_of_work_relief_notes`, `scheme_of_work_signoffs`, `subject_heads`. One SOW per academic year x term x subject x level (unique on term, subject, level). Writes go through service-role routes that check the caller's assignment; the tables are closed to the browser.
 - **Approval is the existing engine (KD #196)** as a new staged flow, `markbook.scheme_of_work`: Subject head, OIC (per half, `applies_to_level_type`), Assistant Principal, AEB. Steps are configuration; nobody is seeded.
 - **A third resolver, `subject_head`.** `approval_stages.resolver` now allows `named | form_adviser | subject_head`. A subject-head step holds no approver rows; when a SOW is sent the step is **materialised as a frozen named pool** from `subject_heads` for that subject and level type, exactly like a named step. A change to the setting re-points waiting steps through `approval_repoint_request_stage`, matched on `config_stage_id`, excluding only the filer.
 - **One submission per send.** `approval_requests` is unique on (flow, subject_type, subject_id), so each send makes a `scheme_of_work_submissions` row and that row is the request's subject. A return ends that request; **Send for review again restarts at step 1** with a new submission. Rounds are kept as history.
@@ -80,10 +80,10 @@ KD #108 and #110 died because nobody read the SOW; the work fell on the teacher 
 - "Approved" is `approved_snapshot is not null` everywhere, copy-from-last-year included (a reopened SOW still copies).
 - The Excel import limit is **4 MB** (Vercel's request body limit is 4.5 MB).
 - A subject head whose account was deleted or switched off counts for nothing: left out of the readiness count, the filed pool and the re-pointed pool. An empty staff list is treated as a failed read, never as "nobody".
-- One `trackOf(classType)` in `lib/sow/access.ts` (null → Standard) for every reader.
+- **No track (2026-10-28, Mr Ace, migration 200).** 198 first keyed a SOW by subject x level x track (`sections.class_type`, Standard / Global). The school never split it that way — its SOW is one workbook per subject per term, one tab per level — so migration 200 dropped `schemes_of_work.track` and made the key (term, subject, level). The class picker offers every section of the level whatever its class type. 200 stops with the clashing keys rather than deleting a scheme if two would collide (none existed; 198 was on the local stack only).
 
 **Out, deliberately:** a separate lesson-plan document, any student or parent view, linking SOW assessments to grading-sheet slots, storing the Excel file, a version-history screen, and any outside planner (the Flourish meeting never happened).
 
 **Gates.** `e2e/sow/phase-1..5.local.spec.ts` and the full walk `e2e/sow/sow.local.spec.ts`, all run by `npm run e2e:sow` against the local stack.
 
-⏳ **Before go-live:** apply migration 198 to production **before** deploying; set the subject heads and the SOW approval steps in production SIS Admin; the `xlsx` advisories are Mr Ace's call; tell teachers which term starts it. Still needs its row in `.claude/rules/key-decisions.md` (topic table and quick lookup), which needs Mr Ace's approval.
+⏳ **Before go-live:** apply migrations 198 and 200 to production **before** deploying; set the subject heads and the SOW approval steps in production SIS Admin; the `xlsx` advisories are Mr Ace's call; tell teachers which term starts it. Still needs its row in `.claude/rules/key-decisions.md` (topic table and quick lookup), which needs Mr Ace's approval.

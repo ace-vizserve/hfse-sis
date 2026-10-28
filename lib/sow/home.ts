@@ -94,11 +94,9 @@ function weekdayName(iso: string): string {
   return WEEKDAYS[dow];
 }
 
-/** "Secondary 3 Science", or "Secondary 2 Global Science". */
-function subjectLevel(
-  r: Pick<MySowRow, 'levelLabel' | 'subjectName' | 'track'>
-) {
-  return `${r.levelLabel}${r.track === 'Global' ? ' Global' : ''} ${r.subjectName}`;
+/** "Secondary 3 Science". */
+function subjectLevel(r: Pick<MySowRow, 'levelLabel' | 'subjectName'>) {
+  return `${r.levelLabel} ${r.subjectName}`;
 }
 
 type NumberedWeek = Extract<TermWeek, { kind: 'week' }>;
@@ -279,7 +277,7 @@ export async function loadSowHome(
     }
     if (!row.sow) {
       start.push({
-        id: `start|${row.subjectId}|${row.levelId}|${row.track}`,
+        id: `start|${row.subjectId}|${row.levelId}`,
         kind: 'start',
         text: `Start the ${subjectLevel(row)} SOW`,
         href,

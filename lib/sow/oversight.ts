@@ -17,7 +17,7 @@ import { type SowSnapshot, SowSnapshotSchema } from '@/lib/schemas/sow';
 import { isSubjectRole } from '@/lib/schemas/teacher-assignment';
 import { compareLevelLabels } from '@/lib/sis/levels';
 import { subjectDisplayName } from '@/lib/sis/subjects/display-name';
-import { type SowState, type SowTrack, trackOf } from '@/lib/sow/access';
+import type { SowState } from '@/lib/sow/access';
 import {
   type CellMark,
   CHECK_LABELS,
@@ -176,7 +176,6 @@ export type GridSow = {
   levelId: string;
   levelLabel: string;
   levelType: LevelType | null;
-  track: SowTrack;
   snapshot: SowSnapshot;
   sectionIds: string[];
 };
@@ -255,7 +254,6 @@ export type GridRow = {
   levelId: string;
   levelLabel: string;
   levelType: LevelType | null;
-  track: SowTrack;
   /** The week today falls in for this level, if any. */
   currentWeek: number | null;
   /** The viewer heads this subject for this half, so signs its weeks. */
@@ -439,7 +437,6 @@ export function buildCheckGrid(input: {
         levelId: sow.levelId,
         levelLabel: sow.levelLabel,
         levelType: sow.levelType,
-        track: sow.track,
         currentWeek: current,
         canSign,
         teachers,
@@ -753,7 +750,7 @@ function readSnapshot(raw: unknown): SowSnapshot | null {
 // ── The page's read ─────────────────────────────────────────────────────────
 
 export type OversightSowRow = {
-  /** `${subjectId}|${levelId}|${track}` */
+  /** `${subjectId}|${levelId}` */
   id: string;
   sowId: string | null;
   subjectId: string;
@@ -761,7 +758,6 @@ export type OversightSowRow = {
   levelId: string;
   levelLabel: string;
   levelType: LevelType | null;
-  track: SowTrack;
   classes: string[];
   teachers: string[];
   /** null = no scheme of work yet. */
@@ -802,7 +798,6 @@ type SchemeRow = {
   id: string;
   subject_id: string;
   level_id: string;
-  track: SowTrack;
   state: SowState;
   current_submission_id: string | null;
   approved_snapshot: unknown;
@@ -859,14 +854,14 @@ export async function loadOversight(
     service
       .from('schemes_of_work')
       .select(
-        'id, subject_id, level_id, track, state, current_submission_id, approved_snapshot, scheme_of_work_classes(section_id)'
+        'id, subject_id, level_id, state, current_submission_id, approved_snapshot, scheme_of_work_classes(section_id)'
       )
       .eq('term_id', input.termId),
     service.from('levels').select('id, code, label, level_type'),
     service.from('subjects').select('id, name'),
     service
       .from('sections')
-      .select('id, name, level_id, class_type')
+      .select('id, name, level_id')
       .eq('academic_year_id', input.academicYearId),
     fetchAllPages<AssignmentLite>((from, to) =>
       service
@@ -941,7 +936,6 @@ export async function loadOversight(
     id: string;
     name: string;
     level_id: string;
-    class_type: string | null;
   }[];
   const sectionById = new Map(sections.map((s) => [s.id, s]));
   const sectionNames = new Map(sections.map((s) => [s.id, s.name]));
@@ -973,7 +967,7 @@ export async function loadOversight(
     (a) => a.subject_id && isSubjectRole(a.role)
   );
 
-  // ── "Not started": a subject × level × track the year teaches, with
+  // ── "Not started": a subject × level the year teaches, with
   // grading set up for it (`listMySowRows`' rule), and no scheme yet.
   const configured = new Set(
     ((configRes.data ?? []) as { subject_id: string }[]).map(
@@ -987,7 +981,7 @@ export async function loadOversight(
   );
   const allSchemeKeys = new Set(
     ((schemeRes.data ?? []) as SchemeRow[]).map(
-      (s) => `${s.subject_id}|${s.level_id}|${s.track}`
+      (s) => `${s.subject_id}|${s.level_id}`
     )
   );
   const groups = new Map<
@@ -995,7 +989,6 @@ export async function loadOversight(
     {
       subjectId: string;
       levelId: string;
-      track: SowTrack;
       sections: Set<string>;
     }
   >();
@@ -1003,13 +996,11 @@ export async function loadOversight(
     const section = sectionById.get(a.section_id);
     if (!section || !a.subject_id) continue;
     if (!configured.has(a.subject_id)) continue;
-    if (!offered.has(`${a.subject_id}|${section.level_id}`)) continue;
-    const track = trackOf(section.class_type);
-    const key = `${a.subject_id}|${section.level_id}|${track}`;
+    const key = `${a.subject_id}|${section.level_id}`;
+    if (!offered.has(key)) continue;
     const g = groups.get(key) ?? {
       subjectId: a.subject_id,
       levelId: section.level_id,
-      track,
       sections: new Set<string>(),
     };
     g.sections.add(section.id);
@@ -1054,7 +1045,6 @@ export async function loadOversight(
       levelId: s.level_id,
       levelLabel: levels.get(s.level_id)?.label ?? '',
       levelType: levelTypeOf(s.level_id),
-      track: s.track,
       snapshot,
       sectionIds: (s.scheme_of_work_classes ?? []).map((c) => c.section_id),
     });
@@ -1203,14 +1193,13 @@ export async function loadOversight(
       (c) => c.section_id
     );
     return {
-      id: `${s.subject_id}|${s.level_id}|${s.track}`,
+      id: `${s.subject_id}|${s.level_id}`,
       sowId: s.id,
       subjectId: s.subject_id,
       subjectName: subjectName.get(s.subject_id) ?? '',
       levelId: s.level_id,
       levelLabel: levels.get(s.level_id)?.label ?? '',
       levelType: levelTypeOf(s.level_id),
-      track: s.track,
       classes: classNames(sectionIds),
       teachers: teachersFor(s.subject_id, sectionIds),
       state: s.state,
@@ -1232,7 +1221,6 @@ export async function loadOversight(
       levelId: g.levelId,
       levelLabel: levels.get(g.levelId)?.label ?? '',
       levelType,
-      track: g.track,
       classes: classNames(g.sections),
       teachers: teachersFor(g.subjectId, g.sections),
       state: null,
@@ -1244,8 +1232,7 @@ export async function loadOversight(
   sowRows.sort(
     (a, b) =>
       compareLevelLabels(a.levelLabel, b.levelLabel) ||
-      a.subjectName.localeCompare(b.subjectName) ||
-      a.track.localeCompare(b.track)
+      a.subjectName.localeCompare(b.subjectName)
   );
 
   // ── Weekly checks tab ────────────────────────────────────────────────────

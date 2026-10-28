@@ -9,7 +9,8 @@ const SIS = process.env.E2E_SIS_URL ?? 'http://localhost:3000';
 const SOW_FLOW = 'markbook.scheme_of_work';
 const SOW_TITLE = 'Classroom · Scheme of work approval';
 const DECLARATION_TITLE = 'Attendance · Absence and travel declarations';
-const STEP_LABEL = 'Subject head';
+// Not "Subject head": the local stack's own scheme of work steps use that.
+const STEP_LABEL = 'Subject head (e2e)';
 
 const db = localDb();
 
@@ -81,7 +82,13 @@ test.beforeAll(async () => {
   stageIdsBefore = await sowStageIds();
 
   // Start from "nobody heads anything", and with no step left by a crashed run.
+  // The heads found are put back by afterAll.
   await restore();
+  const { error: clearErr } = await db
+    .from('subject_heads')
+    .delete()
+    .not('id', 'is', null);
+  if (clearErr) throw clearErr;
 });
 
 test.afterAll(async () => {
@@ -98,16 +105,25 @@ async function adminSignIn(page: Page) {
   await page.waitForURL((u) => !u.pathname.startsWith('/login'));
 }
 
-async function openSubjectHeads(
-  page: Page,
-  tab: 'Needs a head' | 'Has a head'
-) {
+async function openSubjectHeads(page: Page) {
   await page.goto(`${SIS}/sis/admin/subject-heads`);
   await expect(
     page.getByRole('heading', { name: /Subject heads/ }).first()
   ).toBeVisible();
-  await page.getByRole('tab', { name: new RegExp(tab) }).click();
 }
+
+/** The row's "Edit" opens the drawer where heads are added and removed. */
+async function openEditor(page: Page) {
+  await subjectRow(page)
+    .getByRole('button', { name: `Edit heads of ${subjectName}` })
+    .click();
+  const sheet = page.getByRole('dialog');
+  await expect(sheet).toBeVisible();
+  return sheet;
+}
+
+const removeButton = () =>
+  new RegExp(`^Remove .+ as a head of ${subjectName}$`);
 
 /** The answer to the Subject heads save, so no step hangs on a toast that may have gone. */
 function waitForSave(page: Page) {
@@ -125,6 +141,8 @@ function subjectRow(page: Page) {
     .filter({ has: page.getByText(subjectName, { exact: true }) });
 }
 
+// The approvers page shows one flow at a time, on tabs; only the chosen tab's
+// card is on the page.
 function flowCard(page: Page, title: string) {
   return page
     .locator('[data-slot="card"]')
@@ -139,7 +157,7 @@ async function shot(page: Page, name: string) {
 
 test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   await adminSignIn(page);
-  await openSubjectHeads(page, 'Needs a head');
+  await openSubjectHeads(page);
   await expect(page.getByText(/still need a head/)).toBeVisible();
 
   // The starting state is explicit: beforeAll cleared every head.
@@ -151,12 +169,9 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   // First subject on the screen that nobody heads yet, and a name that no other
   // subject's name contains, so the row can be told apart by its text.
   // Wait for the rows to render before reading them (the read does not wait).
-  await expect(
-    page.locator('tbody tr td:first-child p.font-medium').first()
-  ).toBeVisible();
-  const names = (
-    await page.locator('tbody tr td:first-child p.font-medium').allInnerTexts()
-  ).map((n) => n.trim());
+  const nameCells = page.locator('tbody tr td:first-child span.font-medium');
+  await expect(nameCells.first()).toBeVisible();
+  const names = (await nameCells.allInnerTexts()).map((n) => n.trim());
   expect(names.length).toBeGreaterThan(0);
   subjectName =
     names.find((n) => names.filter((m) => m.includes(n)).length === 1) ??
@@ -169,10 +184,11 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   subjectId = subj!.id as string;
   await shot(page, 'subject-heads-before.png');
 
-  const row = subjectRow(page);
-  await expect(row.getByText('No subject head yet')).toBeVisible();
-  await row.getByRole('button', { name: 'Add someone' }).click();
-  await page.getByPlaceholder('Search staff').fill(staff.email);
+  await expect(subjectRow(page).getByText('Needs a head')).toBeVisible();
+  const sheet = await openEditor(page);
+  // Nobody named yet: nobody to remove.
+  await expect(sheet.getByRole('button', { name: /^Remove / })).toHaveCount(0);
+  await sheet.getByPlaceholder('Search staff').fill(staff.email);
   const saveResponse = waitForSave(page);
   await page.getByRole('option', { name: new RegExp(staff.email) }).click();
   // A subject taught in both halves asks which levels; "Every level" is the
@@ -185,16 +201,13 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   ]);
   if (await everyLevel.isVisible()) await everyLevel.click();
 
-  // Saved: the server answered, and the row moves to "Has a head".
+  // Saved: the server answered, the drawer lists them, the row says so.
   await saveResponse;
-  await page.getByRole('tab', { name: /Has a head/ }).click();
-  const saved = subjectRow(page);
   await expect(
-    saved.getByRole('button', {
-      name: new RegExp(`^Remove .+ as a head of ${subjectName}$`),
-    })
+    sheet.getByRole('button', { name: removeButton() })
   ).toBeVisible();
-  await expect(saved.getByText('Set', { exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(subjectRow(page).getByText('Has a head')).toBeVisible();
   await shot(page, 'subject-heads-after.png');
 
   const { data: rows } = await db
@@ -204,28 +217,22 @@ test('subject heads: an admin sets one, and it is saved', async ({ page }) => {
   expect(rows).toEqual([{ user_id: staff.id, applies_to_level_type: null }]);
 
   // Still there after a reload.
-  await openSubjectHeads(page, 'Has a head');
-  await expect(
-    subjectRow(page).getByRole('button', {
-      name: new RegExp(`^Remove .+ as a head of ${subjectName}$`),
-    })
-  ).toBeVisible();
+  await openSubjectHeads(page);
+  await expect(subjectRow(page).getByText('Has a head')).toBeVisible();
 });
 
 test('subject heads: removing one', async ({ page }) => {
   await adminSignIn(page);
-  await openSubjectHeads(page, 'Has a head');
+  await openSubjectHeads(page);
+  const sheet = await openEditor(page);
   const saveResponse = waitForSave(page);
-  await subjectRow(page)
-    .getByRole('button', {
-      name: new RegExp(`^Remove .+ as a head of ${subjectName}$`),
-    })
-    .click();
+  await sheet.getByRole('button', { name: removeButton() }).click();
   await saveResponse;
 
-  // Back to the plain "no head" state, under "Needs a head".
-  await page.getByRole('tab', { name: /Needs a head/ }).click();
-  await expect(subjectRow(page).getByText('No subject head yet')).toBeVisible();
+  // Back to the plain "no head" state.
+  await expect(sheet.getByRole('button', { name: /^Remove / })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(subjectRow(page).getByText('Needs a head')).toBeVisible();
   await shot(page, 'subject-heads-removed.png');
 
   const { data: rows } = await db
@@ -242,10 +249,12 @@ test('approvers: the scheme of work flow offers a subject-head step', async ({
 }) => {
   await adminSignIn(page);
   await page.goto(`${SIS}/sis/admin/approvers`);
+  await page.getByRole('tab', { name: /^Scheme of work/ }).click();
   const sow = flowCard(page, SOW_TITLE);
   await expect(sow).toBeVisible();
 
   // The attendance flow never offers it.
+  await page.getByRole('tab', { name: /^Absence declarations/ }).click();
   const attendance = flowCard(page, DECLARATION_TITLE);
   await attendance.getByRole('button', { name: 'Add a step' }).click();
   const attendanceDialog = page.getByRole('dialog');
@@ -261,6 +270,7 @@ test('approvers: the scheme of work flow offers a subject-head step', async ({
   await expect(attendanceDialog).toBeHidden();
 
   // The scheme of work flow does.
+  await page.getByRole('tab', { name: /^Scheme of work/ }).click();
   await sow.getByRole('button', { name: 'Add a step' }).click();
   const dialog = page.getByRole('dialog');
   const option = dialog.getByRole('radio', {
@@ -295,6 +305,7 @@ test('approvers: readiness tells the truth about subject heads', async ({
   // The step is there and nobody heads any subject (the afterAll puts back any
   // that existed before). The card says so and points at the fix.
   await page.goto(`${SIS}/sis/admin/approvers`);
+  await page.getByRole('tab', { name: /^Scheme of work/ }).click();
   const sow = flowCard(page, SOW_TITLE);
   await expect(sow.getByText('No subject heads set yet').first()).toBeVisible();
   await expect(
@@ -314,6 +325,8 @@ test('approvers: readiness tells the truth about subject heads', async ({
   });
   expect(error).toBeNull();
   await page.reload();
+  // Ready now, so the page opens on another tab.
+  await page.getByRole('tab', { name: /^Scheme of work/ }).click();
   const sowAfter = flowCard(page, SOW_TITLE);
   await expect(sowAfter).toBeVisible();
   await expect(sowAfter.getByText('No subject heads set yet')).toHaveCount(0);
