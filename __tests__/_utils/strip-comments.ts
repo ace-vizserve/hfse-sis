@@ -67,8 +67,7 @@ export type ScanResult = {
  * which is why just two of the repo's many `.tsx` files are affected and why
  * the class is easy to miss.
  *
- * Six files in this repo desync today — `lib/csv.ts`,
- * `lib/markbook/masterfile-export.ts`,
+ * Five files in this repo desync today — `lib/csv.ts`,
  * `lib/markbook/academic-overview-export.ts`,
  * `lib/notifications/email-frame.ts` (regex literals), plus
  * `components/attendance/drills/chart-drill-cards.tsx` and

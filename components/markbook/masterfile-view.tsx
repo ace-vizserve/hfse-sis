@@ -7,9 +7,9 @@ import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { ExportTemplateItems } from '@/components/markbook/overview-export-menu';
 import {
   Select,
   SelectContent,
@@ -54,17 +54,27 @@ export function MasterfileView({
     [termNumber, status, subjectId]
   );
 
-  // Export base link mirrors the current ?ay / ?level / ?class scope.
-  // The dashboard refinement filters (term / subject / status) intentionally
-  // don't narrow the export — the workbook always shows the full masterfile.
+  // The export is the school's Consolidated File for exactly what is on
+  // screen: the ?ay / ?level / ?class scope plus the term, subject and status
+  // filters.
   const exportHref = useMemo(() => {
     const params = new URLSearchParams();
     params.set('ay', payload.ayCode);
     params.set('level', payload.level.id);
     for (const id of payload.selectedSectionIds ?? [])
       params.append('class', id);
+    if (termNumber) params.set('term', String(termNumber));
+    if (subjectId) params.set('subject', subjectId);
+    if (status !== 'all') params.set('status', status);
     return `/api/markbook/masterfile/export?${params.toString()}`;
-  }, [payload.ayCode, payload.level.id, payload.selectedSectionIds]);
+  }, [
+    payload.ayCode,
+    payload.level.id,
+    payload.selectedSectionIds,
+    termNumber,
+    subjectId,
+    status,
+  ]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,18 +122,7 @@ export function MasterfileView({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem asChild>
-              <a href={exportHref} download>
-                <FileSpreadsheet className="size-3.5" />
-                Excel (.xlsx)
-              </a>
-            </DropdownMenuItem>
-            <DropdownMenuItem asChild>
-              <a href={`${exportHref}&format=csv`} download>
-                <FileSpreadsheet className="size-3.5" />
-                CSV (.csv)
-              </a>
-            </DropdownMenuItem>
+            <ExportTemplateItems href={exportHref} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

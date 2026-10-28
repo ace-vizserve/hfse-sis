@@ -9,26 +9,38 @@ import {
 } from '@/lib/markbook/academic-overview-export';
 import {
   buildMasterfileWorkbook,
-  flattenMasterfileRows,
+  divisionName,
   masterfileToCsv,
+  type ConsolidatedFilters,
 } from '@/lib/markbook/masterfile-export';
 import { loadMasterfile } from '@/lib/markbook/masterfile';
-import { loadAttendanceDates } from '@/lib/markbook/masterfile-attendance-dates';
+import {
+  buildReportBookWorkbook,
+  reportBookToCsv,
+} from '@/lib/markbook/report-book-export';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // GET /api/markbook/masterfile/export
 //
-// Excel report-book export of the Masterfile (KD #95). Same auth/role gate and
-// the same ?ay= / ?level= / ?class= params as the on-screen page at
-// /markbook/masterfile — loads the identical computed payload via
-// `loadMasterfile`, then streams it as an .xlsx attachment.
+// The school's two files (KD #95): the AY2026 Consolidated File (one tab per
+// class) or the Final Report Book Masterfile sheet (?template=report-book),
+// built
+// from the same computed payload the on-screen masterfile shows
+// (`loadMasterfile`). The page's filters narrow it — see masterfile-export.ts.
 //
 // Query params:
-//   ?level=<level_id>    required
-//   ?class=<section_id>  optional, repeatable (filter to the listed classes;
-//                          omit for all classes). Also accepts a single
-//                          comma-joined value for back-compat.
+//   ?division=primary|secondary  every level of that division (P1–P6 / S1–S4)
+//   ?level=<level_id>    one level (when no division)
+//   ?class=<section_id>  optional, repeatable; one level's classes. Also
+//                          accepts a single comma-joined value for back-compat.
+//   ?subject=<subject_id> optional, only that subject's columns
+//   ?term=1..4           optional, terms up to that one
+//   ?status=active|late_enrollee|withdrawn  optional
+//   ?template=report-book the Final Report Book Masterfile sheet instead
+//                          (report-book-export.ts); default Consolidated File
+//   ?format=csv          the same grid as CSV (default xlsx)
 //   ?ay=<ay_code>        optional (defaults to current AY)
+// No division and no level → the school-wide summary tables (legacy).
 
 export async function GET(req: NextRequest) {
   // Page is registrar | school_admin | superadmin — mirror it here.
@@ -41,18 +53,28 @@ export async function GET(req: NextRequest) {
 
   const service = createServiceClient();
   const { searchParams } = new URL(req.url);
+  const asCsv = searchParams.get('format')?.toLowerCase() === 'csv';
 
   const levelParam = searchParams.get('level');
-  const wantsAllLevels = !levelParam || levelParam === '__all__';
-
-  // Parse one or more section ids — repeated ?class= params, plus a comma-joined
-  // single value for back-compat. Mirrors the on-screen multi-section filter so
-  // the workbook contains exactly the classes shown, not all of them.
+  const division = searchParams.get('division')?.toLowerCase();
   const sectionIds = searchParams
     .getAll('class')
     .flatMap((v) => v.split(','))
     .map((v) => v.trim())
     .filter((v) => v.length > 0);
+
+  const term = searchParams.get('term');
+  const status = searchParams.get('status');
+  const filters: ConsolidatedFilters = {
+    subjectId: searchParams.get('subject') || null,
+    termNumber: term && /^[1-4]$/.test(term) ? Number(term) : null,
+    status:
+      status === 'active' ||
+      status === 'late_enrollee' ||
+      status === 'withdrawn'
+        ? status
+        : null,
+  };
 
   // Resolve AY — honor ?ay= when it's a real AY, else current (mirrors page).
   let ayCode = await requireCurrentAyCode(service);
@@ -65,10 +87,6 @@ export async function GET(req: NextRequest) {
       .maybeSingle();
     if (requested) ayCode = (requested as { ay_code: string }).ay_code;
   }
-
-  // Defence-in-depth: validate ?level= belongs to the resolved AY (mirrors the
-  // page's level validation). loadMasterfile already returns empty for a
-  // mismatch, but a 400 is a clearer signal than a blank workbook.
   const { data: ayRow } = await service
     .from('academic_years')
     .select('id')
@@ -79,11 +97,37 @@ export async function GET(req: NextRequest) {
   }
   const academicYearId = (ayRow as { id: string }).id;
 
-  // No level selected → the school-wide overview (the three summary tables the
-  // all-levels page shows), not the per-student masterfile grid.
-  if (wantsAllLevels) {
+  // Which levels: a division's (by level CODE — production files Youngstarters
+  // as level_type 'primary', and the school's Primary file has no YS), or one.
+  const [{ data: levelsRaw }, { data: sectionLevels }] = await Promise.all([
+    service.from('levels').select('id, code, sort_order').order('sort_order'),
+    service
+      .from('sections')
+      .select('level_id')
+      .eq('academic_year_id', academicYearId),
+  ]);
+  const withSections = new Set(
+    ((sectionLevels ?? []) as { level_id: string }[]).map((s) => s.level_id)
+  );
+  const levels = ((levelsRaw ?? []) as { id: string; code: string }[]).filter(
+    (l) => withSections.has(l.id)
+  );
+
+  let levelIds: string[];
+  if (division === 'primary' || division === 'secondary') {
+    const pattern = division === 'primary' ? /^P\d$/i : /^S\d$/i;
+    levelIds = levels.filter((l) => pattern.test(l.code)).map((l) => l.id);
+  } else if (levelParam && levelParam !== '__all__') {
+    if (!levels.some((l) => l.id === levelParam)) {
+      return new Response(
+        'The requested level has no sections in this academic year.',
+        { status: 400 }
+      );
+    }
+    levelIds = [levelParam];
+  } else {
+    // No division, no level → the school-wide summary tables.
     const overview = await getAcademicOverview(ayCode, academicYearId);
-    const asCsv = searchParams.get('format')?.toLowerCase() === 'csv';
     if (asCsv) {
       return new Response(overviewToCsv(overview), {
         status: 200,
@@ -106,98 +150,65 @@ export async function GET(req: NextRequest) {
     });
   }
 
-  const levelId = levelParam;
-  const { data: levelInAy } = await service
-    .from('sections')
-    .select('id')
-    .eq('academic_year_id', academicYearId)
-    .eq('level_id', levelId)
-    .limit(1)
-    .maybeSingle();
-  if (!levelInAy) {
-    return new Response(
-      'The requested level has no sections in this academic year.',
-      { status: 400 }
-    );
+  const payloads = (
+    await Promise.all(
+      levelIds.map((levelId) =>
+        loadMasterfile({
+          ayCode,
+          levelId,
+          // A class filter belongs to one level.
+          sectionIds:
+            levelIds.length === 1 && sectionIds.length > 0
+              ? sectionIds
+              : undefined,
+        })
+      )
+    )
+  ).filter((p): p is NonNullable<typeof p> => p != null && p.rows.length > 0);
+  if (payloads.length === 0) {
+    return new Response('No students to export.', { status: 404 });
   }
 
-  const payload = await loadMasterfile({
-    ayCode,
-    levelId,
-    sectionIds: sectionIds.length > 0 ? sectionIds : undefined,
-  });
-
-  if (!payload) {
-    return new Response('Could not load Masterfile data.', { status: 404 });
-  }
-
-  // WHICH DAYS each student missed, per term. Loaded HERE rather than inside
-  // `loadMasterfile` on purpose: that payload is `unstable_cache`d and the
-  // on-screen dashboard does not show dates, so they must not ride along in a
-  // cached payload every view pays for — and Next silently refuses to store one
-  // over 2MB, which this codebase has already shipped once.
-  //
-  // A failure here degrades to the export without date columns rather than
-  // failing the download: the counts are still the counts, and a registrar
-  // waiting on a masterfile is better served by most of it than by an error.
-  let attendanceDates;
-  try {
-    attendanceDates = await loadAttendanceDates(
-      payload.sections.map((s) => s.id),
-      payload.terms.map((t) => t.id)
-    );
-  } catch (err) {
-    console.error(
-      '[masterfile/export] attendance dates failed, exporting without them:',
-      err instanceof Error ? err.message : err
-    );
-    attendanceDates = undefined;
-  }
-
-  // Filename base: Masterfile_{level}_{class|all}_{AY} — sanitize to safe chars.
-  // One selected section → its name; multiple → "{n}_classes"; none / all → "all".
-  const sanitize = (s: string) => s.replace(/[^A-Za-z0-9._-]+/g, '_');
-  const levelPart = sanitize(
-    payload.level.label || payload.level.code || 'level'
+  // The school's own file name: "AY2026 Consolidated File Primary Grades
+  // Term 2" — plus the level / class when the file holds just that.
+  const sanitize = (s: string) => s.replace(/[^A-Za-z0-9 ._-]+/g, '_').trim();
+  const only = payloads.length === 1 ? payloads[0] : null;
+  const scope = !only
+    ? ''
+    : only.selectedSectionIds.length === 1
+      ? ` ${only.level.code} ${only.sections.find((s) => s.id === only.selectedSectionIds[0])?.name ?? ''}`
+      : ` ${only.level.code}`;
+  const reportBook = searchParams.get('template') === 'report-book';
+  const termPart = filters.termNumber ? ` Term ${filters.termNumber}` : '';
+  const divisionWord = divisionName(payloads[0].level);
+  const base = sanitize(
+    reportBook
+      ? `${ayCode} Final Report Book_${divisionWord}${scope}${termPart}`
+      : `${ayCode} Consolidated File ${divisionWord}${scope} Grades${termPart}`
   );
-  const isAllSections =
-    sectionIds.length === 0 || sectionIds.length >= payload.sections.length;
-  let classPart: string;
-  if (isAllSections) {
-    classPart = 'all';
-  } else if (sectionIds.length === 1) {
-    const only = payload.sections.find((s) => s.id === sectionIds[0]);
-    classPart = only ? sanitize(only.name) : 'class';
-  } else {
-    classPart = `${sectionIds.length}_classes`;
-  }
 
-  // Branch on ?format=csv — everything else (including unset) serves xlsx.
-  const fmt = searchParams.get('format')?.toLowerCase();
-  if (fmt === 'csv') {
-    const table = flattenMasterfileRows(payload, attendanceDates);
-    const csv = masterfileToCsv(table);
-    const filename = `masterfile-${levelPart}-${ayCode}.csv`;
+  if (asCsv) {
+    const csv = reportBook
+      ? reportBookToCsv(payloads, filters)
+      : masterfileToCsv(payloads, filters);
     return new Response(csv, {
       status: 200,
       headers: {
         'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${filename}"`,
+        'Content-Disposition': `attachment; filename="${base}.csv"`,
         'Cache-Control': 'no-store',
       },
     });
   }
-
-  // Default: xlsx — a copy of the school's own Masterfile sheet, which has no
-  // "Days missed" columns, so the dates go to the CSV only.
-  const buffer = await buildMasterfileWorkbook(payload);
-  const filename = `Masterfile_${levelPart}_${classPart}_${ayCode}.xlsx`;
+  const buffer = reportBook
+    ? await buildReportBookWorkbook(payloads, filters)
+    : await buildMasterfileWorkbook(payloads, filters);
   return new Response(new Uint8Array(buffer), {
     status: 200,
     headers: {
       'Content-Type':
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Content-Disposition': `attachment; filename="${base}.xlsx"`,
       'Cache-Control': 'no-store',
     },
   });
