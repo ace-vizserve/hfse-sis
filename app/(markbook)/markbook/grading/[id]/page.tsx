@@ -1032,7 +1032,7 @@ export default async function GradingSheetPage({
         rows={rows}
         readOnly={readOnly}
         requireApproval={requireApproval}
-        canExcuse={canManage && isExaminable && !isFramework}
+        canExcuse={canManage && !isFramework}
         sheetType={sheet.sheet_type as SheetType}
         bestTermSource={bestTermSource}
         sheetLocked={sheet.is_locked}
