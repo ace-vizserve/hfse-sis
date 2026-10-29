@@ -46,6 +46,7 @@ import {
 } from 'react';
 import { toast } from 'sonner';
 
+import { useHideWithdrawn } from '@/lib/hooks/use-hide-withdrawn';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
 import { createClient } from '@/lib/supabase/client';
 import { apiFetch, jsonInit } from '@/lib/query/fetcher';
@@ -62,6 +63,7 @@ function todayLocalIso(): string {
 import { ChartLegendChip } from '@/components/dashboard/chart-legend-chip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { HoverHint } from '@/components/ui/hover-hint';
 import {
   Card,
@@ -278,6 +280,16 @@ export function AttendanceWideGrid({
   void canWriteNc;
 
   const [showDetails, setShowDetails] = useState(false);
+  // Remembered on this browser (localStorage), like the grading sheet's.
+  const [hideWithdrawn, setHideWithdrawn] = useHideWithdrawn('attendance');
+  const hasWithdrawn = useMemo(
+    () => enrolments.some((e) => e.withdrawn),
+    [enrolments]
+  );
+  const visibleEnrolments = useMemo(
+    () => (hideWithdrawn ? enrolments.filter((e) => !e.withdrawn) : enrolments),
+    [enrolments, hideWithdrawn]
+  );
   // The one open cell-mark dialog (single portal — see the marking-palette note
   // above and the perf invariants in the file header). null = closed, and it is
   // ALSO what rings the cell being edited: with the editor no longer floating
@@ -828,6 +840,15 @@ export function AttendanceWideGrid({
         >
           {showDetails ? 'Hide details' : 'Show details'}
         </Button>
+        {hasWithdrawn && (
+          <label className="inline-flex cursor-pointer items-center gap-2 text-sm text-foreground">
+            <Checkbox
+              checked={hideWithdrawn}
+              onCheckedChange={(v) => setHideWithdrawn(v === true)}
+            />
+            Hide withdrawn
+          </label>
+        )}
         {enrolments.length > 0 && (
           <div className="ml-auto flex items-center gap-2">
             {fullScreen && (
@@ -1082,7 +1103,7 @@ export function AttendanceWideGrid({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {enrolments.map((e) => {
+                {visibleEnrolments.map((e) => {
                   // Explicit (not inherited), fully OPAQUE background on
                   // every sticky cell — a sticky cell paints in its own
                   // layer, so any transparency lets the date columns

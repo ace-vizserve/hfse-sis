@@ -17,6 +17,7 @@ import type { SlotMeta, SlotLabels } from '@/lib/schemas/grading-sheet';
 
 import { apiFetch, jsonInit, ApiError } from '@/lib/query/fetcher';
 import { useWriteAction } from '@/lib/hooks/use-write-action';
+import { useHideWithdrawn } from '@/lib/hooks/use-hide-withdrawn';
 import { createClient } from '@/lib/supabase/client';
 import { queryKeys } from '@/lib/query/keys';
 import type { GradedProgress } from '@/components/grading/graded-stat-card';
@@ -302,7 +303,22 @@ export function ScoreEntryGrid({
     },
     [queryClientForProgress, sheetId, sheetShape]
   );
-  const [filters, setFilters] = useState<GridFilters>(DEFAULT_GRID_FILTERS);
+  const [otherFilters, setOtherFilters] =
+    useState<GridFilters>(DEFAULT_GRID_FILTERS);
+  // "Hide withdrawn" is remembered on this browser; search and blanks-only
+  // reset with each visit.
+  const [hideWithdrawn, setHideWithdrawn] = useHideWithdrawn('grading');
+  const filters = useMemo(
+    () => ({ ...otherFilters, hideWithdrawn }),
+    [otherFilters, hideWithdrawn]
+  );
+  const setFilters = useCallback(
+    (next: GridFilters) => {
+      setOtherFilters(next);
+      setHideWithdrawn(next.hideWithdrawn);
+    },
+    [setHideWithdrawn]
+  );
 
   // Full screen: this same grid pinned over the whole window. Esc leaves it
   // unless an open dialog, popover or select claims the key first (Radix
