@@ -8,9 +8,12 @@ import type { EnrollmentHistoryEntry } from '@/lib/sis/queries';
 export function EnrollmentHistoryChips({
   history,
   currentAyCode,
+  basePath = '/admissions/applications',
 }: {
   history: EnrollmentHistoryEntry[];
   currentAyCode: string;
+  /** Route each year's chip links to, followed by `/{enroleeNumber}?ay=`. */
+  basePath?: '/admissions/applications' | '/p-files';
 }) {
   if (history.length === 0) {
     return null;
@@ -33,19 +36,14 @@ export function EnrollmentHistoryChips({
               const isCurrent = entry.ayCode === currentAyCode;
               const summary =
                 [entry.level, entry.section].filter(Boolean).join(' · ') || '—';
-              // KD #81: Enrolled entries route to Records; non-enrolled to Admissions.
-              const isEnrolled =
-                entry.status === 'Enrolled' ||
-                entry.status === 'Enrolled (Conditional)';
-              const chipHref = isEnrolled
-                ? {
-                    pathname: `/records/students/by-enrolee/${entry.enroleeNumber}`,
-                    query: { ay: entry.ayCode },
-                  }
-                : {
-                    pathname: `/admissions/applications/${entry.enroleeNumber}`,
-                    query: { ay: entry.ayCode },
-                  };
+              // Every chip stays in the module it was clicked from. Enrolled
+              // years used to jump to Records (KD #81), which threw the reader
+              // out of Admissions just to look at another year (Mr Ace,
+              // 2026-10-15). Records is still one click away from the page.
+              const chipHref = {
+                pathname: `${basePath}/${entry.enroleeNumber}`,
+                query: { ay: entry.ayCode },
+              };
               return (
                 <Link
                   key={`${entry.ayCode}:${entry.enroleeNumber}`}

@@ -97,6 +97,13 @@ export const NAV_ENTRIES: NavEntry[] = [
     icon: InboxIcon,
   },
   {
+    // Student-record writers = the /admissions prefix — isRouteAllowed() decides.
+    href: '/admissions/book-list',
+    label: 'Admissions — Book list',
+    group: 'Modules',
+    icon: LibraryIcon,
+  },
+  {
     href: '/admissions/document-validation',
     label: 'Admissions — Document Validation Queue',
     group: 'Modules',

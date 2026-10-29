@@ -548,29 +548,33 @@ export default async function SisStudentDetailPage({
         </TabsContent>
 
         <TabsContent value="documents" className="space-y-6">
-          {ENROLLED_STATES.includes(status?.applicationStatus ?? '') && (
-            <Alert variant="default" className="border-dashed">
-              <FolderArchive className="size-4" />
-              <AlertTitle>
-                This applicant is enrolled — renewals live in P-Files
-              </AlertTitle>
-              <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-                <span>
-                  This Documents tab is a view-only record of what was submitted
-                  during enrolment. For expiry tracking, renewals, and follow-up
-                  work, open the P-Files record.
-                </span>
-                <Button asChild variant="link" size="sm" className="h-auto p-0">
-                  <Link
-                    href={`/p-files/${application.enroleeNumber}?ay=${selectedAy}`}
-                  >
-                    Open in P-Files
-                    <ArrowUpRight className="ml-1 size-3.5" />
-                  </Link>
-                </Button>
-              </AlertDescription>
-            </Alert>
-          )}
+          {/* Shown for every child: since KD #204 applicants have a P-Files
+              folder too. Only the wording depends on enrolment — for an
+              applicant this tab is where documents are approved and chased,
+              so "view-only" would be false. */}
+          <Alert variant="default" className="border-dashed">
+            <FolderArchive className="size-4" />
+            <AlertTitle>
+              {ENROLLED_STATES.includes(status?.applicationStatus ?? '')
+                ? 'This applicant is enrolled — renewals live in P-Files'
+                : 'These documents are also in P-Files'}
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+              <span>
+                {ENROLLED_STATES.includes(status?.applicationStatus ?? '')
+                  ? 'This Documents tab is a view-only record of what was submitted during enrolment. For expiry tracking, renewals, and follow-up work, open the P-Files record.'
+                  : 'Review and chase them here while the child is applying. P-Files holds the same folder and takes over expiry tracking once they are enrolled.'}
+              </span>
+              <Button asChild variant="link" size="sm" className="h-auto p-0">
+                <Link
+                  href={`/p-files/${application.enroleeNumber}?ay=${selectedAy}`}
+                >
+                  Open in P-Files
+                  <ArrowUpRight className="ml-1 size-3.5" />
+                </Link>
+              </Button>
+            </AlertDescription>
+          </Alert>
           {application.stpApplicationType && (
             <StpApplicationCard
               application={application}

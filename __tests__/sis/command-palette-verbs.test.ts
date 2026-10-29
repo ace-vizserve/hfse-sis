@@ -148,6 +148,7 @@ describe('primaryStudentVerb — what Enter runs', () => {
     expect(at('/billing')).toBe('billing');
     expect(at('/billing/H250001/invoices/9')).toBe('billing');
     expect(at('/p-files')).toBe('documents');
+    expect(at('/p-files/E26-0042')).toBe('documents');
     expect(at('/admissions/applications?ay=AY2026')).toBe('application');
     expect(at('/records/students')).toBe('record');
   });
