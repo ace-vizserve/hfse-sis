@@ -186,7 +186,7 @@ export function RegistrationsTable({
         meta: { label: 'Reason' },
         enableSorting: false,
         cell: ({ row }) => (
-          <span className="text-sm text-muted-foreground">
+          <span className="block min-w-48 text-sm text-muted-foreground">
             {row.original.reason}
           </span>
         ),
@@ -196,13 +196,13 @@ export function RegistrationsTable({
       cols.push({
         id: `q:${c.id}`,
         accessorFn: (r) => r.answers[c.id] ?? '',
-        header: c.label,
+        header: () => <span className="block min-w-48">{c.label}</span>,
         meta: { label: c.label },
         enableSorting: false,
         cell: ({ row }) => {
           const v = row.original.answers[c.id];
           return v ? (
-            <span className="text-sm">{v}</span>
+            <span className="block min-w-48 text-sm">{v}</span>
           ) : (
             <span className="text-muted-foreground">—</span>
           );
@@ -233,56 +233,60 @@ export function RegistrationsTable({
     return cols;
   }, [qCols]);
 
+  // A form with many questions makes a very wide table. inline-size containment stops it
+  // stretching the page, so it scrolls sideways inside its own box.
   return (
-    <DataTable<Row>
-      data={rows}
-      columns={columns}
-      getRowId={(r) => r.key}
-      initialColumnVisibility={{ reason: notJoining.length > 0 }}
-      searchKeys={[
-        (r) => r.studentName,
-        (r) => r.studentNumber,
-        (r) => r.registeredBy,
-      ]}
-      searchPlaceholder="Search by student or parent"
-      statusTabs={[
-        {
-          value: 'registered',
-          label: 'Registered',
-          predicate: (r) => r.tab === 'registered',
-          isDefault: true,
-          emptyState: {
-            icon: Users,
-            title: 'No one has registered yet.',
-            body: 'Children appear here as parents register them.',
+    <div style={{ contain: 'inline-size' }}>
+      <DataTable<Row>
+        data={rows}
+        columns={columns}
+        getRowId={(r) => r.key}
+        initialColumnVisibility={{ reason: notJoining.length > 0 }}
+        searchKeys={[
+          (r) => r.studentName,
+          (r) => r.studentNumber,
+          (r) => r.registeredBy,
+        ]}
+        searchPlaceholder="Search by student or parent"
+        statusTabs={[
+          {
+            value: 'registered',
+            label: 'Registered',
+            predicate: (r) => r.tab === 'registered',
+            isDefault: true,
+            emptyState: {
+              icon: Users,
+              title: 'No one has registered yet.',
+              body: 'Children appear here as parents register them.',
+            },
           },
-        },
-        {
-          value: 'not-joining',
-          label: 'Not joining',
-          predicate: (r) => r.tab === 'not_joining',
-          emptyState: {
-            icon: Users,
-            title: 'No one has said they are not joining.',
+          {
+            value: 'not-joining',
+            label: 'Not joining',
+            predicate: (r) => r.tab === 'not_joining',
+            emptyState: {
+              icon: Users,
+              title: 'No one has said they are not joining.',
+            },
           },
-        },
-        {
-          value: 'not-registered',
-          label: 'Not registered yet',
-          predicate: (r) => r.tab === 'not_registered',
-          emptyState: { icon: Users, title: 'Every child has answered.' },
-        },
-      ]}
-      url={{ enabled: true, namespace: 'registrations' }}
-      pageSize={50}
-      csv={{
-        filename: `${eventTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-registrations.csv`,
-      }}
-      emptyState={{ icon: Users, title: 'No children for this event.' }}
-      emptyFilteredState={{
-        title: 'Nothing matches.',
-        body: 'Pick another tab or clear the search.',
-      }}
-    />
+          {
+            value: 'not-registered',
+            label: 'Not registered yet',
+            predicate: (r) => r.tab === 'not_registered',
+            emptyState: { icon: Users, title: 'Every child has answered.' },
+          },
+        ]}
+        url={{ enabled: true, namespace: 'registrations' }}
+        pageSize={50}
+        csv={{
+          filename: `${eventTitle.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-registrations.csv`,
+        }}
+        emptyState={{ icon: Users, title: 'No children for this event.' }}
+        emptyFilteredState={{
+          title: 'Nothing matches.',
+          body: 'Pick another tab or clear the search.',
+        }}
+      />
+    </div>
   );
 }
