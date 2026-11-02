@@ -488,6 +488,13 @@ const ADMISSIONS_NAV: NavSection[] = [
         label: 'Enrolment form options',
         requiresRoles: [...ENROLMENT_PLACEMENT_WRITERS],
       },
+      // Events parents answer from the portal (migration 203). Same role set
+      // as the route row and the write APIs.
+      {
+        href: '/sis/admin/events',
+        label: 'Parent events',
+        requiresRoles: [...ENROLMENT_PLACEMENT_WRITERS],
+      },
     ],
   },
   // Cohort views — Admissions scope = funnel students (Submitted /
@@ -788,6 +795,11 @@ const SIS_NAV: NavSection[] = [
         href: '/sis/admin/admission-options',
         label: 'Enrolment form options',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+      {
+        href: '/sis/admin/events',
+        label: 'Parent events',
+        requiresRoles: [...ENROLMENT_PLACEMENT_WRITERS],
       },
       {
         href: '/sis/admin/subjects',
@@ -1113,6 +1125,13 @@ export const ROUTE_ACCESS: Array<{
     // set is READ from ENROLMENT_PLACEMENT_WRITERS — the same constant the
     // write routes gate on — so the page and its writes cannot disagree.
     prefix: '/sis/admin/admission-options',
+    allowed: [...ENROLMENT_PLACEMENT_WRITERS],
+  },
+  {
+    // Parent events (migration 203): admissions runs them, so scoped to this
+    // route, not all of /sis. The write APIs gate on requireRole alone, as the
+    // admission-options ones do (ROUTE_ACCESS carries pages, not /api).
+    prefix: '/sis/admin/events',
     allowed: [...ENROLMENT_PLACEMENT_WRITERS],
   },
   // academic_coordinator added 2026-07-31 (Mr Ace) — she sets up the academic

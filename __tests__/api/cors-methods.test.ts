@@ -68,6 +68,9 @@ const ADVERTISED: Record<string, string> = {
   'app/api/parent/v2/enrolled-students/route.ts': 'GET, OPTIONS',
   'app/api/parent/v2/declarations/route.ts': 'GET, POST, OPTIONS',
   'app/api/parent/v2/declarations/evidence/route.ts': 'POST, OPTIONS',
+  'app/api/parent/v2/events/route.ts': 'GET, OPTIONS',
+  'app/api/parent/v2/events/[slug]/route.ts': 'GET, OPTIONS',
+  'app/api/parent/v2/events/[slug]/registration/route.ts': 'PUT, OPTIONS',
 };
 
 /**

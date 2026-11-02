@@ -84,6 +84,8 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
       // What the enrolment forms offer (migration 174) — owned by admissions,
       // configured in SIS Admin, same as discount codes.
       'admission_option.',
+      // Parent event registration (migration 203) — run by admissions.
+      'parent_event.',
     ],
   },
   {

@@ -321,6 +321,18 @@ If you ever want to skip the SIS's list view and jump straight into one child's 
 - **Parent's SIS session got logged out unexpectedly when a colleague used the same browser** — almost certainly a regression to the pre-KD-#65 `setSession` flow (parent writes clobbered staff `sb-*` cookies). Verify the handoff still POSTs to `/api/parent/handoff` rather than calling `setSession` directly.
 - **Handoff succeeds but parent sees "no students linked to this email"** — the parent portal's `motherEmail`/`fatherEmail` on the admissions row doesn't match their `auth.users.email`. The SIS does a case-insensitive match (`.ilike`), but a genuine email mismatch (typo, different provider) will show an empty state. Fix at the admissions side.
 
+### Parent events routes (KD #235)
+
+All three take `Authorization: Bearer <access_token>` and find the parent's children the same way the declarations routes do (KD #195). CORS and rate limits as the other `/api/parent/v2/*` routes.
+
+| Route                                       | Method | What it does                                                                                                                                                                                                                   |
+| ------------------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/api/parent/v2/events`                     | GET    | Published events for the parent's children (`?ay=` picks a year; `currentAy` is returned): each with its dates, closing time, `canRegister` and one status per child (Registered / Not joining / Not registered yet)           |
+| `/api/parent/v2/events/[slug]`              | GET    | One event for the parent: the form, the children (with `canRegister`), their saved answers and the family's contact and signature. 404 when unpublished, unknown or none of their children is in its audience                  |
+| `/api/parent/v2/events/[slug]/registration` | PUT    | Saves the whole family's answers in one request (per-child consent, reason, answers; family answers and e-signature). Repeatable until registration closes; 409 once it has closed, 400 if a child can no longer be registered |
+
+The portal's short link `/events/<slug>` goes through login to `/admission/services/events/<slug>`. Full account: `docs/key-decisions/parent.md` KD #235.
+
 ## Out of scope
 
 - **Parent self-service**: no enrolment, no application editing, no document upload, no profile edit in this repo. Parents do all of that in the parent portal.

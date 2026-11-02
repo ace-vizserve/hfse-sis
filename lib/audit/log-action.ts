@@ -117,6 +117,13 @@ export const ALL_AUDIT_ACTIONS = [
   'admission_option.open',
   'admission_option.close',
   'admission_option.copy',
+  // Parent event registration (migration 203). `update` records which parts
+  // changed, never the text.
+  'parent_event.create',
+  'parent_event.update',
+  'parent_event.publish',
+  'parent_event.close',
+  'parent_event.register',
   'sis.document.approve',
   'sis.document.reject',
   'sis.documents.auto-expire',
@@ -303,6 +310,8 @@ export type AuditEntityType =
   // One row of `admission_options` (migration 174); a group edit or a copy
   // that touches several rows names the academic year instead.
   | 'admission_option'
+  // One row of `parent_events` (migration 203).
+  | 'parent_event'
   | 'academic_year'
   | 'term'
   | 'level'

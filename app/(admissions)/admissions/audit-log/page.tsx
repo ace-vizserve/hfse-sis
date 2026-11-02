@@ -49,6 +49,12 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'admission_option.open',
   'admission_option.close',
   'admission_option.copy',
+  // Parent event registration (migration 203).
+  'parent_event.create',
+  'parent_event.update',
+  'parent_event.publish',
+  'parent_event.close',
+  'parent_event.register',
   // Reconciling an applicant's typed level to a real one (the admissions
   // level-review queue). A re-point of an existing mapping is its own action.
   'level.alias.create',
