@@ -68,8 +68,16 @@ function codeLines(pattern: string): string[] {
  *   own control (Mr Ace, 2026-10-22), and the portal's are plain <Textarea>s.
  *   These columns hold the parent's plain text and are printed as plain text
  *   by Records, the cohort table and the CSV export, so markup would show.
+ * - The event form builder (event and section descriptions, a question's text,
+ *   the agreement above a signature): the parent portal prints these as plain
+ *   text with whitespace-pre-line, so markup would show to parents.
  */
-const PLAIN_TEXTAREA_ALLOWED = ['components/sis/edit-profile-sheet.tsx'];
+const PLAIN_TEXTAREA_ALLOWED = [
+  'components/sis/edit-profile-sheet.tsx',
+  'components/events/builder/header-card.tsx',
+  'components/events/builder/question-editor.tsx',
+  'components/events/builder/section-card.tsx',
+];
 
 describe('the plain Textarea is retired', () => {
   it('is imported by nothing', () => {

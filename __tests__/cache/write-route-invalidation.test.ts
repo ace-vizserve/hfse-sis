@@ -62,6 +62,21 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
   // Books & supplies tracker (migration 199).
   'app/api/sis/students/[enroleeNumber]/supplies/route.ts':
     'Writes supply_handovers, read uncached by lib/sis/supplies/student-list.ts through this same route; the stage status is not touched.',
+  // Parent event registration (migration 203). No unstable_cache reads the
+  // parent_event* tables: lib/events/staff.ts and lib/events/parent.ts read
+  // them fresh on every request.
+  'app/api/parent/v2/events/[slug]/registration/route.ts':
+    'Writes parent_event_submissions and parent_event_registrations, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
+  'app/api/sis/events/route.ts':
+    'Writes parent_events, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
+  'app/api/sis/events/[id]/route.ts':
+    'Writes parent_events, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
+  'app/api/sis/events/[id]/close/route.ts':
+    'Writes parent_events, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
+  'app/api/sis/events/[id]/publish/route.ts':
+    'Writes parent_events, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
+  'app/api/sis/events/[id]/image/route.ts':
+    'Uploads the image and writes parent_events, read uncached by lib/events/staff.ts and lib/events/parent.ts.',
   // ── writes no database row at all ──────────────────────────────────────
   // The active-role lens (role switcher, Phase 1). This route's entire effect
   // is a cookie on the response — it touches no table, so there is no cached
