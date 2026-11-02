@@ -29,7 +29,7 @@ KDs are numbered globally (1–229 with gaps at 19/26/30/86). Each KD lives in e
 | `key-decisions/pfiles.md`                   | 31, 34, 36, 60, 63, 64, 71, 91, 96, 204, 219, 223                                                                                                                                                                               |
 | `key-decisions/records.md`                  | 37, 40, 48, 66, 67, 68, 72, 83, 85, 90, 101, 109, 111, 112, 117, 127, 134, 135, 136, 141, 144, 146, 153, 154, 178, 189, 190, 224, 226, 228                                                                                      |
 | `key-decisions/classroom.md`                | 160, 172, 181, 182                                                                                                                                                                                                              |
-| `key-decisions/parent.md`                   | 7, 10, 11, 12, 65, 73, 165, 195, 201, 235                                                                                                                                                                                           |
+| `key-decisions/parent.md`                   | 7, 10, 11, 12, 65, 73, 165, 195, 201, 235                                                                                                                                                                                       |
 
 ## Quick lookup
 
