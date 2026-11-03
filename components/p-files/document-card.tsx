@@ -22,6 +22,8 @@ import { Button } from '@/components/ui/button';
 import { HistoryDialog } from '@/components/p-files/history-dialog';
 import type { DocumentStatus, SlotMeta } from '@/lib/p-files/document-config';
 import { classifyUrgency, type SlotUrgencyKind } from '@/lib/p-files/urgency';
+import { DocumentReadingPanel } from '@/components/sis/document-reading-panel';
+import type { DocumentReadingView } from '@/lib/admissions/document-reading-view';
 
 type DocumentCardProps = {
   enroleeNumber: string;
@@ -61,6 +63,8 @@ type DocumentCardProps = {
   lastReminderAt?: string | null;
   /** Active promise (if any) — promised_until ≥ today. Drives the "Promised by [date]" badge. */
   activePromise?: { promisedUntil: string; note: string | null } | null;
+  /** What the portal read from this passport, if it did. */
+  reading?: DocumentReadingView | null;
 };
 
 // Card-level treatment: cards stay neutral white in every state. The
@@ -229,6 +233,7 @@ export function DocumentCard({
   recipients,
   lastReminderAt,
   activePromise,
+  reading,
 }: DocumentCardProps) {
   const [rejectOpen, setRejectOpen] = React.useState(false);
 
@@ -353,6 +358,8 @@ export function DocumentCard({
           )}
         </div>
       )}
+
+      {reading && <DocumentReadingPanel view={reading} />}
 
       {/* ── Spacer so action row stays pinned to the bottom in
           equal-height grid rows ───────────────────────────────── */}

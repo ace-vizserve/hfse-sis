@@ -34,6 +34,10 @@ import { useBulkAction } from '@/lib/hooks/use-bulk-action';
 
 import { RejectDialog } from './reject-dialog';
 import { TriagePane } from './triage-pane';
+import {
+  qualityNotes,
+  readingOutcome,
+} from '@/lib/admissions/document-reading-view';
 
 type Props = {
   rows: ValidationQueueRow[];
@@ -366,6 +370,42 @@ export function ValidationQueue({
               : '—'}
           </span>
         ),
+      },
+      {
+        id: 'reading',
+        header: 'Portal check',
+        meta: { label: 'Portal check' },
+        accessorFn: (row) => (row.reading ? readingOutcome(row.reading) : ''),
+        cell: ({ row }) => {
+          if (!row.original.reading) {
+            return <span className="text-xs text-muted-foreground">—</span>;
+          }
+          const outcome = readingOutcome(row.original.reading);
+          const [note] = qualityNotes(row.original.reading.quality);
+          if (outcome === 'differs' || outcome === 'expired' || note) {
+            return (
+              <Badge className="h-6 border-destructive/40 bg-destructive/10 text-destructive">
+                {outcome === 'differs'
+                  ? 'Differs'
+                  : outcome === 'expired'
+                    ? 'Expired'
+                    : note}
+              </Badge>
+            );
+          }
+          if (outcome === 'not-read') {
+            return (
+              <Badge variant="secondary" className="h-6">
+                Not read
+              </Badge>
+            );
+          }
+          return (
+            <Badge className="h-6 border-brand-mint bg-brand-mint/30 text-ink">
+              {outcome === 'matches' ? 'Matches' : 'Looks clear'}
+            </Badge>
+          );
+        },
       },
       {
         id: 'preview',

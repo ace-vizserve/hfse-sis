@@ -37,6 +37,8 @@ import {
   type DocumentSlot,
 } from '@/lib/sis/queries';
 import { cn } from '@/lib/utils';
+import { DocumentReadingPanel } from '@/components/sis/document-reading-panel';
+import type { DocumentReadingView } from '@/lib/admissions/document-reading-view';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Documents tab — split-pane viewer
@@ -74,6 +76,8 @@ type ApplicationLite = {
 type Props = {
   application: ApplicationLite;
   documents: DocumentSlot[];
+  /** What the portal read from each passport, by slot key. */
+  readings?: Record<string, DocumentReadingView>;
   enroleeNumber: string;
   ayCode: string;
   // Document rights, resolved by the page from the viewer's capabilities.
@@ -234,6 +238,7 @@ function formatExpiry(expiry: string | null): string | null {
 export function DocumentsViewer({
   application,
   documents,
+  readings,
   enroleeNumber,
   ayCode,
   canValidate = false,
@@ -382,6 +387,7 @@ export function DocumentsViewer({
         {hasSelection && selectedDoc && (
           <PreviewPane
             doc={selectedDoc}
+            reading={readings?.[selectedDoc.key] ?? null}
             enroleeNumber={enroleeNumber}
             ayCode={ayCode}
             onClose={() => setSelectedKey(null)}
@@ -730,6 +736,7 @@ function ExpiryChip({
 
 function PreviewPane({
   doc,
+  reading,
   enroleeNumber,
   ayCode,
   onClose,
@@ -752,6 +759,7 @@ function PreviewPane({
   applicationStatus: string | null;
   canValidate: boolean;
   canChase: boolean;
+  reading: DocumentReadingView | null;
 }) {
   const kind = fileKind(doc.url);
   const filename = fileNameFromUrl(doc.url);
@@ -804,6 +812,12 @@ function PreviewPane({
             </Button>
           </CardAction>
         </CardHeader>
+
+        {reading && (
+          <div className="border-b border-border p-4">
+            <DocumentReadingPanel view={reading} />
+          </div>
+        )}
 
         <div className="bg-muted/30">
           <PreviewBody url={doc.url} kind={kind} />
