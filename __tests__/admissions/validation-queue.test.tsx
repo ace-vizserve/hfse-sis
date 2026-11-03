@@ -58,6 +58,7 @@ const ROW: ValidationQueueRow = {
   status: 'Uploaded',
   expiryDateIso: null,
   isExpirable: false,
+  reading: null,
   owner: 'Student',
   category: 'general',
 };

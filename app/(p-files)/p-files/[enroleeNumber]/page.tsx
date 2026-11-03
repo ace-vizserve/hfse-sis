@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 
 import { DocumentCard } from '@/components/p-files/document-card';
+import { loadSlotReadings } from '@/lib/admissions/document-readings';
 import {
   ActionQueueCard,
   type ActionQueueRow,
@@ -180,6 +181,11 @@ export default async function StudentDocumentDetailPage({
   }
 
   const docRow = student.rawDocRow;
+  const readings = await loadSlotReadings(
+    selectedAy,
+    enroleeNumber,
+    docRow as Record<string, string | null | undefined>
+  );
   // One flag used to gate every control here — `role === 'p_file_officer' ||
   // 'superadmin'`. That was correct until migration 106 gave `school_admin` the
   // post-enrolment document capabilities: she then held the rights while this
@@ -357,6 +363,7 @@ export default async function StudentDocumentDetailPage({
                 recipients={student.recipients}
                 lastReminderAt={outreach?.lastReminderAt ?? null}
                 activePromise={outreach?.activePromise ?? null}
+                reading={readings[slot.key] ?? null}
               />
             );
           })}

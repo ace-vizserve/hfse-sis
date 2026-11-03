@@ -11,6 +11,7 @@ import {
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { DocumentReadingPanel } from '@/components/sis/document-reading-panel';
 import { RichTextEditor } from '@/components/ui/rich-text-editor';
 import type { ValidationQueueRow } from '@/lib/admissions/document-validation';
 import { proseLength } from '@/lib/rich-text';
@@ -213,6 +214,8 @@ export function TriagePane({
             <Badge variant="secondary">{current.slotLabel}</Badge>
             {current.isExpirable && <Badge variant="warning">Expires</Badge>}
           </div>
+
+          {current.reading && <DocumentReadingPanel view={current.reading} />}
 
           <div className="space-y-2">
             <Button

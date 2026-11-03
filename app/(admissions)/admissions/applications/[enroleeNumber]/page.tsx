@@ -15,6 +15,7 @@ import { notFound, redirect } from 'next/navigation';
 import { Fragment } from 'react';
 
 import { DocumentsViewer } from '@/components/sis/documents-viewer';
+import { loadSlotReadings } from '@/lib/admissions/document-readings';
 import { EnrollmentHistoryChips } from '@/components/sis/enrollment-history-chips';
 import { EnrollmentTab } from '@/components/sis/enrollment-tab';
 import { FamilyTab } from '@/components/sis/family-tab';
@@ -188,6 +189,11 @@ export default async function SisStudentDetailPage({
   }
 
   const { application, status: storedStatus, documents } = detail;
+  const readings = await loadSlotReadings(
+    selectedAy,
+    application.enroleeNumber,
+    Object.fromEntries(documents.map((d) => [d.key, d.url]))
+  );
 
   // Enrollment history, current section, and lifecycle snapshot are all
   // independent of each other — fetch in parallel after detail resolves.
@@ -592,6 +598,7 @@ export default async function SisStudentDetailPage({
               guardianEmail: application.guardianEmail,
             }}
             documents={documents}
+            readings={readings}
             enroleeNumber={application.enroleeNumber}
             ayCode={selectedAy}
             canValidate={can(capabilities, 'documents_pre_enrolment.validate')}

@@ -23,6 +23,16 @@
 
 import { unstable_cache } from 'next/cache';
 
+import {
+  compareReading,
+  type DocumentReadingView,
+} from '@/lib/admissions/document-reading-view';
+import {
+  loadStoredReadings,
+  PASSPORT_ENTERED_COLUMNS,
+  PASSPORT_SLOTS,
+} from '@/lib/admissions/document-readings';
+import { sgToday } from '@/lib/dates';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
 import { DOCUMENT_SLOTS } from '@/lib/sis/queries';
 import {
@@ -57,6 +67,9 @@ export type ValidationQueueRow = {
   /** Expiry for the passport / pass slots; null for the rest. */
   expiryDateIso: string | null;
   isExpirable: boolean;
+  /** What the parent portal found in this file: what it read from a passport against
+   *  what the application says, and the scan quality. Null for uploads from before it did. */
+  reading: DocumentReadingView | null;
   // Who the document belongs to, derived from slotKey prefix. Lets the
   // validation page facet on "Student" vs "Mother / Father / Guardian"
   // so registrars can batch through parent-side docs vs student-side docs.
@@ -98,7 +111,10 @@ async function loadPendingDocValidationUncached(
     admissions
       .from(appsTable)
       .select(
-        'enroleeNumber, studentNumber, firstName, lastName, middleName, enroleeFullName, levelApplied, stpApplicationType'
+        [
+          'enroleeNumber, studentNumber, firstName, lastName, middleName, enroleeFullName, levelApplied, stpApplicationType',
+          ...PASSPORT_ENTERED_COLUMNS,
+        ].join(', ')
       ),
     admissions
       .from(statusTable)
@@ -147,7 +163,9 @@ async function loadPendingDocValidationUncached(
     enroleeNumber: string | null;
   };
 
-  const apps = (appsRes.data ?? []) as AppRow[];
+  // Dynamic SELECT again, and the entered passport details are read by column name.
+  const apps = (appsRes.data ?? []) as unknown as (AppRow &
+    Record<string, string | null>)[];
   const statuses = (statusRes.data ?? []) as StatusRow[];
   // Dynamic SELECT string makes Supabase's typed client widen to
   // GenericStringError[]; cast through unknown so TS accepts the runtime shape.
@@ -161,7 +179,7 @@ async function loadPendingDocValidationUncached(
       classLevelByEnrolee.set(s.enroleeNumber, s.classLevel ?? null);
     }
   }
-  const appByEnrolee = new Map<string, AppRow>();
+  const appByEnrolee = new Map<string, (typeof apps)[number]>();
   for (const a of apps) {
     if (a.enroleeNumber) appByEnrolee.set(a.enroleeNumber, a);
   }
@@ -222,10 +240,31 @@ async function loadPendingDocValidationUncached(
         status,
         expiryDateIso,
         isExpirable: slot.expiryCol != null,
+        reading: null,
         owner: deriveOwner(slot.key),
         category: 'general',
       });
     }
+  }
+
+  const passportMeta = new Map(PASSPORT_SLOTS.map((s) => [s.key, s.meta!]));
+  const stored = await loadStoredReadings(
+    rows.map((r) => r.fileUrl).filter(Boolean)
+  );
+  const today = sgToday();
+  for (const row of rows) {
+    const reading = stored.get(row.fileUrl);
+    if (!reading) continue;
+    const meta = passportMeta.get(row.slotKey);
+    const app = appByEnrolee.get(row.enroleeNumber);
+    row.reading = compareReading(
+      reading,
+      {
+        number: meta ? (app?.[meta.numberCol] ?? null) : null,
+        expiry: meta ? (app?.[meta.expiryCol] ?? null) : null,
+      },
+      today
+    );
   }
 
   // Stable sort: by full name then slot label so the page re-renders
@@ -244,8 +283,8 @@ export async function loadPendingDocValidation(
 ): Promise<ValidationQueueRow[]> {
   return unstable_cache(
     () => loadPendingDocValidationUncached(ayCode),
-    // v2: rows gained the resolved `level`.
-    ['admissions', 'doc-validation-v2', ayCode],
+    // v3: rows gained the portal's `reading`.
+    ['admissions', 'doc-validation-v3', ayCode],
     { tags: [`sis:${ayCode}`], revalidate: 60 }
   )();
 }

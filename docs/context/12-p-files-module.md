@@ -281,3 +281,13 @@ After login, the root `/` page (and the sidebar's module switcher) offers whiche
 - Integration with SharePoint (the goal is to replace SharePoint, not sync with it)
 - Revision rollback UI — the History dialog is read-only. Restoring a prior version means re-uploading it via the Replace flow, which will itself create a new revision.
 - Revision cleanup / retention policy — revisions are append-only. If storage cost becomes a concern, a scheduled purge job against `p_file_revisions` + `storage.objects` would go here.
+
+## What the portal found in a file (migration 204)
+
+The parent portal reads a passport's machine-readable zone before uploading it (the OCR lives in the portal, not here), holds the upload if the details disagree with a check-digit-verified read, and after the upload reports what it read to `POST /api/parent/v2/document-readings`.
+
+- `document_readings` is keyed by the file's URL, because a wizard upload happens before its application exists. First write wins; there are no UPDATE or DELETE paths.
+- The review screens (admissions queue and triage, applicant Documents tab, P-Files cards) show `DocumentReadingPanel`: the reading against what the application says **now**, so details edited after the upload still show as differing.
+- A stored reading is reported by the parent's browser. It is evidence for the reviewer and never approves anything.
+- Every document also gets its scan quality measured after upload (`api/document-quality` in the portal), shown as hints: nearly blank, blurry, dark, washed out, small. Cut-offs are in `lib/admissions/document-reading-view.ts`. They never hold up an upload or an approval.
+- Uploads from before this have no reading and show no panel. Passes are measured but not read.
