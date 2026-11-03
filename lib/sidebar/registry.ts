@@ -13,6 +13,7 @@ import {
   CalendarX2,
   ClipboardCheck,
   ClipboardList,
+  DoorOpen,
   FileCheck,
   FileClock,
   FilePen,
@@ -456,6 +457,7 @@ export const SIDEBAR_REGISTRY: Record<SidebarModule, ModuleSidebarConfig> = {
       '/sis/admin/discount-codes': ICON_DISCOUNT_CODES,
       '/sis/admin/admission-options': ICON_ADMISSION_OPTIONS,
       '/sis/admin/events': CalendarCheck,
+      '/sis/admin/parent-portal': DoorOpen,
       '/sis/admin/subjects': ICON_SUBJECT_WEIGHTS,
       '/sis/admin/approvers': ShieldCheck,
       // Who may do what. Approvers (above) is a named list of people;

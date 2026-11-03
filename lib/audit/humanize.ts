@@ -341,6 +341,14 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   // Parent sessions
   'parent.session.issued': 'Parent signed in',
   'parent.session.cleared': 'Parent signed out',
+
+  // Parent portal admin tools, in SIS Admin
+  'parent_portal.password_reset': 'Parent password reset',
+  'parent_portal.account_create': 'Parent account created',
+  'parent_portal.recovery_link_create': 'Enrolment recovery link created',
+  'parent_portal.application_transfer': 'Application moved to another year',
+  'parent_portal.application_transfer_failed':
+    'Application move failed and needs checking',
 };
 
 export function auditActionLabel(action: string): string {
@@ -2283,6 +2291,60 @@ function templateSummary(
       else if (Array.isArray(ctx.changed_fields)) parts.push('nothing changed');
       if (boolish(ctx.edited_by_filer) === false)
         parts.push('edited by someone other than the person who filed it');
+      return joinParts(parts);
+    }
+
+    // Parent portal admin tools ------------------------------------------------
+    case 'parent_portal.password_reset':
+    case 'parent_portal.account_create': {
+      const parts: string[] = [];
+      const person = personText(ctx);
+      if (person) parts.push(person);
+      const relationship = str(ctx.relationship);
+      if (relationship) parts.push(prettify(relationship));
+      return joinParts(parts);
+    }
+
+    case 'parent_portal.recovery_link_create': {
+      const parts: string[] = [];
+      const student = str(ctx.student_name);
+      if (student) parts.push(student);
+      const enrolee = str(ctx.enrolee_number);
+      if (enrolee) parts.push(enrolee);
+      const sentTo = strArray(ctx.sent_to);
+      if (sentTo.length) parts.push(`Sent to ${listText(sentTo)}`);
+      return joinParts(parts);
+    }
+
+    case 'parent_portal.application_transfer_failed': {
+      const parts: string[] = [];
+      const enrolee = str(ctx.old_enrolee_number);
+      if (enrolee) parts.push(enrolee);
+      const fromAy = str(ctx.source_ay);
+      const toAy = str(ctx.target_ay);
+      if (fromAy && toAy) parts.push(`${fromAy}${ARROW}${toAy}`);
+      const error = str(ctx.error);
+      if (error) parts.push(error);
+      return joinParts(parts);
+    }
+
+    case 'parent_portal.application_transfer': {
+      const parts: string[] = [];
+      const student = str(ctx.student_name);
+      if (student) parts.push(student);
+      const fromAy = str(ctx.source_ay);
+      const toAy = str(ctx.target_ay);
+      if (fromAy && toAy) parts.push(`${fromAy}${ARROW}${toAy}`);
+      const oldEnrolee = str(ctx.old_enrolee_number);
+      const newEnrolee = str(ctx.new_enrolee_number);
+      if (oldEnrolee && newEnrolee)
+        parts.push(`${oldEnrolee}${ARROW}${newEnrolee}`);
+      const oldStudent = str(ctx.old_student_number);
+      const newStudent = str(ctx.new_student_number);
+      if (newStudent && oldStudent !== newStudent)
+        parts.push(
+          oldStudent ? `${oldStudent}${ARROW}${newStudent}` : newStudent
+        );
       return joinParts(parts);
     }
 

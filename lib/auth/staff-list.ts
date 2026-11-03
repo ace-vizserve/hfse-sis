@@ -43,8 +43,8 @@ type Options = {
 //
 // `resolveRoleSetFromMetadata` applies the `ROLES` membership test itself, so
 // an empty list means "not staff": `'registrar'` (the pre-migration-092 name),
-// `''`, and any string the separate parent-portal repo might one day write into
-// `user_metadata.role` all arrive here as `[]`. See `getTeacherList` below for
+// `''`, and a role an account holder wrote into its own `user_metadata` all
+// arrive here as `[]`. See `getTeacherList` below for
 // why that membership test is the security property and not a formality.
 type _StaffRecord = {
   id: string;
@@ -125,7 +125,7 @@ async function loadAllStaffUncached(): Promise<_StaffRecord[]> {
         disabled?: boolean;
       };
       const userMeta = (u.user_metadata ?? {}) as StaffUserMetadata;
-      const roles = resolveRoleSetFromMetadata(appMeta, userMeta);
+      const roles = resolveRoleSetFromMetadata(appMeta);
       const disabled = appMeta.disabled === true;
       const name = resolveStaffName(userMeta, u.email);
       out.push({ id: u.id, email: u.email, roles, name, disabled });
@@ -187,13 +187,10 @@ function _loadAllStaff(): Promise<_StaffRecord[]> {
  * service role enforces validity when writing assignments — so a parent's uuid
  * written into that column would be accepted by the database, and the
  * migration-005 RLS helpers would then hand that parent read access to the
- * class's students and their grades. `loadAllStaffUncached` above still
- * resolves roles from `appMeta.role ?? userMeta.role`, and **the parent portal
- * is a separate repo**: the day it writes any string at all into
- * `user_metadata.role`, a `!= null` test would admit every one of those
- * accounts. `resolveRoleSetFromMetadata` turns an unrecognised value into an
- * EMPTY list, so `roles.includes('teacher')` admits none of them whatever that
- * string turns out to be. Do not relax it.
+ * class's students and their grades. `resolveRoleSetFromMetadata` reads
+ * `app_metadata` only (KD #236) and turns an unrecognised value into an EMPTY
+ * list, so `roles.includes('teacher')` admits no parent whatever string is
+ * stored. Do not relax it.
  *
  * ⚠ A stale role string — say `registrar`, from before the migration-092
  * rename (KD #155) — is therefore NOT assignable, and that is correct rather

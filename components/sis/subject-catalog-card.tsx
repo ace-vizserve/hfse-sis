@@ -477,7 +477,9 @@ export function SubjectCatalogCard({
 
   return (
     <>
-      <Card className="gap-0 overflow-hidden py-0">
+      {/* `overflow-clip`, not `-hidden`: hidden would stop the table's action bar
+          from sticking to the bottom of the screen. */}
+      <Card className="gap-0 overflow-clip py-0">
         <div className="flex flex-wrap items-center gap-3 px-5 pb-4 pt-5">
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-brand-indigo to-brand-navy text-white shadow-brand-tile">
             <ListChecks className="size-4" />

@@ -140,6 +140,7 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
     label: 'People & access',
     prefixes: [
       'user.',
+      'parent_portal.',
       'role.',
       'approver.',
       'approval_stage.',

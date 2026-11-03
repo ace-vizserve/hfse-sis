@@ -45,9 +45,8 @@ async function listAllUsers(): Promise<AdminUserRow[]> {
   }
   return users.map((u) => {
     const appMeta = u.app_metadata as Record<string, unknown> | null;
-    const userMeta = u.user_metadata as Record<string, unknown> | null;
-    const role = resolveActiveRoleFromMetadata(appMeta, userMeta);
-    const roles = resolveRoleSetFromMetadata(appMeta, userMeta);
+    const role = resolveActiveRoleFromMetadata(appMeta);
+    const roles = resolveRoleSetFromMetadata(appMeta);
     const displayName =
       (u.user_metadata as { display_name?: string; full_name?: string } | null)
         ?.display_name ??

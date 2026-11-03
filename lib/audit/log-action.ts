@@ -282,6 +282,15 @@ export const ALL_AUDIT_ACTIONS = [
   // app/api/account/password-changed/route.ts after Supabase accepted it; the
   // password itself never reaches the server.
   'user.password.change',
+  // The parent portal's admin tools, in SIS Admin. Superadmin only, and logged
+  // under that person's own name: the portal's one shared admin login recorded
+  // nobody. Passwords and recovery links never go in the context.
+  'parent_portal.password_reset',
+  'parent_portal.account_create',
+  'parent_portal.recovery_link_create',
+  'parent_portal.application_transfer',
+  // A move that failed and could not be fully undone; the context has the reason.
+  'parent_portal.application_transfer_failed',
 ] as const;
 
 export type AuditAction = (typeof ALL_AUDIT_ACTIONS)[number];
@@ -312,6 +321,9 @@ export type AuditEntityType =
   | 'admission_option'
   // One row of `parent_events` (migration 203).
   | 'parent_event'
+  // The parent portal's admin tools. entity_id is the parent's account id, or
+  // the enrolee number for a recovery link or a transfer.
+  | 'parent_portal'
   | 'academic_year'
   | 'term'
   | 'level'

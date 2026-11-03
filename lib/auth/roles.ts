@@ -802,6 +802,14 @@ const SIS_NAV: NavSection[] = [
         requiresRoles: [...ENROLMENT_PLACEMENT_WRITERS],
       },
       {
+        // Everyone listed may read it; only a superadmin may act, which the
+        // write routes check for themselves. Not its own section: a labelled
+        // section over one row groups nothing.
+        href: '/sis/admin/parent-portal',
+        label: 'Parent Portal',
+        requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
+      },
+      {
         href: '/sis/admin/subjects',
         label: 'Subject Weights',
         requiresRoles: ['academic_coordinator', 'school_admin', 'superadmin'],
@@ -1350,10 +1358,10 @@ export const ROUTE_ACCESS: Array<{
 // project), so widening this chain is how you hand a parent a staff role.
 //
 // ⚠ `active_role` IS READ FROM `app_metadata` ONLY, never `user_metadata`.
-// `user_metadata` is writable by the account holder through Supabase's own
-// client; `app_metadata` is not. The `role` fallback into `user_metadata` is
-// pre-existing behaviour and is left exactly as it was, but the new key does
-// not inherit it.
+// ⚠ NEITHER IS `role`. `user_metadata` is writable by the account holder through
+// Supabase's own client; `app_metadata` is not. A fallback into `user_metadata`
+// let any parent make themselves a superadmin by writing `role` there (found
+// 2026-11-03, proven on the local stack). Never read a role from it again.
 //
 // ⚠ THE ARRAY TRAP, WHICH MIGRATION 142 ENCODES ON THE SQL SIDE TOO: once
 // `role` is an array, a naive read hands back the literal text
@@ -1379,20 +1387,15 @@ function asRole(value: unknown): Role | null {
 /**
  * The single role in force for this account right now — what authorises.
  *
- * Pass the raw metadata objects; both may be missing. The `role` fallback from
- * `app_metadata` into `user_metadata` reproduces the original
- * `appMeta.role ?? userMeta.role` exactly, including the case that made it
- * matter: an `app_metadata.role` of `''` does NOT fall through to
- * `user_metadata`, it resolves to `null`.
+ * Pass the raw `app_metadata` object; it may be missing.
  */
 export function resolveActiveRoleFromMetadata(
-  appMeta: RoleMetadata,
-  userMeta?: RoleMetadata
+  appMeta: RoleMetadata
 ): Role | null {
   const active = asRole(readMetaKey(appMeta, 'active_role'));
   if (active) return active;
 
-  const raw = readMetaKey(appMeta, 'role') ?? readMetaKey(userMeta, 'role');
+  const raw = readMetaKey(appMeta, 'role');
   if (Array.isArray(raw)) {
     for (const entry of raw) {
       const role = asRole(entry);
@@ -1417,17 +1420,14 @@ export function resolveActiveRoleFromMetadata(
  * currently using it would strand the person in a role their own switcher no
  * longer lists.
  */
-export function resolveRoleSetFromMetadata(
-  appMeta: RoleMetadata,
-  userMeta?: RoleMetadata
-): Role[] {
+export function resolveRoleSetFromMetadata(appMeta: RoleMetadata): Role[] {
   const out: Role[] = [];
   const add = (value: unknown) => {
     const role = asRole(value);
     if (role && !out.includes(role)) out.push(role);
   };
 
-  const raw = readMetaKey(appMeta, 'role') ?? readMetaKey(userMeta, 'role');
+  const raw = readMetaKey(appMeta, 'role');
   if (Array.isArray(raw)) {
     for (const entry of raw) add(entry);
   } else {
@@ -1438,31 +1438,25 @@ export function resolveRoleSetFromMetadata(
 }
 
 export function getUserRole(user: User | null | undefined): Role | null {
-  return resolveActiveRoleFromMetadata(user?.app_metadata, user?.user_metadata);
+  return resolveActiveRoleFromMetadata(user?.app_metadata);
 }
 
 /** Every role `user` may hold — see `resolveRoleSetFromMetadata`. */
 export function getUserRoleSet(user: User | null | undefined): Role[] {
-  return resolveRoleSetFromMetadata(user?.app_metadata, user?.user_metadata);
+  return resolveRoleSetFromMetadata(user?.app_metadata);
 }
 
 export function getRoleFromClaims(
   claims: Record<string, unknown> | null | undefined
 ): Role | null {
-  return resolveActiveRoleFromMetadata(
-    claims?.app_metadata as RoleMetadata,
-    claims?.user_metadata as RoleMetadata
-  );
+  return resolveActiveRoleFromMetadata(claims?.app_metadata as RoleMetadata);
 }
 
 /** Every role the signed-in account may hold — see `resolveRoleSetFromMetadata`. */
 export function getRoleSetFromClaims(
   claims: Record<string, unknown> | null | undefined
 ): Role[] {
-  return resolveRoleSetFromMetadata(
-    claims?.app_metadata as RoleMetadata,
-    claims?.user_metadata as RoleMetadata
-  );
+  return resolveRoleSetFromMetadata(claims?.app_metadata as RoleMetadata);
 }
 
 /**

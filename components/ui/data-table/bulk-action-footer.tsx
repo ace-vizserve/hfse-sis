@@ -12,6 +12,10 @@ export type BulkAction<TRow> = {
   icon?: LucideIcon;
   onTrigger: (selectedRows: TRow[]) => void | Promise<void>;
   destructive?: boolean;
+  /** Outline instead of primary, for the lesser of two actions. */
+  secondary?: boolean;
+  /** Shown only while this holds for the ticked rows. Always shown if absent. */
+  showFor?: (selectedRows: TRow[]) => boolean;
 };
 
 type BulkActionFooterProps<TRow> = {
@@ -89,27 +93,35 @@ export function BulkActionFooter<TRow>({
         </Button>
       </div>
       <div className="flex items-center gap-2">
-        {actions.map((action) => {
-          const Icon = action.icon;
-          const isRunning = runningKey === action.key;
-          return (
-            <Button
-              key={action.key}
-              size="sm"
-              variant={action.destructive ? 'destructive' : 'default'}
-              onClick={() => void trigger(action)}
-              // The spinner replaces the icon in place; the label is left
-              // alone because only the action knows its own present tense
-              // ("Send reminders" → "Sending…" can't be derived here).
-              loading={isRunning}
-              disabled={runningKey !== null && !isRunning}
-              className="h-8"
-            >
-              {Icon && !isRunning && <Icon className="mr-1 h-3.5 w-3.5" />}
-              {action.label}
-            </Button>
-          );
-        })}
+        {actions
+          .filter((action) => action.showFor?.(selectedRows) ?? true)
+          .map((action) => {
+            const Icon = action.icon;
+            const isRunning = runningKey === action.key;
+            return (
+              <Button
+                key={action.key}
+                size="sm"
+                variant={
+                  action.destructive
+                    ? 'destructive'
+                    : action.secondary
+                      ? 'outline'
+                      : 'default'
+                }
+                onClick={() => void trigger(action)}
+                // The spinner replaces the icon in place; the label is left
+                // alone because only the action knows its own present tense
+                // ("Send reminders" → "Sending…" can't be derived here).
+                loading={isRunning}
+                disabled={runningKey !== null && !isRunning}
+                className="h-8"
+              >
+                {Icon && !isRunning && <Icon className="mr-1 h-3.5 w-3.5" />}
+                {action.label}
+              </Button>
+            );
+          })}
       </div>
     </div>
   );

@@ -152,6 +152,18 @@ A parent re-filing dates already on record got **200 with the OLD filing**. Noth
 
 ⚠ **The portal brief previously said to show the confirmation screen on `alreadyFiled`**; that path now returns 409. `docs/handoff/2026-08-27-parent-portal-declarations.md` carries the full response and marks what changed. Mr Ace, 2026-08-29: **"all good on parent portal side."**
 
+### KD #236
+
+**The parent portal's admin tools live in SIS Admin, and a role is never read from `user_metadata`.** 2026-11-03. Mr Ace: only a superadmin can act. Spec `docs/superpowers/specs/2026-11-03-parent-portal-admin-in-sis-design.md`.
+
+- **One page, `/sis/admin/parent-portal`, with two tables (Mr Ace):** `?tab=applications` (the default) lists every record in the chosen year, one row per student, including records with a documents or status row but no application, shown as "Application missing"; ticks move students to another year, and a row action sends a recovery link. `?tab=accounts` lists parent logins, with Reset password on the row and a Create account dialog. It runs on the SIS server with the service client, because the portal's edge functions only accept `admin@parent.portal.com`. The portal's own admin pages stay live until Mr Ace switches them off.
+- **Access:** every write route checks `requireRole(['superadmin'])`, by role so `/sis/admin/roles` cannot widen it. Academic coordinator and school admin can read the page; they never receive a recovery link's URL or token.
+- **Transfer records only corrects a parent picking the wrong academic year** (Mr Ace). It is a port of the portal's move plus an undo: no other SIS records are re-pointed. Current and VizSchool Current keep their student number; New and VizSchool New get a new one.
+- **Reset password is parent accounts only:** it refuses staff accounts and the portal's admin login on the server, not just in the list.
+- **The form behind a recovery link stays on the portal.** `lib/parent-portal/recovery.ts` holds a copy of the portal's required-fields list, pinned by a test when the portal repo is beside this one.
+
+🔴 **A role is read from `app_metadata` only.** `user_metadata` is writable by the account holder with the public key, and the old `appMeta.role ?? userMeta.role` fallback let a parent write `role: 'superadmin'` on themselves and pass SIS role checks (proven on the local stack 2026-11-03; production was not tried). `lib/auth/roles.ts` and migration 205 (`current_user_role()`) drop it. Never bring it back.
+
 ### KD #235
 
 **Parents register their children for school events in the portal; staff build the form and read the answers in the SIS.** 2026-10-29. Migration 203, on production (numbered 201 until 2026-11-02, when another branch's 201/202 reached production first). Live on `origin/main` and the parent portal's `main` since 2026-11-02. Miss Apple's request, SIS Admin Training item #12. Plan: `docs/superpowers/plans/2026-10-29-parent-event-registration.md`. Staff guide: `docs/training/parent-events-guide.pdf`.

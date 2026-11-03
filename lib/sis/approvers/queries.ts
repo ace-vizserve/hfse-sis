@@ -71,8 +71,7 @@ export async function listApproversForFlow(
       // name, not a gate. Eligibility was decided when the assignment was
       // made, and is re-checked on every decision by the capability map.
       const role = resolveActiveRoleFromMetadata(
-        u.app_metadata as Record<string, unknown> | null,
-        u.user_metadata as Record<string, unknown> | null
+        u.app_metadata as Record<string, unknown> | null
       );
       const display_name =
         (u.user_metadata as { display_name?: string } | null)?.display_name ??
@@ -163,8 +162,7 @@ export async function listEligibleApproverCandidates(
       // beside her name always holds the capability the page is about.
       const role =
         resolveRoleSetFromMetadata(
-          u.app_metadata as Record<string, unknown> | null,
-          u.user_metadata as Record<string, unknown> | null
+          u.app_metadata as Record<string, unknown> | null
         ).find((r) => eligibleRoles.has(r)) ?? null;
       return { user_id: u.id, email: u.email ?? '', role };
     })

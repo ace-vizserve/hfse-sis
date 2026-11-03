@@ -121,6 +121,12 @@ const SIS_AUDIT_ALLOWLIST = [
   'user.view.switch',
   // A person changed their own password on the Account page.
   'user.password.change',
+  // The parent portal's admin tools (superadmin only).
+  'parent_portal.password_reset',
+  'parent_portal.account_create',
+  'parent_portal.recovery_link_create',
+  'parent_portal.application_transfer',
+  'parent_portal.application_transfer_failed',
 ] as const;
 
 type SisAuditLogSearchParams = DashboardSearchParams & {
