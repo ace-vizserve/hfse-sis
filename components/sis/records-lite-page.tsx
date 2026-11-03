@@ -1,8 +1,10 @@
 import {
   Activity,
   ArrowLeft,
+  ArrowUpRight,
   GraduationCap,
   Home,
+  Info,
   LineChart,
   Mail,
   Phone,
@@ -13,8 +15,15 @@ import {
 import Link from 'next/link';
 
 import { UnsyncedActionCard } from '@/components/sis/unsynced-action-card';
+import {
+  Alert,
+  AlertDescription,
+  AlertIcon,
+  AlertTitle,
+} from '@/components/ui/alert';
 import { ApplicationStatusBadge } from '@/components/ui/application-status-badge';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardAction,
@@ -33,6 +42,7 @@ import {
   type EnrollmentHistoryEntry,
 } from '@/lib/sis/queries';
 import { createServiceClient } from '@/lib/supabase/service';
+import { isEnrolledApplicationStatus } from '@/lib/sync/students';
 
 // ──────────────────────────────────────────────────────────────────────────
 // Records lite page — rendered for students whose admissions history is
@@ -92,6 +102,11 @@ export async function RecordsLitePage({
     ? buildDisplayName(detail.application)
     : '(no name on file)';
 
+  // This page is for anyone with no `students` row, which is every applicant not
+  // yet placed. A class can only be assigned once Enrolled (KD #226), so the
+  // assign card is only for those who are.
+  const enrolled = isEnrolledApplicationStatus(currentEntry.status ?? '');
+
   // 2. Available sections at this student's `levelApplied` for the
   //    current entry's AY, with per-section active counts and the
   //    resolved level (for the dialog's "create section" affordance).
@@ -125,7 +140,9 @@ export async function RecordsLitePage({
 
       <header className="space-y-3">
         <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-          Records · Awaiting class assignment
+          {enrolled
+            ? 'Records · Awaiting class assignment'
+            : 'Records · Application'}
         </p>
         <div className="flex flex-wrap items-baseline gap-3">
           <h1 className="font-serif text-[38px] font-semibold leading-[1.05] tracking-tight text-foreground md:text-[44px]">
@@ -149,14 +166,39 @@ export async function RecordsLitePage({
         </div>
       </header>
 
-      <UnsyncedActionCard
-        enroleeNumber={currentEntry.enroleeNumber}
-        ayCode={currentEntry.ayCode}
-        level={level}
-        studentName={studentName}
-        availableSections={availableSections}
-        applicationFit={applicationFit}
-      />
+      {enrolled ? (
+        <UnsyncedActionCard
+          enroleeNumber={currentEntry.enroleeNumber}
+          ayCode={currentEntry.ayCode}
+          level={level}
+          studentName={studentName}
+          availableSections={availableSections}
+          applicationFit={applicationFit}
+        />
+      ) : (
+        <Alert>
+          <AlertIcon>
+            <Info />
+          </AlertIcon>
+          <AlertTitle>Not enrolled.</AlertTitle>
+          <AlertDescription>
+            <p>
+              Status: {currentEntry.status || 'not set'}. Class assignment,
+              grades and attendance start once this student is Enrolled.
+            </p>
+            <div className="mt-3">
+              <Button variant="outline" asChild>
+                <Link
+                  href={`/admissions/applications/${encodeURIComponent(currentEntry.enroleeNumber)}?ay=${encodeURIComponent(currentEntry.ayCode)}&tab=enrollment`}
+                >
+                  Open in admissions
+                  <ArrowUpRight className="size-3.5" />
+                </Link>
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <Tabs defaultValue="overview" className="space-y-6">
         <TabsList>

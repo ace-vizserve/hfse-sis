@@ -88,6 +88,7 @@ import {
   type WithdrawalReason,
 } from '@/lib/schemas/enrolment';
 import type { ProfileUpdateInput } from '@/lib/schemas/sis';
+import { isEnrolledApplicationStatus } from '@/lib/sync/students';
 import { getStudentLifecycle } from '@/lib/sis/process';
 import { isLevelLocked } from '@/lib/sis/level-lock';
 import { loadLevelLabelResolver } from '@/lib/sis/levels';
@@ -435,6 +436,24 @@ export default async function RecordsStudentCrossYearPage({
     ? (history.find((h) => h.ayCode === currentAy.ay_code)?.enroleeNumber ??
       null)
     : null;
+  // The hero line speaks for the year this page is showing, so a class row from
+  // another year, or one whose application there is not Enrolled, never reads
+  // as where the student is now.
+  const shownYearEnrolled = isEnrolledApplicationStatus(
+    lifecycleEntry?.status ?? ''
+  );
+  const shownYearPlacement = placements.find(
+    (p) =>
+      p.ayCode === lifecycleEntry?.ayCode &&
+      isEnrolledStatus(p.enrollmentStatus)
+  );
+  // Next year's application, opened while the student is still in this year.
+  const newerUnenrolled = lifecycleEntry
+    ? [...history]
+        .filter((h) => h.ayCode > lifecycleEntry.ayCode)
+        .sort((a, b) => b.ayCode.localeCompare(a.ayCode))
+        .find((h) => !isEnrolledApplicationStatus(h.status ?? ''))
+    : undefined;
 
   // Parallel batch A — all independent of each other and of document freshness.
   // freshenAyDocuments runs here too so it completes before batch B reads docs.
@@ -582,29 +601,46 @@ export default async function RecordsStudentCrossYearPage({
           Cross-year view, linked by the student&rsquo;s permanent student ID.{' '}
           {ayCount > 0 ? (
             <>
-              Enrolled across <strong>{ayCount}</strong> academic year
+              On the roster in <strong>{ayCount}</strong> academic year
               {ayCount === 1 ? '' : 's'}.
-              {activePlacement && (
+            </>
+          ) : (
+            <>Not on a roster yet.</>
+          )}
+          {lifecycleEntry && (
+            <>
+              {' '}
+              {lifecycleEntry.ayCode}:{' '}
+              {!shownYearEnrolled ? (
+                <>not enrolled ({lifecycleEntry.status || 'no status'}).</>
+              ) : shownYearPlacement ? (
                 <>
-                  {' '}
-                  Currently in{' '}
+                  in{' '}
                   {/* The way across to the class. Every role that can open
                       this page (academic_coordinator | school_admin |
                       superadmin) is also admitted by /classroom, and oversight
                       resolves a capability for ANY section, so this can never
                       dead-end. */}
                   <Link
-                    href={`/classroom/${activePlacement.sectionId}`}
+                    href={`/classroom/${shownYearPlacement.sectionId}`}
                     className="font-semibold text-primary underline decoration-hairline-strong underline-offset-4 transition-colors hover:decoration-current"
                   >
-                    {activePlacement.levelCode} {activePlacement.sectionName}
+                    {shownYearPlacement.levelCode}{' '}
+                    {shownYearPlacement.sectionName}
                   </Link>
                   .
                 </>
+              ) : (
+                <>enrolled, no class yet.</>
               )}
             </>
-          ) : (
-            <>No enrolment history yet.</>
+          )}
+          {newerUnenrolled && (
+            <>
+              {' '}
+              {newerUnenrolled.ayCode}: not enrolled (
+              {newerUnenrolled.status || 'no status'}).
+            </>
           )}
         </p>
       </header>
