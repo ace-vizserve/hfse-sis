@@ -529,6 +529,48 @@ export async function validateSectionChoice(
 }
 
 /**
+ * Why the class already on an admissions row can't take this child on the day
+ * they enrol, or null when it can. Only "does the class exist and have a seat":
+ * no level-match against `levelApplied`, because the class's level IS the named
+ * level, and a child deliberately placed at another level (retained,
+ * accelerated — /records/level-mismatches) was placed by the sync before this
+ * check existed.
+ */
+export async function chosenClassProblem(
+  service: SupabaseClient,
+  ayCode: string,
+  classLevel: string | null,
+  classSection: string | null,
+  self: { enroleeNumber: string; studentNumber: string | null }
+): Promise<{ chosenClass: string; reason: string } | null> {
+  const chosenClass = [classLevel?.trim(), classSection?.trim()]
+    .filter(Boolean)
+    .join(' ');
+  const resolved = await resolveChosenSection(
+    service,
+    ayCode,
+    classLevel,
+    classSection
+  );
+  if ('reason' in resolved) return { chosenClass, reason: resolved.reason };
+  const validated = await validateSectionChoice(
+    service,
+    resolved.sectionId,
+    ayCode,
+    null,
+    self
+  );
+  if (!('error' in validated)) return null;
+  // The full-class message already ends "Pick another class." — dropped so the
+  // sentence below does not say it twice.
+  const why = validated.error.replace(/\s*Pick another class\.$/, '');
+  return {
+    chosenClass,
+    reason: `The class set for this child is ${chosenClass}, and it can't take them: ${why}`,
+  };
+}
+
+/**
  * Finds the SIS class an admissions row names — its class columns, however
  * they were filled in (SIS, Directus, the old enrolment link). Resolved exactly as the sync resolves it, so a class this
  * finds is a class the sync will place the child in.

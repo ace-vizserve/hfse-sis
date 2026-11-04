@@ -378,7 +378,7 @@ export type AuditEntityType =
 // `null` is a real answer, not a placeholder: a nightly sweep or a background
 // freshener has no person behind it. It must not be spelled `''` — see
 // `toAuditRow`.
-type AuditActor = { role: string | null } & (
+export type AuditActor = { role: string | null } & (
   | Pick<User, 'id' | 'email'>
   | { id: string | null; email: string | null }
 );

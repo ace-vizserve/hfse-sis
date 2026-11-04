@@ -392,6 +392,20 @@ export function EditStageDialog({
     /** Application saved, but the class roster could not be updated. */
     withdrawalCascadeFailed?: { error: string } | null;
     midTermEnrolment?: MidTermPayload | null;
+    /** Marking Fees as Paid enrolled the student, or tried to. */
+    feesPaidEnrolment?:
+      | { enrolled: false; error: string }
+      | {
+          enrolled: true;
+          openSteps: string[];
+          awaitingPlacement: boolean;
+          chosenClassUnavailable: {
+            chosenClass: string;
+            reason: string;
+          } | null;
+          autoSyncFailed: boolean;
+        }
+      | null;
   };
 
   const saveMutation = useMutation({
@@ -417,6 +431,36 @@ export function EditStageDialog({
     const autoSync = body.autoSync;
     const autoSyncFailed = body.autoSyncFailed === true;
     const withdrawalCascade = body.withdrawalCascade;
+
+    // Fees marked Paid enrols the student. Fees is saved either way.
+    const auto = body.feesPaidEnrolment;
+    if (auto && !auto.enrolled) {
+      toast.warning('Fees saved, but the student could not be enrolled', {
+        description: `Set them to Enrolled on the Application card. ${auto.error}`,
+      });
+      return null;
+    }
+    if (auto?.enrolled) {
+      const notes = [
+        auto.openSteps.length > 0 &&
+          `Still to finish: ${auto.openSteps.join(', ')}. They are listed under Admissions → Enrolled, steps still open.`,
+        auto.chosenClassUnavailable &&
+          `${auto.chosenClassUnavailable.reason} It has been taken off their record.`,
+        auto.awaitingPlacement &&
+          'They have no class yet — give them one on the Class Assignment card.',
+        auto.autoSyncFailed &&
+          'They could not be added to their class list. Check Records → Unsynced students.',
+      ].filter(Boolean);
+      const look =
+        auto.chosenClassUnavailable || auto.autoSyncFailed
+          ? toast.warning
+          : toast.success;
+      look(
+        'Fees marked Paid · student is now Enrolled',
+        notes.length > 0 ? { description: notes.join(' ') } : undefined
+      );
+      return null;
+    }
 
     // The application was saved but the class roster was not — the two now
     // disagree, and nothing else on screen would show it.

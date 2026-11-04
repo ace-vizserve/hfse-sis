@@ -25,9 +25,13 @@ import {
   type StageKey,
 } from '@/lib/schemas/sis';
 import {
-  resolveChosenSection,
+  chosenClassProblem,
   validateSectionChoice,
 } from '@/lib/sis/class-assignment';
+import {
+  enrolOnFeesPaid,
+  type FeesPaidEnrolment,
+} from '@/lib/sis/enrol-on-fees-paid';
 import { resolveEffectiveStageValues } from '@/lib/sis/stage-completion';
 import {
   DOCUMENT_SLOTS,
@@ -792,40 +796,15 @@ export async function PATCH(
         update[classCols.updatedByCol] = auth.user.email ?? '(unknown)';
         classAutoAssigned = true;
       } else {
-        const chosenText = [preLevel?.trim(), preSection?.trim()]
-          .filter(Boolean)
-          .join(' ');
-        const resolved = await resolveChosenSection(
+        const problem = await chosenClassProblem(
           supabase,
           ayCode,
           preLevel,
-          preSection
+          preSection,
+          self
         );
-        let problem: string | null = null;
-        if ('reason' in resolved) {
-          problem = resolved.reason;
-        } else {
-          // No level-match against `levelApplied` here: the class's level IS
-          // the named level, and a child deliberately placed at another level
-          // (retained, accelerated — /records/level-mismatches) was placed by
-          // the sync before this check existed. This check is only "does the
-          // class exist and have a seat".
-          const validated = await validateSectionChoice(
-            supabase,
-            resolved.sectionId,
-            ayCode,
-            null,
-            self
-          );
-          if ('error' in validated) {
-            // The full-class message already ends "Pick another class." —
-            // dropped so the sentence below does not say it twice.
-            const why = validated.error.replace(/\s*Pick another class\.$/, '');
-            problem = `The class set for this child is ${chosenText}, and it can't take them: ${why}`;
-          }
-        }
         if (problem) {
-          chosenClassUnavailable = { chosenClass: chosenText, reason: problem };
+          chosenClassUnavailable = problem;
           // Cleared in the status UPDATE below — see the note above 2b′.
           update['classSection'] = null;
           update['classLevel'] = null;
@@ -1195,6 +1174,32 @@ export async function PATCH(
     midTermEnrolment = placement.midTermEnrolment;
   }
 
+  // 6b) Fees just became Paid: the student is enrolled (KD #237). `status` is
+  // read here, not earlier, because 2.9 can turn this save into Paid. The Fees
+  // save above stands whatever happens in there; the response says.
+  let feesPaidEnrolment: FeesPaidEnrolment | null = null;
+  if (
+    stageKey === 'fees' &&
+    status === 'Paid' &&
+    ((before as unknown as Record<string, unknown>)[cols.statusCol] as
+      | string
+      | null) !== 'Paid'
+  ) {
+    feesPaidEnrolment = await enrolOnFeesPaid(supabase, {
+      ayCode,
+      enroleeNumber,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      updatedBy: auth.user.email ?? '(unknown)',
+    });
+    if (feesPaidEnrolment?.enrolled) {
+      midTermEnrolment = feesPaidEnrolment.midTermEnrolment;
+    }
+  }
+
   // 7) Withdrawn / Cancelled cascade.
   // When admissions flips applicationStatus to Withdrawn or Cancelled, every
   // active section_students row for this student in this AY needs to flip to
@@ -1328,6 +1333,7 @@ export async function PATCH(
     withdrawalCascade,
     withdrawalCascadeFailed,
     midTermEnrolment,
+    feesPaidEnrolment,
   });
 }
 
