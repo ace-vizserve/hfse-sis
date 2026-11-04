@@ -1,0 +1,43 @@
+{
+  "week_start": "2026-10-19",
+  "groups": [
+    {"name": "MEETINGS WITH MS JOANN", "rows": [
+      {"feature": "SIS Attendance Sheet Discussion", "module": "Meeting - Ms Joann",
+       "start": "2026-10-19", "end": "2026-10-19", "status": "Meeting", "time": "Mon 2:00 - 3:00 PM",
+       "desc": "Meeting with Ms Joann on the SIS attendance sheet, Mon 19 Oct, 2:00 - 3:00 PM."},
+      {"feature": "Discuss SIS AY Setup", "module": "Meeting - Ms Joann",
+       "start": "2026-10-22", "end": "2026-10-22", "status": "Meeting", "time": "Thu 2:30 - 3:30 PM",
+       "desc": "Meeting with Ms Joann on setting up the academic year in the SIS, Thu 22 Oct, 2:30 - 3:30 PM."}
+    ]},
+    {"name": "ALL MODULES", "rows": [
+      {"feature": "Approve or update many items at once", "module": "All modules",
+       "start": "2026-10-19", "end": "2026-10-20", "status": "Shipped",
+       "desc": "Staff can tick several items and handle them all in one click, instead of one at a time. For example, approving a batch of attendance excuses, or placing new students into their classes."},
+      {"feature": "Look back at past school years", "module": "All modules",
+       "start": "2026-10-20", "end": "2026-10-20", "status": "Shipped",
+       "desc": "Every part of the system now has a school-year selector at the top of the page. Staff can view last year's records without leaving the page they are on."}
+    ]},
+    {"name": "ATTENDANCE", "rows": [
+      {"feature": "Term attendance summary", "module": "Attendance",
+       "start": "2026-10-20", "end": "2026-10-20", "status": "Shipped",
+       "desc": "One page shows every student's attendance for the term. Staff can filter it and download it to Excel."},
+      {"feature": "Holidays for one level only", "module": "Attendance",
+       "start": "2026-10-22", "end": "2026-10-22", "status": "Shipped",
+       "desc": "A holiday or no-class day can now be set for just one level, such as Primary 1, instead of the whole school. Attendance is closed for that level only."}
+    ]},
+    {"name": "BILLING MODULE", "rows": [
+      {"feature": "School billing inside the SIS", "module": "Billing",
+       "start": "2026-10-19", "end": "2026-10-20", "status": "In progress",
+       "desc": "The finance team will see each student's invoices and payments in the SIS, on pages that look like the QuickBooks pages they already use. Every change is recorded."},
+      {"feature": "Correct, cancel or refund an invoice", "module": "Billing",
+       "start": "2026-10-19", "end": "2026-10-22", "status": "In progress",
+       "desc": "Staff can correct an invoice, cancel an unpaid one, add a discount or give a refund, all from the SIS. QuickBooks updates by itself."},
+      {"feature": "Admission fees linked to invoices", "module": "Billing / Admissions",
+       "start": "2026-10-21", "end": "2026-10-22", "status": "In progress",
+       "desc": "Each applicant's registration and enrolment fees now show whether the invoice was sent or paid. A list shows which applicants still need an invoice."},
+      {"feature": "Testing before going live", "module": "Billing",
+       "start": "2026-10-21", "end": "2026-10-22", "status": "In progress",
+       "desc": "Billing is being tested on a practice copy of the school's QuickBooks. Going live needs approval from the person who manages the school's QuickBooks account."}
+    ]}
+  ]
+}

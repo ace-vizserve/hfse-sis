@@ -1,0 +1,113 @@
+{
+  "title": "Parent events",
+  "summary": "How staff build an event form, how parents register their children in the portal, and how the answers come back as a list you can download.",
+  "date": "November 2026",
+  "groups": [
+    {
+      "name": "Setting up an event",
+      "steps": [
+        {
+          "title": "Start a new event",
+          "body": "Go to SIS Admin → Parent events (Admissions links to it too). “New event” opens the full-screen builder straight away. Every event you have made is listed here.",
+          "shot": "01.png"
+        },
+        {
+          "title": "Say what the event is",
+          "body": "Type the event’s name and what parents should know about it, then click the dates, time and venue to fill them in. This is what parents read at the top of the form. Everything saves by itself.",
+          "shot": "02.png"
+        },
+        {
+          "title": "Add your sections and questions",
+          "body": "Sections are asked for each child who is joining, or once per family. Click a question to change it. The buttons on the right add questions, info text, pictures, the e-signature and new sections, or copy from another event.",
+          "shot": "03.png"
+        },
+        {
+          "title": "Check the event’s settings",
+          "body": "The cog opens Event settings: the link, who the event is for, when registration opens and closes, and how parents answer. Press Save when you are done.",
+          "shot": "04.png"
+        },
+        {
+          "title": "Publish, then send the link",
+          "body": "Press Publish when the form is ready. Parents the event is for can then see it in the portal. Send them the link through the school’s usual channels.",
+          "shot": "05.png"
+        }
+      ]
+    },
+    {
+      "name": "What parents do",
+      "steps": [
+        {
+          "title": "Parents see what needs them",
+          "body": "Services → Events lists the events for their children. An event stays amber until they have answered, and a banner warns them when one is closing soon.",
+          "shot": "06.png"
+        },
+        {
+          "title": "They answer for each child",
+          "body": "The parent says who is joining and gives a reason for any child who is not. They then answer your questions once for each child who is joining.",
+          "shot": "07.png"
+        },
+        {
+          "title": "They answer for the family and sign",
+          "body": "Family questions are asked once, however many children are joining. The parent types their name to sign, then presses Register.",
+          "shot": "08.png"
+        },
+        {
+          "title": "They see their answer straight away",
+          "body": "Each child now shows Registered or Not joining. Parents can press Edit to change an answer until registration closes.",
+          "shot": "09.png"
+        }
+      ]
+    },
+    {
+      "name": "Reading the answers",
+      "steps": [
+        {
+          "title": "Open the event to see who has answered",
+          "body": "Click an event on the Parent events list. The top shows how many children are registered, not joining and not registered yet.",
+          "shot": "10.png"
+        },
+        {
+          "title": "Read the answers and download them",
+          "body": "The Registered tab has one row per child and one column per question, along with the parent’s name, email and handphone and who signed. Export CSV downloads the tab you are on. On a long form, the table scrolls sideways so you can see every answer.",
+          "shot": "11.png"
+        },
+        {
+          "title": "See who is not joining",
+          "body": "The Not joining tab shows each child whose parent said no, with the reason they gave.",
+          "shot": "12.png"
+        },
+        {
+          "title": "See who still has to answer",
+          "body": "The Not registered yet tab lists every child the event is for whose parent has not answered. Nobody has to add these children. The list updates itself as parents answer.",
+          "shot": "13.png"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    {
+      "label": "Who can do this",
+      "text": "Admissions, academic coordinators, school admins and superadmins can build events and see the answers."
+    },
+    {
+      "label": "No emails",
+      "text": "The SIS sends no invitations, reminders or confirmations for events. Send the link through the school’s usual channels. Parents see each child’s status in the portal."
+    },
+    {
+      "label": "Payment",
+      "text": "The form can ask which payment option a parent chooses, but it does not collect money."
+    },
+    {
+      "label": "Which parents can see an event",
+      "text": "A parent sees an event when their login email is the mother’s or father’s email on the child’s application, and the child is in the group the event is for."
+    },
+    {
+      "label": "Changing the link",
+      "text": "A link you have already sent stops working if you change it in Event settings."
+    },
+    {
+      "label": "About the screenshots",
+      "text": "They use sample data. The students, parents and dates are examples only, and the form is a copy of the Pandayan Leadership Camp section of the school’s form."
+    }
+  ]
+}
