@@ -59,6 +59,14 @@ function cacheSourceFiles(): string[] {
 
 /** A write route that legitimately busts nothing, and why. */
 const NO_INVALIDATION_NEEDED: Record<string, string> = {
+  // Parent portal tools in SIS Admin (KD #236). These touch parent logins and
+  // recovery tokens only; the page reads both fresh on every request.
+  'app/api/sis/admin/parent-portal/accounts/route.ts':
+    'Creates a parent login with no role. The cached readers of logins, lib/auth/staff-list.ts and lib/auth/teacher-emails.ts, name and pick staff, and a roleless parent is neither.',
+  'app/api/sis/admin/parent-portal/accounts/password/route.ts':
+    'Changes a parent login password only. No cached module reads passwords.',
+  'app/api/sis/admin/parent-portal/recovery-link/route.ts':
+    'Writes enrolment_recovery_tokens, read uncached by lib/parent-portal/recovery.ts and by nothing else.',
   // Books & supplies tracker (migration 199).
   'app/api/sis/students/[enroleeNumber]/supplies/route.ts':
     'Writes supply_handovers, read uncached by lib/sis/supplies/student-list.ts through this same route; the stage status is not touched.',
