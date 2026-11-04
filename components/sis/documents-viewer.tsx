@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   CalendarClock,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   ExternalLink,
   FileCheck,
   FileText,
@@ -14,7 +16,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 
 import { NotifyDialog } from '@/components/p-files/notify-dialog';
 import { PromiseDialog } from '@/components/p-files/promise-dialog';
@@ -346,6 +348,17 @@ export function DocumentsViewer({
 
   const hasSelection = !!selectedDoc;
 
+  // Previous and Next walk the list as it's shown, skipping empty slots: there's
+  // nothing to review in those. The open document stays in the walk even if it's
+  // empty, so the count always has somewhere to stand.
+  const walk = [
+    ...nonExpiringDocs,
+    ...expiringDocs,
+    ...parentGuardianDocs,
+    ...stpDocs,
+  ].filter((d) => d.url || d.key === selectedKey);
+  const position = walk.findIndex((d) => d.key === selectedKey);
+
   return (
     <div className="space-y-4">
       <Toolbar
@@ -365,7 +378,7 @@ export function DocumentsViewer({
           // smaller viewports stack via `<DocumentValidationActions>`'s own
           // dialog, which is what already happens for narrow widths).
           hasSelection
-            ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]'
+            ? 'lg:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)]'
             : 'grid-cols-1'
         )}
       >
@@ -391,6 +404,18 @@ export function DocumentsViewer({
             enroleeNumber={enroleeNumber}
             ayCode={ayCode}
             onClose={() => setSelectedKey(null)}
+            position={position}
+            total={walk.length}
+            onPrevious={
+              position > 0
+                ? () => setSelectedKey(walk[position - 1].key)
+                : undefined
+            }
+            onNext={
+              position >= 0 && position < walk.length - 1
+                ? () => setSelectedKey(walk[position + 1].key)
+                : undefined
+            }
             isAdmissionsScope={isAdmissionsScope}
             recipients={recipients}
             applicationStatus={application.applicationStatus ?? null}
@@ -734,12 +759,38 @@ function ExpiryChip({
 
 // ─── preview pane ───────────────────────────────────────────────────────────
 
+/** One labelled group in the preview's action pane. */
+function ActionZone({
+  label,
+  className,
+  children,
+}: {
+  label: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <div className={cn('flex flex-col gap-1.5', className)}>
+      <span className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </span>
+      <div className="flex min-h-8 flex-wrap items-center gap-1.5">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function PreviewPane({
   doc,
   reading,
   enroleeNumber,
   ayCode,
   onClose,
+  position,
+  total,
+  onPrevious,
+  onNext,
   isAdmissionsScope,
   recipients,
   applicationStatus,
@@ -750,6 +801,11 @@ function PreviewPane({
   enroleeNumber: string;
   ayCode: string;
   onClose: () => void;
+  /** Where this document is in the list, for Previous and Next. Absent at the ends. */
+  position: number;
+  total: number;
+  onPrevious?: () => void;
+  onNext?: () => void;
   isAdmissionsScope: boolean;
   recipients: {
     motherEmail: string | null;
@@ -774,32 +830,62 @@ function PreviewPane({
   return (
     <div className="hidden lg:block">
       <Card className="sticky top-20 gap-0 overflow-hidden p-0">
-        <CardHeader className="border-b border-border px-5 py-4">
-          <CardDescription className="font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">
-            Preview
-          </CardDescription>
-          <CardTitle className="flex items-baseline gap-2 font-serif text-[16px] font-semibold tracking-tight text-foreground">
-            {doc.label}
-            {doc.status ? (
-              <Badge
-                variant={statusBadgeVariant(
-                  statusBucket(doc.status, !!doc.url)
-                )}
-              >
-                {doc.status}
-              </Badge>
-            ) : (
-              <Badge variant="outline">Missing</Badge>
+        {/* What this is and where you are, then what to do about it: the decision
+            sits above the file so it's never scrolled out of reach, and the file
+            gets every pixel left over. */}
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+          <div className="min-w-0 space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate font-serif text-[15px] font-semibold tracking-tight text-foreground">
+                {doc.label}
+              </h3>
+              {doc.status ? (
+                <Badge
+                  variant={statusBadgeVariant(
+                    statusBucket(doc.status, !!doc.url)
+                  )}
+                >
+                  {doc.status}
+                </Badge>
+              ) : (
+                <Badge variant="outline">Missing</Badge>
+              )}
+            </div>
+            {filename && (
+              <HoverHint hint={filename}>
+                <p className="truncate font-mono text-[11px] text-muted-foreground">
+                  {filename}
+                </p>
+              </HoverHint>
             )}
-          </CardTitle>
-          {filename && (
-            <HoverHint hint={filename}>
-              <p className="truncate font-mono text-[11px] text-muted-foreground">
-                {filename}
-              </p>
-            </HoverHint>
-          )}
-          <CardAction>
+          </div>
+
+          <div className="flex shrink-0 items-center gap-1">
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onPrevious}
+              disabled={!onPrevious}
+              className="size-8 p-0 text-muted-foreground hover:text-foreground"
+              aria-label="Previous document"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <span className="whitespace-nowrap font-mono text-[11px] tabular-nums text-muted-foreground">
+              {position + 1} of {total}
+            </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onNext}
+              disabled={!onNext}
+              className="size-8 p-0 text-muted-foreground hover:text-foreground"
+              aria-label="Next document"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
             <Button
               type="button"
               size="sm"
@@ -810,22 +896,89 @@ function PreviewPane({
             >
               <X className="size-4" />
             </Button>
-          </CardAction>
-        </CardHeader>
-
-        {reading && (
-          <div className="border-b border-border p-4">
-            <DocumentReadingPanel view={reading} />
           </div>
-        )}
-
-        <div className="bg-muted/30">
-          <PreviewBody url={doc.url} kind={kind} />
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border bg-muted/20 px-4 py-3">
-          <div className="flex flex-wrap items-center gap-2">
-            {canValidate && (
+        {/* The action pane: what the check found, what can be chased, and the
+            decision, always in that order and always in the same place. */}
+        <div className="flex flex-wrap items-stretch gap-x-4 gap-y-2 border-b border-border bg-muted/20 px-4 py-2.5">
+          {reading && (
+            <ActionZone label="Document check" className="min-w-0 flex-1">
+              <DocumentReadingPanel view={reading} buttonLabel="View details" />
+            </ActionZone>
+          )}
+
+          {(showAdmissionsChase || doc.url) && (
+            <ActionZone label="Follow up" className={cn(!reading && 'flex-1')}>
+              {showAdmissionsChase && (
+                <>
+                  <HoverHint hint="Notify parent">
+                    <span>
+                      <NotifyDialog
+                        enroleeNumber={enroleeNumber}
+                        slotKey={doc.key}
+                        label={doc.label}
+                        recipients={recipients}
+                        module="admissions"
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="size-8 p-0"
+                            aria-label="Notify parent"
+                          >
+                            <Mail className="size-3.5" />
+                          </Button>
+                        }
+                      />
+                    </span>
+                  </HoverHint>
+                  <HoverHint hint="Mark as promised">
+                    <span>
+                      <PromiseDialog
+                        enroleeNumber={enroleeNumber}
+                        slotKey={doc.key}
+                        label={doc.label}
+                        module="admissions"
+                        trigger={
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="size-8 p-0"
+                            aria-label="Mark as promised"
+                          >
+                            <CalendarClock className="size-3.5" />
+                          </Button>
+                        }
+                      />
+                    </span>
+                  </HoverHint>
+                </>
+              )}
+              {doc.url && (
+                <HoverHint hint="Open original in a new tab">
+                  <Button
+                    asChild
+                    variant="outline"
+                    size="sm"
+                    className="size-8 p-0"
+                  >
+                    <a
+                      href={doc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Open original"
+                    >
+                      <ExternalLink className="size-3.5" />
+                    </a>
+                  </Button>
+                </HoverHint>
+              )}
+            </ActionZone>
+          )}
+
+          {canValidate && (
+            <ActionZone label="Decision" className="ml-auto">
               <DocumentValidationActions
                 ayCode={ayCode}
                 enroleeNumber={enroleeNumber}
@@ -835,56 +988,12 @@ function PreviewPane({
                 url={doc.url}
                 applicationStatus={applicationStatus}
               />
-            )}
-            {showAdmissionsChase && (
-              <>
-                <NotifyDialog
-                  enroleeNumber={enroleeNumber}
-                  slotKey={doc.key}
-                  label={doc.label}
-                  recipients={recipients}
-                  module="admissions"
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                    >
-                      <Mail className="size-3" />
-                      Notify parent
-                    </Button>
-                  }
-                />
-                <PromiseDialog
-                  enroleeNumber={enroleeNumber}
-                  slotKey={doc.key}
-                  label={doc.label}
-                  module="admissions"
-                  trigger={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-8 gap-1.5 text-xs"
-                    >
-                      <CalendarClock className="size-3" />
-                      Mark as promised
-                    </Button>
-                  }
-                />
-              </>
-            )}
-          </div>
-          {doc.url && (
-            <a
-              href={doc.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:text-foreground"
-            >
-              Open original
-              <ExternalLink className="size-3" />
-            </a>
+            </ActionZone>
           )}
+        </div>
+
+        <div className="bg-muted/30">
+          <PreviewBody url={doc.url} kind={kind} />
         </div>
       </Card>
     </div>
@@ -898,7 +1007,7 @@ function PreviewBody({
   url: string | null;
   kind: FileKind | null;
 }) {
-  const wrapperClass = 'aspect-[4/5] max-h-[calc(100vh-14rem)] w-full';
+  const wrapperClass = 'h-[calc(100vh-13rem)] min-h-96 w-full';
 
   if (!url || !kind) {
     return (
@@ -960,7 +1069,7 @@ function PreviewBody({
       </p>
       <p className="max-w-xs text-xs text-muted-foreground">
         This file type can&apos;t be rendered in-page. Use the &ldquo;Open
-        original&rdquo; link below to view it in a new tab.
+        original&rdquo; link above to view it in a new tab.
       </p>
     </div>
   );

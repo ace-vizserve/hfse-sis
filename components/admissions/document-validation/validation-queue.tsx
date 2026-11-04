@@ -34,10 +34,8 @@ import { useBulkAction } from '@/lib/hooks/use-bulk-action';
 
 import { RejectDialog } from './reject-dialog';
 import { TriagePane } from './triage-pane';
-import {
-  qualityNotes,
-  readingOutcome,
-} from '@/lib/admissions/document-reading-view';
+import { ReadingResultBadge } from '@/components/sis/document-reading-panel';
+import { readingOutcome } from '@/lib/admissions/document-reading-view';
 
 type Props = {
   rows: ValidationQueueRow[];
@@ -346,7 +344,7 @@ export function ValidationQueue({
           return (
             <Badge
               variant="outline"
-              className={`font-mono text-[10px] uppercase tracking-wider ${tone}`}
+              className={`whitespace-nowrap font-mono text-[10px] uppercase tracking-wider ${tone}`}
             >
               {s === 'Uploaded' ? 'Needs review' : s}
             </Badge>
@@ -373,38 +371,14 @@ export function ValidationQueue({
       },
       {
         id: 'reading',
-        header: 'Portal check',
-        meta: { label: 'Portal check' },
+        header: 'Document check',
+        meta: { label: 'Document check' },
         accessorFn: (row) => (row.reading ? readingOutcome(row.reading) : ''),
         cell: ({ row }) => {
           if (!row.original.reading) {
             return <span className="text-xs text-muted-foreground">—</span>;
           }
-          const outcome = readingOutcome(row.original.reading);
-          const [note] = qualityNotes(row.original.reading.quality);
-          if (outcome === 'differs' || outcome === 'expired' || note) {
-            return (
-              <Badge className="h-6 border-destructive/40 bg-destructive/10 text-destructive">
-                {outcome === 'differs'
-                  ? 'Differs'
-                  : outcome === 'expired'
-                    ? 'Expired'
-                    : note}
-              </Badge>
-            );
-          }
-          if (outcome === 'not-read') {
-            return (
-              <Badge variant="secondary" className="h-6">
-                Not read
-              </Badge>
-            );
-          }
-          return (
-            <Badge className="h-6 border-brand-mint bg-brand-mint/30 text-ink">
-              {outcome === 'matches' ? 'Matches' : 'Looks clear'}
-            </Badge>
-          );
+          return <ReadingResultBadge view={row.original.reading} />;
         },
       },
       {
@@ -416,7 +390,7 @@ export function ValidationQueue({
               href={row.original.fileUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-primary hover:underline"
+              className="whitespace-nowrap text-xs text-primary hover:underline"
             >
               Open file
             </a>

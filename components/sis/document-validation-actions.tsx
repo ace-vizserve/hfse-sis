@@ -197,21 +197,26 @@ export function DocumentValidationActions({
 
   return (
     <>
+      {!isRejected && (
+        <Button
+          variant="destructive"
+          size="sm"
+          onClick={() => setRejectOpen(true)}
+        >
+          <X className="size-3" />
+          Reject
+        </Button>
+      )}
       {!isValid && (
         <Button
           variant={'success'}
+          size="sm"
           loading={approving}
           loadingText="Approving…"
           onClick={() => void handleApprove()}
         >
           {!approving && <Check className="size-3" />}
           Approve
-        </Button>
-      )}
-      {!isRejected && (
-        <Button variant="destructive" onClick={() => setRejectOpen(true)}>
-          <X className="size-3" />
-          Reject
         </Button>
       )}
 

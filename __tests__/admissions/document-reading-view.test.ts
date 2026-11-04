@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   compareReading,
+  qualityFacts,
   qualityNotes,
   readingOutcome,
 } from '@/lib/admissions/document-reading-view';
@@ -19,6 +20,9 @@ const read = (
 
 const CLEAR = {
   pages: 1,
+  totalPages: 1,
+  fileBytes: 1000,
+  hasText: true,
   width: null,
   height: null,
   sharpness: 900,
@@ -44,7 +48,7 @@ describe('qualityNotes', () => {
     expect(
       qualityNotes({
         ...CLEAR,
-        sharpness: 150,
+        sharpness: 10,
         brightness: 40,
         contrast: 5,
         width: 200,
@@ -59,14 +63,135 @@ describe('qualityNotes', () => {
   });
 
   it('leaves alone what real uploads showed to be fine', () => {
-    // A sharp scan of a pass, an ID photo on a dark backdrop, a large photo.
+    // A sharp scan of a pass, an ID photo on a dark backdrop, a large photo, and
+    // a normal photo, whose edges are far softer than a scanned page's.
     expect(qualityNotes({ ...CLEAR, sharpness: 265 })).toEqual([]);
+    expect(
+      qualityNotes({ ...CLEAR, sharpness: 66, width: 1468, height: 1300 })
+    ).toEqual([]);
     expect(qualityNotes({ ...CLEAR, brightness: 81 })).toEqual([]);
     expect(qualityNotes({ ...CLEAR, width: 1468, height: 1300 })).toEqual([]);
   });
 });
 
+describe('qualityFacts', () => {
+  it('describes a scan in words', () => {
+    expect(
+      qualityFacts({
+        ...CLEAR,
+        hasText: false,
+        totalPages: 2,
+        fileBytes: 2097152,
+      })
+    ).toEqual({
+      kind: 'Scanned or photographed PDF',
+      pages: '2 pages',
+      size: '2.0 MB',
+      sharpness: 'Sharp',
+      content: 'Has content',
+      brightness: 'Normal',
+      contrast: 'Normal',
+    });
+  });
+
+  it('describes a PDF with text, and a poor one', () => {
+    expect(
+      qualityFacts({
+        ...CLEAR,
+        sharpness: 50,
+        inkRatio: 0.001,
+        brightness: 30,
+        contrast: 5,
+      })
+    ).toEqual({
+      kind: 'PDF with real text',
+      pages: '1 page',
+      size: '1 KB',
+      sharpness: 'Blurry',
+      content: 'Almost nothing on it',
+      brightness: 'Very dark',
+      contrast: 'Washed out',
+    });
+  });
+
+  it('describes a photo, and a page with little on it', () => {
+    const facts = qualityFacts({
+      ...CLEAR,
+      width: 600,
+      height: 800,
+      sharpness: 66,
+      inkRatio: 0.01,
+    });
+    expect(facts).toMatchObject({
+      kind: 'Photo, 600 × 800 px',
+      sharpness: 'Sharp',
+      content: 'Mostly empty page',
+    });
+  });
+});
+
 describe('compareReading', () => {
+  const FULL = {
+    expiry: '2030-11-14',
+    number: 'P1234567A',
+    birthDate: '2015-01-01',
+    name: 'TAN, MEI LING',
+    nationality: 'SGP',
+    sex: 'F',
+  };
+
+  it('carries the rest of what was read, and when', () => {
+    const view = compareReading(
+      {
+        status: 'read',
+        passports: [FULL],
+        quality: null,
+        checkedAt: '2026-11-03T08:00:00Z',
+      },
+      {
+        number: 'P1234567A',
+        expiry: '2030-11-14',
+        name: 'Tan Mei Ling Sofia',
+        birthDate: '2015-01-01T00:00:00Z',
+      },
+      TODAY
+    );
+    expect(view).toMatchObject({
+      birthDateMatches: true,
+      nameMatches: true,
+      readName: 'TAN, MEI LING',
+      nationality: 'SGP',
+      sex: 'F',
+      checkedAt: '2026-11-03T08:00:00Z',
+    });
+    expect(readingOutcome(view)).toBe('matches');
+  });
+
+  it('flags a birth date that differs, and notes a name that does', () => {
+    const view = compareReading(
+      read(FULL),
+      {
+        number: 'P1234567A',
+        expiry: '2030-11-14',
+        name: 'Lim Wei',
+        birthDate: '2014-01-01',
+      },
+      TODAY
+    );
+    expect(view).toMatchObject({ birthDateMatches: false, nameMatches: false });
+    expect(readingOutcome(view)).toBe('differs');
+  });
+
+  it('compares neither when a side is blank', () => {
+    expect(
+      compareReading(read(FULL), { number: null, expiry: null }, TODAY)
+    ).toMatchObject({
+      birthDateMatches: null,
+      nameMatches: null,
+      checkedAt: null,
+    });
+  });
+
   it('matches ignoring case, spaces and the time on a stored date', () => {
     const view = compareReading(
       read(MINE),

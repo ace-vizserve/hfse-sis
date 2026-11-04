@@ -24,6 +24,9 @@ const BODY = {
   passports: [{ expiry: '2030-11-14', number: 'P1234567A' }],
   quality: {
     pages: 1,
+    totalPages: 2,
+    fileBytes: 1000,
+    hasText: false,
     width: null,
     height: null,
     sharpness: 900,

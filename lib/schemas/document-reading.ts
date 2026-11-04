@@ -12,12 +12,19 @@ export const DocumentReadingSchema = z.object({
       z.object({
         expiry: day.nullable(),
         number: z.string().max(20).nullable(),
+        birthDate: day.nullish(),
+        name: z.string().max(200).nullish(),
+        nationality: z.string().max(3).nullish(),
+        sex: z.string().max(1).nullish(),
       })
     )
     .max(8),
   quality: z
     .object({
       pages: z.number(),
+      totalPages: z.number(),
+      fileBytes: z.number(),
+      hasText: z.boolean().nullable(),
       width: z.number().nullable(),
       height: z.number().nullable(),
       sharpness: z.number(),
