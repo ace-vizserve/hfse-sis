@@ -236,6 +236,10 @@ const NO_INVALIDATION_NEEDED: Record<string, string> = {
     'creates a PENDING filing. Nothing cached reads pending filings — the staff ' +
     'queue is service-role per request, and the attendance sheet only reads ' +
     'APPROVED ones, which the decide route busts when it approves them.',
+  'app/api/parent/v2/document-readings/route.ts':
+    'records what the portal found in an upload, as the file is uploaded. The ' +
+    'review queue reads it through a cache that lives 60 seconds, so a reading ' +
+    'shows within a minute, and nothing decides anything from it.',
   'app/api/parent/v2/declarations/evidence/route.ts':
     'uploads a file to storage and returns its path. No table is read from a ' +
     'cache as a result.',
