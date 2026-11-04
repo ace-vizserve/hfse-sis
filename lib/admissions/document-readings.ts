@@ -1,6 +1,7 @@
 import {
   compareReading,
   type DocumentReadingView,
+  type EnteredDetails,
   type StoredReading,
 } from '@/lib/admissions/document-reading-view';
 import { sgToday } from '@/lib/dates';
@@ -12,11 +13,44 @@ export const PASSPORT_SLOTS = DOCUMENT_SLOTS.filter(
   (slot) => slot.meta?.kind === 'passport'
 );
 
+/** Whose name and birthday a passport slot should carry, on the applications table. */
+function personColumns(slotKey: string) {
+  const prefix = slotKey.replace(/Passport$/, '').replace(/^passport$/, '');
+  return prefix
+    ? { name: `${prefix}FullName`, birthDate: `${prefix}BirthDay` }
+    : { name: 'enroleeFullName', birthDate: 'birthDay' };
+}
+
 /** Columns on the applications table holding what the parent entered. */
-export const PASSPORT_ENTERED_COLUMNS = PASSPORT_SLOTS.flatMap((slot) => [
-  slot.meta!.numberCol,
-  slot.meta!.expiryCol,
-]);
+export const PASSPORT_ENTERED_COLUMNS = [
+  ...new Set(
+    PASSPORT_SLOTS.flatMap((slot) => {
+      const person = personColumns(slot.key);
+      return [
+        slot.meta!.numberCol,
+        slot.meta!.expiryCol,
+        person.name,
+        person.birthDate,
+      ];
+    })
+  ),
+];
+
+/** What the application says for a slot. Blank for anything but a passport. */
+export function enteredDetails(
+  slotKey: string,
+  app: Record<string, string | null> | undefined
+): EnteredDetails {
+  const slot = PASSPORT_SLOTS.find((s) => s.key === slotKey);
+  if (!slot || !app) return { number: null, expiry: null };
+  const person = personColumns(slotKey);
+  return {
+    number: app[slot.meta!.numberCol] ?? null,
+    expiry: app[slot.meta!.expiryCol] ?? null,
+    name: app[person.name] ?? null,
+    birthDate: app[person.birthDate] ?? null,
+  };
+}
 
 // A URL is long, and every one goes in the query string.
 const URLS_PER_QUERY = 50;
@@ -31,7 +65,7 @@ export async function loadStoredReadings(
   for (let i = 0; i < unique.length; i += URLS_PER_QUERY) {
     const { data, error } = await client
       .from('document_readings')
-      .select('file_url, status, passports, quality')
+      .select('file_url, status, passports, quality, created_at')
       .in('file_url', unique.slice(i, i + URLS_PER_QUERY));
     // A missing reading only costs the reviewer a hint: they still have the file.
     if (error) {
@@ -43,6 +77,7 @@ export async function loadStoredReadings(
         status: row.status as StoredReading['status'],
         passports: row.passports as StoredReading['passports'],
         quality: row.quality as StoredReading['quality'],
+        checkedAt: row.created_at as string,
       });
     }
   }
@@ -81,13 +116,9 @@ export async function loadSlotReadings(
     const url = urlBySlot[slot.key];
     const reading = url ? stored.get(url) : undefined;
     if (!reading) continue;
-    const isPassport = slot.meta?.kind === 'passport';
     views[slot.key] = compareReading(
       reading,
-      {
-        number: isPassport ? (app[slot.meta!.numberCol] ?? null) : null,
-        expiry: isPassport ? (app[slot.meta!.expiryCol] ?? null) : null,
-      },
+      enteredDetails(slot.key, app),
       today
     );
   }

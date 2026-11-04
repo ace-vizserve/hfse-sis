@@ -28,9 +28,9 @@ import {
   type DocumentReadingView,
 } from '@/lib/admissions/document-reading-view';
 import {
+  enteredDetails,
   loadStoredReadings,
   PASSPORT_ENTERED_COLUMNS,
-  PASSPORT_SLOTS,
 } from '@/lib/admissions/document-readings';
 import { sgToday } from '@/lib/dates';
 import { createAdmissionsClient } from '@/lib/supabase/admissions';
@@ -113,7 +113,7 @@ async function loadPendingDocValidationUncached(
       .select(
         [
           'enroleeNumber, studentNumber, firstName, lastName, middleName, enroleeFullName, levelApplied, stpApplicationType',
-          ...PASSPORT_ENTERED_COLUMNS,
+          ...PASSPORT_ENTERED_COLUMNS.filter((c) => c !== 'enroleeFullName'),
         ].join(', ')
       ),
     admissions
@@ -247,7 +247,6 @@ async function loadPendingDocValidationUncached(
     }
   }
 
-  const passportMeta = new Map(PASSPORT_SLOTS.map((s) => [s.key, s.meta!]));
   const stored = await loadStoredReadings(
     rows.map((r) => r.fileUrl).filter(Boolean)
   );
@@ -255,14 +254,9 @@ async function loadPendingDocValidationUncached(
   for (const row of rows) {
     const reading = stored.get(row.fileUrl);
     if (!reading) continue;
-    const meta = passportMeta.get(row.slotKey);
-    const app = appByEnrolee.get(row.enroleeNumber);
     row.reading = compareReading(
       reading,
-      {
-        number: meta ? (app?.[meta.numberCol] ?? null) : null,
-        expiry: meta ? (app?.[meta.expiryCol] ?? null) : null,
-      },
+      enteredDetails(row.slotKey, appByEnrolee.get(row.enroleeNumber)),
       today
     );
   }
