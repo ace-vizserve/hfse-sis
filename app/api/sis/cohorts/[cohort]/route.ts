@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -252,6 +253,11 @@ export async function GET(
   const rows = await getCohort(cohort, ayCode, scope);
 
   if (format === 'csv') {
+    await logDataAccess(guard, 'data.export', `Cohort: ${cohort}`, {
+      ay_code: ayCode,
+      scope,
+      rows: rows.length,
+    });
     const spec = CSV_BY_COHORT[cohort];
     const csv = buildCsv(spec.headers, rows.map(spec.build));
     const today = new Date().toISOString().slice(0, 10);

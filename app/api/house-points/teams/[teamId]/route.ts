@@ -87,6 +87,9 @@ export async function PATCH(
   const patch = parsed.data;
 
   let step = 'load team';
+  // Set once writing starts: a rename stands if the member swap after it fails.
+  let logPartial: ((failedStep: string, e: unknown) => Promise<void>) | null =
+    null;
   try {
     const service = createServiceClient();
     const team = await loadTeamRow(service, teamId);
@@ -163,6 +166,32 @@ export async function PATCH(
       return NextResponse.json({ ok: true, changed: false });
     }
 
+    let renamed = false;
+    let membersLost = false;
+    logPartial = async (failedStep, e) => {
+      if (!renamed && !membersLost) return;
+      await logAction({
+        service,
+        actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
+        action: 'house_points.team.update',
+        entityType: 'house_point_team',
+        entityId: teamId,
+        context: {
+          event_id: team.event_id,
+          eventName: event.name,
+          name: renamed ? diff.name : team.name,
+          ...(renamed ? { previous_name: team.name } : {}),
+          // Delete and insert both failed: the team has no members now.
+          ...(membersLost
+            ? { members_lost: true, previous_members: existingMemberIds }
+            : {}),
+          partial: true,
+          failed_step: failedStep,
+          error: e instanceof Error ? e.message : String(e),
+        },
+      });
+    };
+
     if (diff.name !== undefined) {
       step = 'rename team';
       const { error } = await service
@@ -170,6 +199,7 @@ export async function PATCH(
         .update({ name: diff.name })
         .eq('id', teamId);
       if (error) throw new Error(`house_point_teams update: ${error.message}`);
+      renamed = true;
     }
 
     if (diff.memberIds !== undefined) {
@@ -210,6 +240,7 @@ export async function PATCH(
               }))
             );
           if (restoreError) {
+            membersLost = true;
             console.error(
               '[house-points] teams PATCH: member rollback also failed',
               { teamId, restoreError: restoreError.message }
@@ -230,9 +261,13 @@ export async function PATCH(
       context: {
         event_id: team.event_id,
         name: diff.name ?? team.name,
+        ...(diff.name !== undefined ? { previous_name: team.name } : {}),
         eventName: event.name,
         ...(diff.memberIds !== undefined
-          ? { sectionStudentIds: diff.memberIds }
+          ? {
+              sectionStudentIds: diff.memberIds,
+              previous_members: existingMemberIds,
+            }
           : {}),
       },
     });
@@ -241,6 +276,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, changed: true });
   } catch (e) {
+    await logPartial?.(step, e);
     return failure(step, e, `PATCH ${teamId}`);
   }
 }
@@ -268,13 +304,27 @@ export async function DELETE(
       return NextResponse.json({ error: 'not found' }, { status: 404 });
     }
 
-    step = 'count members';
-    const { count, error: countError } = await service
+    // Members and the team's award cascade away with it, so the row keeps them.
+    step = 'load members';
+    const { data: memberRows, error: countError } = await service
       .from('house_point_team_members')
-      .select('section_student_id', { count: 'exact', head: true })
+      .select('section_student_id')
       .eq('team_id', teamId);
     if (countError) {
       throw new Error(`house_point_team_members: ${countError.message}`);
+    }
+    const members = (memberRows ?? []).map(
+      (r) => (r as { section_student_id: string }).section_student_id
+    );
+
+    step = 'load award';
+    const { data: entryRow, error: entryError } = await service
+      .from('house_point_entries')
+      .select('id, place:house_point_places(label, rank, points)')
+      .eq('team_id', teamId)
+      .maybeSingle();
+    if (entryError) {
+      throw new Error(`house_point_entries: ${entryError.message}`);
     }
 
     step = 'delete team';
@@ -297,7 +347,9 @@ export async function DELETE(
         event_id: team.event_id,
         name: team.name,
         eventName: event.name,
-        memberCount: count ?? 0,
+        memberCount: members.length,
+        members,
+        award: (entryRow as { place?: unknown } | null)?.place ?? null,
       },
     });
 

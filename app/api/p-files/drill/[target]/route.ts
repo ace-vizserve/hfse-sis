@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import {
@@ -62,6 +63,11 @@ export async function GET(
   const rows = applyTargetFilter(all, target, segment, rangeForFilter);
 
   if (format === 'csv') {
+    await logDataAccess(guard, 'data.export', `P-Files list: ${target}`, {
+      ay_code: ayCode,
+      segment,
+      rows: rows.length,
+    });
     return csvResponse(rows, target, segment, ayCode, columnsParam);
   }
 

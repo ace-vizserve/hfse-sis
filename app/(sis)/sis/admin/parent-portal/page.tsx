@@ -4,6 +4,7 @@ import { ParentPortalTabs } from '@/components/sis/parent-portal/parent-portal-t
 import { SisPageHeader } from '@/components/sis/sis-page-header';
 import { PageShell } from '@/components/ui/page-shell';
 import { getCurrentAcademicYear, listAyCodes } from '@/lib/academic-year';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requirePageRoles } from '@/lib/auth/require-page-roles';
 import { listParentAccounts } from '@/lib/parent-portal/accounts';
 import { listApplicationRows } from '@/lib/parent-portal/recovery';
@@ -59,6 +60,13 @@ export default async function ParentPortalPage({
   const canAct = sessionUser.role === 'superadmin';
   const { tab } = await searchParams;
   const active = tab === 'accounts' ? 'accounts' : 'applications';
+  // A link opens a family's form with no login, and this tab shows them.
+  if (canAct && active === 'applications')
+    await logDataAccess(
+      { user: sessionUser, role: sessionUser.role },
+      'data.view',
+      'Working recovery links'
+    );
 
   const content =
     active === 'accounts'

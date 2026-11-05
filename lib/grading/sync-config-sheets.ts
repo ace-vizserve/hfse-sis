@@ -1,10 +1,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { logActions } from '@/lib/audit/log-action';
 import {
   recomputeSheetEntries,
+  RecomputeWriteError,
+  type ClearedScore,
   type SheetTotals,
   type SheetWeights,
 } from '@/lib/grading/recompute-sheet';
+import { loadEntryStudentLabels } from '@/lib/grading/sheet-audit-labels';
 import {
   redistributeWeights,
   resolveSheetWeights,
@@ -139,6 +143,43 @@ export function resolveQaTotal(
   return Number(currentQaTotal) === Number(nextQaMax) ? null : nextQaMax;
 }
 
+export type SyncClearedScore = ClearedScore & { sheetId: string };
+
+/**
+ * One audit row per mark a subject sync erased, shaped like a teacher clearing
+ * that cell, as the totals route does (Hard Rule #6). Only unlocked sheets are
+ * recomputed here, so nothing goes to `grade_audit_log`.
+ */
+export async function logSyncClearedScores(
+  service: SupabaseClient,
+  actor: { id: string; email: string | null; role: string | null },
+  cleared: SyncClearedScore[]
+): Promise<void> {
+  if (cleared.length === 0) return;
+  const students = await loadEntryStudentLabels(
+    service,
+    cleared.map((c) => c.entryId)
+  );
+  await logActions(
+    service,
+    actor,
+    cleared.map((c) => ({
+      action: 'entry.update' as const,
+      entityType: 'grade_entry' as const,
+      entityId: c.entryId,
+      context: {
+        grading_sheet_id: c.sheetId,
+        grade_entry_id: c.entryId,
+        ...(students.get(c.entryId) ?? {}),
+        field: `${c.component === 'ww' ? 'ww_scores' : 'pt_scores'}[${c.slotIndex}]`,
+        old: String(c.oldValue),
+        new: null,
+        cleared_by_slot_removal: true,
+      },
+    }))
+  );
+}
+
 export type SyncRecomputeResult = {
   sheetsSynced: number;
   sheetsSkippedLocked: number;
@@ -148,6 +189,8 @@ export type SyncRecomputeResult = {
   qaTotalsApplied: number;
   /** Sheets whose deliberately-set exam total was left alone. */
   qaTotalsPreserved: number;
+  /** Real marks the recompute cut off. Each gets its own audit row. */
+  clearedScores: SyncClearedScore[];
   /** Null on success. A human-readable reason on failure. */
   error: string | null;
 };
@@ -233,8 +276,11 @@ export async function recomputeSyncedSheets(
     entriesRecomputed: 0,
     qaTotalsApplied: 0,
     qaTotalsPreserved: 0,
+    clearedScores: [],
     error: null,
   };
+  // Outside the try: marks already gone stay on record if a later sheet fails.
+  const clearedScores: SyncClearedScore[] = [];
 
   if (syncErr) {
     return { ...empty, error: `sheet sync failed: ${syncErr.message}` };
@@ -367,7 +413,7 @@ export async function recomputeSyncedSheets(
 
     for (let i = 0; i < open.length; i += CONCURRENCY) {
       const batch = open.slice(i, i + CONCURRENCY);
-      const results = await Promise.all(
+      const results = await Promise.allSettled(
         batch.map((sheet) => {
           const totals: SheetTotals = {
             ww_totals: (sheet.ww_totals ?? []).map(Number),
@@ -382,10 +428,24 @@ export async function recomputeSyncedSheets(
           );
         })
       );
-      for (const r of results) {
-        entriesScanned += r.entriesScanned;
-        entriesRecomputed += r.entriesWritten;
-      }
+      let failure: unknown = null;
+      results.forEach((r, n) => {
+        const sheetId = batch[n].id;
+        if (r.status === 'fulfilled') {
+          entriesScanned += r.value.entriesScanned;
+          entriesRecomputed += r.value.entriesWritten;
+          clearedScores.push(
+            ...r.value.clearedScores.map((c) => ({ ...c, sheetId }))
+          );
+          return;
+        }
+        failure ??= r.reason;
+        if (r.reason instanceof RecomputeWriteError)
+          clearedScores.push(
+            ...r.reason.clearedScores.map((c) => ({ ...c, sheetId }))
+          );
+      });
+      if (failure) throw failure;
     }
 
     return {
@@ -395,11 +455,13 @@ export async function recomputeSyncedSheets(
       entriesRecomputed,
       qaTotalsApplied,
       qaTotalsPreserved,
+      clearedScores,
       error: null,
     };
   } catch (err) {
     return {
       ...empty,
+      clearedScores,
       error: err instanceof Error ? err.message : 'recompute failed',
     };
   }

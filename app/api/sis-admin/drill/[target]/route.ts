@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { loadFlowConfig } from '@/lib/approvals/config';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import {
@@ -125,6 +126,15 @@ export async function GET(
   }
 
   if (format === 'csv') {
+    await logDataAccess(
+      guard,
+      'data.export',
+      `SIS Admin list: ${effectiveTarget}`,
+      {
+        segment,
+        rows: rows.length,
+      }
+    );
     return csvResponse(rows, effectiveTarget, segment);
   }
 

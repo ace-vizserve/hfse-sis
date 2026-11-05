@@ -12,6 +12,7 @@ import { SubjectConfigUpdateSchema } from '@/lib/schemas/subject-config';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import {
   findTruncationBlockers,
+  logSyncClearedScores,
   recomputeSyncedSheets,
 } from '@/lib/grading/sync-config-sheets';
 
@@ -317,6 +318,37 @@ export async function PATCH(
     }
   );
 
+  await logSyncClearedScores(
+    service,
+    { id: auth.user.id, email: auth.user.email ?? null, role: auth.role },
+    sync.clearedScores
+  );
+
+  const beforeContext = {
+    ww_weight: Number(before.ww_weight),
+    pt_weight: Number(before.pt_weight),
+    qa_weight: Number(before.qa_weight),
+    ww_max_slots: before.ww_max_slots,
+    pt_max_slots: before.pt_max_slots,
+    qa_max: before.qa_max,
+    weights_confirmed: before.weights_confirmed,
+    ...Object.fromEntries(
+      changedText.map((e) => [e.column, before[e.column] ?? null])
+    ),
+  };
+  const afterContext = {
+    ww_weight: Number(ww_dec),
+    pt_weight: Number(pt_dec),
+    qa_weight: Number(qa_dec),
+    ww_max_slots,
+    pt_max_slots,
+    qa_max,
+    weights_confirmed: true,
+    // Only the text fields that actually moved — an unsent field is
+    // unchanged, and naming it here would claim a write nobody made.
+    ...Object.fromEntries(changedText.map((e) => [e.column, e.next ?? null])),
+  };
+
   // No longer best-effort. Once grades depend on this step, a green toast over
   // silently-wrong report cards is not an acceptable failure mode: the caller
   // is told, and pointed at the resync endpoint, which is safely re-runnable.
@@ -334,6 +366,8 @@ export async function PATCH(
       context: {
         academic_year_id: before.academic_year_id,
         subject_id: before.subject_id,
+        before: beforeContext,
+        after: afterContext,
         sheets_synced: sync.sheetsSynced,
         sheets_skipped_locked: sync.sheetsSkippedLocked,
         entries_scanned: sync.entriesScanned,
@@ -369,32 +403,8 @@ export async function PATCH(
     context: {
       academic_year_id: before.academic_year_id,
       subject_id: before.subject_id,
-      before: {
-        ww_weight: Number(before.ww_weight),
-        pt_weight: Number(before.pt_weight),
-        qa_weight: Number(before.qa_weight),
-        ww_max_slots: before.ww_max_slots,
-        pt_max_slots: before.pt_max_slots,
-        qa_max: before.qa_max,
-        weights_confirmed: before.weights_confirmed,
-        ...Object.fromEntries(
-          changedText.map((e) => [e.column, before[e.column] ?? null])
-        ),
-      },
-      after: {
-        ww_weight: Number(ww_dec),
-        pt_weight: Number(pt_dec),
-        qa_weight: Number(qa_dec),
-        ww_max_slots,
-        pt_max_slots,
-        qa_max,
-        weights_confirmed: true,
-        // Only the text fields that actually moved — an unsent field is
-        // unchanged, and naming it here would claim a write nobody made.
-        ...Object.fromEntries(
-          changedText.map((e) => [e.column, e.next ?? null])
-        ),
-      },
+      before: beforeContext,
+      after: afterContext,
       sheets_synced: sync.sheetsSynced,
       sheets_skipped_locked: sync.sheetsSkippedLocked,
       entries_scanned: sync.entriesScanned,

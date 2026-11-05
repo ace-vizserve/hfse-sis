@@ -4,7 +4,10 @@ import { requireCapability } from '@/lib/auth/require-capability';
 import { logAction } from '@/lib/audit/log-action';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { createServiceClient } from '@/lib/supabase/service';
-import { recomputeSyncedSheets } from '@/lib/grading/sync-config-sheets';
+import {
+  logSyncClearedScores,
+  recomputeSyncedSheets,
+} from '@/lib/grading/sync-config-sheets';
 
 // POST /api/sis/admin/subjects/[configId]/resync
 //
@@ -84,9 +87,15 @@ export async function POST(
       sheets_skipped_locked: sync.sheetsSkippedLocked,
       entries_scanned: sync.entriesScanned,
       entries_recomputed: sync.entriesRecomputed,
+      scores_cleared: sync.clearedScores.length,
       ...(sync.error ? { sync_error: sync.error } : {}),
     },
   });
+  await logSyncClearedScores(
+    service,
+    { id: auth.user.id, email: auth.user.email ?? null, role: auth.role },
+    sync.clearedScores
+  );
 
   if (sync.error) {
     return NextResponse.json(

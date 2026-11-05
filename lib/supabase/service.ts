@@ -64,13 +64,16 @@ export function createServiceClient() {
   // conditional spread inside it) keeps the exact contextual typing the
   // call had before this addition.
   //
-  // Inert unless explicitly opted into — the code path below must be
-  // byte-for-byte what shipped before this addition when the flag is unset.
-  // Proven by __tests__/supabase/service-query-trace.test.ts.
+  // The tracer is inert unless explicitly opted into. Proven by
+  // __tests__/supabase/service-query-trace.test.ts.
+  //
+  // The header tells the admissions audit trigger (migration 207) this write is
+  // the SIS's, which logs its own, better row.
   return createSupabaseClient(url, key, {
     auth: { persistSession: false, autoRefreshToken: false },
-    ...(process.env.QUERY_TRACE === '1'
-      ? { global: { fetch: tracingFetch() } }
-      : {}),
+    global: {
+      headers: { 'x-hfse-app': 'sis' },
+      ...(process.env.QUERY_TRACE === '1' ? { fetch: tracingFetch() } : {}),
+    },
   });
 }

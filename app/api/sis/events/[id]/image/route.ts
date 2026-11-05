@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { z } from 'zod';
 
+import { logAction } from '@/lib/audit/log-action';
 import { requireRole } from '@/lib/auth/require-role';
 import { ENROLMENT_PLACEMENT_WRITERS } from '@/lib/auth/student-record';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -92,5 +93,17 @@ export async function POST(
   }
 
   const { data: pub } = service.storage.from(BUCKET).getPublicUrl(path);
+  await logAction({
+    service,
+    actor: {
+      id: auth.user.id,
+      email: auth.user.email ?? null,
+      role: auth.role,
+    },
+    action: 'parent_event.update',
+    entityType: 'parent_event',
+    entityId: id,
+    context: { details: false, form: false, image_added: pub.publicUrl },
+  });
   return NextResponse.json({ url: pub.publicUrl });
 }

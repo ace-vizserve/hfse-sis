@@ -105,6 +105,10 @@ export async function PATCH(
   const patch = parsed.data;
 
   let step = 'load event';
+  // Set once the first write is about to run. supabase-js has no transaction,
+  // so a later failure leaves earlier writes standing and they get a row.
+  let logPartial: ((failedStep: string, e: unknown) => Promise<void>) | null =
+    null;
   try {
     const service = createServiceClient();
     const existing = await loadEventRow(service, eventId);
@@ -226,6 +230,32 @@ export async function PATCH(
     // Everything below this line writes. Every validation above ran first,
     // so nothing here should return a 4xx mid-write.
 
+    const committed: string[] = [];
+    logPartial = async (failedStep, e) => {
+      if (committed.length === 0) return;
+      await logAction({
+        service,
+        actor: { id: auth.user.id, email: auth.user.email, role: auth.role },
+        action: 'house_points.event.update',
+        entityType: 'house_point_event',
+        entityId: eventId,
+        context: {
+          name: existing.name,
+          before,
+          after,
+          places_before: existingPlaces.map((p) => ({
+            label: p.label,
+            rank: p.rank,
+            points: p.points,
+          })),
+          committed,
+          partial: true,
+          failed_step: failedStep,
+          error: e instanceof Error ? e.message : String(e),
+        },
+      });
+    };
+
     if (Object.keys(updateData).length > 0) {
       step = 'update event';
       const { error } = await service
@@ -237,6 +267,7 @@ export async function PATCH(
         })
         .eq('id', eventId);
       if (error) throw new Error(`house_point_events update: ${error.message}`);
+      committed.push(step);
     }
 
     if (placesActuallyChanged) {
@@ -248,6 +279,7 @@ export async function PATCH(
           .in('id', omittedIds);
         if (error)
           throw new Error(`house_point_places delete: ${error.message}`);
+        committed.push(step);
       }
 
       const toUpdate = patch
@@ -267,6 +299,7 @@ export async function PATCH(
         );
         if (error)
           throw new Error(`house_point_places upsert: ${error.message}`);
+        committed.push(step);
       }
 
       const toInsert = patch
@@ -329,6 +362,7 @@ export async function PATCH(
 
     return NextResponse.json({ ok: true, changed: true });
   } catch (e) {
+    await logPartial?.(step, e);
     return failure(step, e, `PATCH ${eventId}`);
   }
 }

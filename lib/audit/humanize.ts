@@ -125,6 +125,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
 
   // Students / enrolment
   'student.sync': 'Student synced',
+  'student.sync.detail': 'Student or class list changed by a sync',
   'student.add': 'Student added',
   'student.section.transfer': 'Section transfer',
   'student.withdrawal.cascade': 'Student withdrawn',
@@ -195,6 +196,7 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'sis.profile.update': 'Profile updated',
   'sis.family.update': 'Family details updated',
   'sis.stage.update': 'Enrolment stage updated',
+  'sis.record.change': 'Record changed outside the SIS',
   'sis.supplies.given': 'Book or supply given',
   'sis.supplies.ungiven': 'Book or supply tick removed',
   'sis.supplies.item_create': 'Book list item added',
@@ -320,6 +322,10 @@ const ACTION_LABELS: Record<AuditAction, string> = {
   'user.enable': 'User enabled',
   'user.delete': 'User deleted',
   'user.login': 'Signed in',
+  'user.login_failed': 'Sign-in failed',
+  'user.logout': 'Signed out',
+  'data.export': 'Data downloaded',
+  'data.view': 'Personal data opened',
   // Somebody who holds two roles switched which one is in force. It IS a
   // change of role for everything they do afterwards — every permission check
   // reads the role in force — so it is not called a "view". It is still a
@@ -1747,6 +1753,45 @@ function templateSummary(
     }
 
     // Student lists ------------------------------------------------------------
+    case 'student.sync.detail': {
+      const parts: string[] = [];
+      const fullName = (v: unknown) =>
+        isRecord(v)
+          ? [v.first_name, v.middle_name, v.last_name]
+              .map((p) => str(p))
+              .filter(Boolean)
+              .join(' ')
+          : '';
+      if (ctx.student_added === true) parts.push('Added to student records');
+      if (isRecord(ctx.renamed))
+        parts.push(
+          diffText(
+            'Name',
+            fullName(ctx.renamed.from),
+            fullName(ctx.renamed.to)
+          ) || 'Name changed'
+        );
+      if (isRecord(ctx.joined)) {
+        const idx = numish(ctx.joined.index_number);
+        parts.push(
+          `Joined ${str(ctx.joined.section_name) || 'a class'}${idx !== null ? ` #${idx}` : ''}`
+        );
+      }
+      for (const c of recArray(ctx.class_changes))
+        parts.push(
+          `${str(c.to) === 'withdrawn' ? 'Withdrawn from' : 'Back on'} ${str(c.section_name) || 'a class'}`
+        );
+      if ('enrollment_date_after' in ctx) {
+        const moved = diffText(
+          'Attendance start date',
+          fmtMaybeDate(ctx.enrollment_date_before) ?? '',
+          fmtMaybeDate(ctx.enrollment_date_after) ?? ''
+        );
+        if (moved) parts.push(moved);
+      }
+      if (str(ctx.failed)) parts.push(`Stopped: ${str(ctx.failed)}`);
+      return joinParts(parts);
+    }
     case 'student.sync': {
       const parts: string[] = [];
       const single = str(ctx.change);
@@ -1864,6 +1909,54 @@ function templateSummary(
       return joinParts(parts);
     }
 
+    case 'data.export':
+    case 'data.view': {
+      const rows = numish(ctx.rows);
+      return joinParts([
+        str(ctx.what),
+        str(ctx.section_name),
+        str(ctx.ay_code),
+        str(ctx.file),
+        rows !== null ? `${rows} rows` : '',
+      ]);
+    }
+    case 'user.login_failed':
+      return joinParts([str(ctx.reason)]);
+    case 'sis.record.change': {
+      const source =
+        (
+          {
+            parent_portal: 'Parent portal',
+            signed_in_staff: 'Staff login, outside the SIS',
+            function_or_script: 'Portal function or script',
+            direct_database: 'Directus or direct database',
+          } as Record<string, string>
+        )[str(ctx.source)] ?? '';
+      const record =
+        (
+          {
+            applications: 'Application',
+            status: 'Enrolment status',
+            documents: 'Documents',
+          } as Record<string, string>
+        )[str(ctx.record)] ?? '';
+      const operation = str(ctx.operation);
+      const changes = recArray(ctx.changes);
+      const hidden = changes
+        .filter((c) => c.private === true)
+        .map((c) => `${fieldLabel(str(c.field))} changed`);
+      return joinParts([
+        source,
+        record && operation === 'insert'
+          ? `${record} created`
+          : record && operation === 'delete'
+            ? `${record} deleted`
+            : record,
+        str(ctx.name),
+        renderChangeList(changes.filter((c) => c.private !== true)),
+        ...hidden,
+      ]);
+    }
     case 'sis.stage.update': {
       const parts: string[] = [];
       const stageKey = str(ctx.stage);

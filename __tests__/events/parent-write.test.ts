@@ -214,7 +214,7 @@ beforeEach(() => {
 });
 
 describe('PUT /api/parent/v2/events/[slug]/registration', () => {
-  it('writes one submission and a row per child, and audits counts only', async () => {
+  it('writes one submission and a row per child, and audits who but no answers', async () => {
     const res = await put(goodBody());
     expect(res.status).toBe(200);
     expect(res.headers.get('x-cors')).toBe('1');
@@ -239,7 +239,19 @@ describe('PUT /api/parent/v2/events/[slug]/registration', () => {
     expect(logAction).toHaveBeenCalledOnce();
     const call = logAction.mock.calls[0][0];
     expect(call.action).toBe('parent_event.register');
-    expect(call.context).toEqual({ children: 2, registered: 1, notJoining: 1 });
+    expect(call.context).toMatchObject({
+      children: 2,
+      registered: 1,
+      notJoining: 1,
+    });
+    expect(call.context.submission_id).toBeTruthy();
+    expect(call.context.registrations).toHaveLength(2);
+    expect(Object.keys(call.context.registrations[0]).sort()).toEqual([
+      'previous_status',
+      'previous_submission_id',
+      'status',
+      'student_id',
+    ]);
   });
 
   it('a second parent updates the same child row and points it at their submission', async () => {

@@ -28,7 +28,7 @@ describe('createServiceClient — QUERY_TRACE inertness', () => {
     vi.unstubAllEnvs();
   });
 
-  it('passes no `global` option when QUERY_TRACE is unset', async () => {
+  it('passes only the SIS header when QUERY_TRACE is unset', async () => {
     vi.stubEnv('QUERY_TRACE', '');
     delete process.env.QUERY_TRACE;
     const { createServiceClient } = await import('@/lib/supabase/service');
@@ -42,11 +42,11 @@ describe('createServiceClient — QUERY_TRACE inertness', () => {
     ];
     expect(options).toEqual({
       auth: { persistSession: false, autoRefreshToken: false },
+      global: { headers: { 'x-hfse-app': 'sis' } },
     });
-    expect('global' in options).toBe(false);
   });
 
-  it('passes no `global` option when QUERY_TRACE is set to any value other than "1"', async () => {
+  it('passes no tracer when QUERY_TRACE is set to any value other than "1"', async () => {
     vi.stubEnv('QUERY_TRACE', 'true');
     const { createServiceClient } = await import('@/lib/supabase/service');
     createServiceClient();
@@ -54,9 +54,9 @@ describe('createServiceClient — QUERY_TRACE inertness', () => {
     const [, , options] = createClientMock.mock.calls[0] as [
       string,
       string,
-      Record<string, unknown>,
+      { global: Record<string, unknown> },
     ];
-    expect('global' in options).toBe(false);
+    expect('fetch' in options.global).toBe(false);
   });
 
   it('the auth options are untouched regardless of the flag', async () => {

@@ -274,7 +274,9 @@ export async function DELETE(
   // Load the row before deleting so we can log its shape.
   const { data: existing } = await service
     .from('teacher_assignments')
-    .select('id, teacher_user_id, section_id, subject_id, role')
+    .select(
+      'id, teacher_user_id, section_id, subject_id, role, relief_teacher_user_id, relief_started_on, relief_ended_on, relief_reason'
+    )
     .eq('id', id)
     .maybeSingle();
 
@@ -321,10 +323,23 @@ export async function DELETE(
     action: 'assignment.delete',
     entityType: 'teacher_assignment',
     entityId: id,
-    context: await buildAssignmentAuditContext(service, existing, {
-      change_reason,
-      change_notes,
-    }),
+    context: {
+      ...(await buildAssignmentAuditContext(service, existing, {
+        change_reason,
+        change_notes,
+      })),
+      // Cover lives on this row, so it ends with it.
+      ...(existing.relief_teacher_user_id
+        ? {
+            relief_removed: {
+              relief_teacher_user_id: existing.relief_teacher_user_id,
+              relief_started_on: existing.relief_started_on,
+              relief_ended_on: existing.relief_ended_on,
+              relief_reason: existing.relief_reason,
+            },
+          }
+        : {}),
+    },
   });
 
   if (existing?.section_id) {

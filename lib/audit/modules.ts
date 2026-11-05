@@ -75,6 +75,8 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
     prefixes: [
       'admissions.',
       'sis.stage.',
+      // Admissions records changed outside the SIS (migration 207).
+      'sis.record.',
       // Books & supplies handed over on the Supplies stage (migration 199).
       'sis.supplies.',
       'sis.stp.',
@@ -140,6 +142,8 @@ export const AUDIT_MODULES: readonly AuditModule[] = [
     label: 'People & access',
     prefixes: [
       'user.',
+      // Who downloaded or opened personal data (lib/audit/log-data-access.ts).
+      'data.',
       'parent_portal.',
       'role.',
       'approver.',

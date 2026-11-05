@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { getAdmissionsFeedback } from '@/lib/admissions/feedback';
 import {
@@ -35,6 +36,11 @@ export async function GET(req: Request) {
   const rows = filterFeedbackByRating(all, segment);
 
   if (url.searchParams.get('format') === 'csv') {
+    await logDataAccess(guard, 'data.export', 'Admissions feedback', {
+      ay_code: ayCode,
+      segment,
+      rows: rows.length,
+    });
     const csv = buildCsv(
       FEEDBACK_DRILL_CSV_HEADERS,
       rows.map(feedbackDrillCsvRow)

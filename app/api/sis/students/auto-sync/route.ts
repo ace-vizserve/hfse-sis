@@ -240,7 +240,8 @@ async function runAutoSyncForAy({
           admissions,
           row.enroleeNumber,
           ayCode,
-          preloaded
+          preloaded,
+          systemActor
         ),
       }))
     );

@@ -208,7 +208,9 @@ export async function enrolOnFeesPaid(
         service,
         admissions,
         enroleeNumber,
-        ayCode
+        ayCode,
+        undefined,
+        actor
       );
       if (
         result.ok &&
@@ -229,9 +231,28 @@ export async function enrolOnFeesPaid(
             change: result.change,
           },
         });
-        midTermEnrolment = (
-          await completePlacement(service, { enroleeNumber, ayCode })
-        ).midTermEnrolment;
+        const placement = await completePlacement(service, {
+          enroleeNumber,
+          ayCode,
+        });
+        midTermEnrolment = placement.midTermEnrolment;
+        if (placement.enrollmentDateStamped) {
+          await logAction({
+            service,
+            actor,
+            action: 'student.sync.detail',
+            entityType: 'sync_batch',
+            entityId: enroleeNumber,
+            context: {
+              ay_code: ayCode,
+              enroleeNumber,
+              section_student_id: placement.sectionStudentId,
+              index_number: placement.indexNumber,
+              enrollment_date_before: placement.enrollmentDateBefore,
+              enrollment_date_after: placement.enrollmentDateAfter,
+            },
+          });
+        }
       } else if (
         !result.ok &&
         result.reason !== 'missing classLevel or classSection' &&

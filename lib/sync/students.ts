@@ -6,6 +6,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { AdmissionsRow } from '@/lib/supabase/admissions';
+import { logAction, type AuditActor } from '@/lib/audit/log-action';
 import { sgToday } from '@/lib/dates';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { normalizeSectionName } from '@/lib/sync/section-normalizer';
@@ -588,7 +589,9 @@ export async function syncOneStudent(
   // Optional bulk-run optimisation: when provided, the `levels` and
   // `sections` fetches below are skipped and these arrays are used instead.
   // When omitted, behavior is identical to before this parameter existed.
-  preloaded?: PreloadedSyncSnapshot
+  preloaded?: PreloadedSyncSnapshot,
+  // Who the `student.sync.detail` row names. Omitted only by scripts.
+  actor: AuditActor = { id: null, email: 'system:sync', role: null }
 ): Promise<SyncOneResult> {
   try {
     const year = ayCode.replace(/^AY/i, '').toLowerCase();
@@ -853,6 +856,33 @@ export async function syncOneStudent(
     const inserts = plan.student_upserts.filter((u) => u.kind === 'insert');
     const updates = plan.student_upserts.filter((u) => u.kind === 'update');
 
+    // What this sync actually changed. A caller's `change` word cannot carry it:
+    // withdrawing a child from their old class on its own summarises as
+    // 'unchanged', and a rename as 'updated', which callers don't log. So every
+    // committed write lands here and is logged once, before any return below,
+    // including a failed step that leaves earlier writes standing.
+    const effects: Record<string, unknown> = {};
+    const classChanges: Array<Record<string, unknown>> = [];
+    const logEffects = async (failed?: string) => {
+      if (Object.keys(effects).length === 0) return;
+      await logAction({
+        service,
+        actor,
+        action: 'student.sync.detail',
+        entityType: 'sync_batch',
+        entityId: enroleeNumber,
+        context: {
+          ay_code: ayCode,
+          enroleeNumber,
+          studentNumber: app.studentNumber,
+          ...effects,
+          ...(failed ? { failed } : {}),
+        },
+      });
+    };
+    const sectionName = (id: string) =>
+      sections.find((s) => s.id === id)?.name ?? null;
+
     // The insert hands back the generated uuid, so it is captured here rather
     // than re-read below. A `null` studentRow is what made the planner choose
     // 'insert' in the first place, so this is the only way a fresh enrolment
@@ -879,6 +909,7 @@ export async function syncOneStudent(
         };
       insertedStudentId =
         ((data ?? []) as Array<{ id: string }>)[0]?.id ?? null;
+      effects.student_added = true;
     }
     for (const u of updates) {
       const { error } = await service
@@ -890,12 +921,26 @@ export async function syncOneStudent(
           updated_at: new Date().toISOString(),
         })
         .eq('id', u.existing_id!);
-      if (error)
+      if (error) {
+        await logEffects(`student update: ${error.message}`);
         return {
           ok: false,
           change: 'skipped',
           error: `student update: ${error.message}`,
         };
+      }
+      effects.renamed = {
+        from: {
+          last_name: studentRow?.last_name ?? null,
+          first_name: studentRow?.first_name ?? null,
+          middle_name: studentRow?.middle_name ?? null,
+        },
+        to: {
+          last_name: u.last_name,
+          first_name: u.first_name,
+          middle_name: u.middle_name,
+        },
+      };
     }
 
     // The student this enrolment hangs off: the one the snapshot already read,
@@ -904,12 +949,14 @@ export async function syncOneStudent(
     const studentId: string | null = studentRow?.id ?? insertedStudentId;
 
     for (const e of plan.enrollment_inserts) {
-      if (!studentId)
+      if (!studentId) {
+        await logEffects('student_id not resolved');
         return {
           ok: false,
           change: 'skipped',
           error: 'student_id not resolved',
         };
+      }
       const { error } = await service.from('section_students').insert({
         section_id: e.section_id,
         student_id: studentId,
@@ -923,12 +970,19 @@ export async function syncOneStudent(
         // the late-enrollee suggestion never fired for a just-enrolled applicant.
         enrolee_number: enroleeNumber,
       });
-      if (error)
+      if (error) {
+        await logEffects(`enrolment insert: ${error.message}`);
         return {
           ok: false,
           change: 'skipped',
           error: `enrolment insert: ${error.message}`,
         };
+      }
+      effects.joined = {
+        section_id: e.section_id,
+        section_name: sectionName(e.section_id),
+        index_number: e.index_number,
+      };
     }
 
     for (const change of plan.enrollment_status_changes) {
@@ -941,17 +995,42 @@ export async function syncOneStudent(
         withdrawal_date: null,
         withdrawal_approved_date: null,
       };
+      // Read first: the update below erases both dates.
+      const { data: prior } = await service
+        .from('section_students')
+        .select('withdrawal_date, withdrawal_approved_date')
+        .eq('id', change.enrollment_id)
+        .maybeSingle();
       const { error } = await service
         .from('section_students')
         .update(patch)
         .eq('id', change.enrollment_id);
-      if (error)
+      if (error) {
+        await logEffects(`status change: ${error.message}`);
         return {
           ok: false,
           change: 'skipped',
           error: `status change: ${error.message}`,
         };
+      }
+      const dates = prior as {
+        withdrawal_date: string | null;
+        withdrawal_approved_date: string | null;
+      } | null;
+      classChanges.push({
+        section_student_id: change.enrollment_id,
+        section_id: change.section_id,
+        section_name: sectionName(change.section_id),
+        from: change.from,
+        to: change.to,
+        withdrawal_date_cleared: dates?.withdrawal_date ?? null,
+        withdrawal_approved_date_cleared:
+          dates?.withdrawal_approved_date ?? null,
+      });
+      effects.class_changes = classChanges;
     }
+
+    await logEffects();
 
     // Summarise what happened.
     if (plan.enrollment_inserts.length > 0) {

@@ -30,6 +30,7 @@ const ADMISSIONS_AUDIT_ACTIONS = [
   'sis.profile.update',
   'sis.family.update',
   'sis.stage.update',
+  'sis.record.change',
   'sis.supplies.given',
   'sis.supplies.ungiven',
   'sis.supplies.item_create',

@@ -103,6 +103,26 @@ export async function PUT(request: NextRequest): Promise<NextResponse> {
             eventType,
             restoreError: restoreError.message,
           });
+          // The ladder is gone. The row keeps what it was, to retype it.
+          await logAction({
+            service,
+            actor: {
+              id: auth.user.id,
+              email: auth.user.email,
+              role: auth.role,
+            },
+            action: 'house_points.scales.update',
+            entityType: 'house_point_scale',
+            entityId: eventType,
+            context: {
+              eventType,
+              before: oldRows ?? [],
+              partial: true,
+              failed_step: 'insert new rows',
+              restore_failed: true,
+              error: insertError.message,
+            },
+          });
         }
       }
       throw new Error(insertError.message);

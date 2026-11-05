@@ -1,5 +1,6 @@
 import { type NextRequest } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { isAdviserRole } from '@/lib/schemas/teacher-assignment';
@@ -359,6 +360,13 @@ export async function GET(
     periodLabel: yearScope ? (ay?.ay_code ?? 'Year') : terms[0].label,
     month,
     studentCount: studentIds ? studentIds.length : null,
+  });
+  await logDataAccess(auth, 'data.export', 'Attendance register', {
+    section_name: section.name,
+    period: yearScope ? (ay?.ay_code ?? 'Year') : terms[0].label,
+    month,
+    students: studentIds ? studentIds.length : null,
+    file: filename,
   });
   return new Response(new Uint8Array(buffer), {
     status: 200,

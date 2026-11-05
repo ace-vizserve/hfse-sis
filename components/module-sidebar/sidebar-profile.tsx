@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/popover';
 import { HoverHint } from '@/components/ui/hover-hint';
 import { Separator } from '@/components/ui/separator';
+import { reportAuthEvent } from '@/lib/audit/report-auth-event';
 import { ROLE_LABEL } from '@/lib/auth/role-labels';
 import type { Role } from '@/lib/auth/roles';
 import { useRoleSwitch } from '@/lib/hooks/use-role-switch';
@@ -64,6 +65,8 @@ export function SidebarProfile({ email, roles, role }: SidebarProfileProps) {
     // These are front-desk PCs: the palette's per-account key stops the next
     // person seeing them in the UI, not on disk.
     clearAllRecents();
+    // Before the session goes: the route logs the session this request carries.
+    await reportAuthEvent({ event: 'signed_out' });
     await supabase.auth.signOut();
     router.replace('/login');
     router.refresh();

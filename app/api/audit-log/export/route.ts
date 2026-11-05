@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { fetchAllPages } from '@/lib/supabase/paginate';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -181,6 +182,8 @@ export async function GET(req: Request) {
   );
 
   const filename = `audit-log-${fromParam}-to-${toParam}.csv`;
+
+  await logDataAccess(auth, 'data.export', 'Audit log', { file: filename });
 
   return new NextResponse(body, {
     status: 200,

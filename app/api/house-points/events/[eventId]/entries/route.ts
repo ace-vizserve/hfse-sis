@@ -144,7 +144,7 @@ export async function POST(
         onConflict: conflictTarget,
         ignoreDuplicates: true,
       })
-      .select('id');
+      .select('id, section_student_id, house_id');
     if (insertError) throw new Error(insertError.message);
 
     const added = inserted?.length ?? 0;
@@ -168,6 +168,12 @@ export async function POST(
         skipped,
         count: added,
         ...(input.houseIds ? { houseIds: input.houseIds } : {}),
+        // Who actually went on, leaving out those already there.
+        added_entrants: (inserted ?? []).map(
+          (r) =>
+            (r as { section_student_id: string | null }).section_student_id ??
+            (r as { house_id: string | null }).house_id
+        ),
       },
     });
 

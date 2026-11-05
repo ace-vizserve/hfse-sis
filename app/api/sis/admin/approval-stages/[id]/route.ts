@@ -133,7 +133,15 @@ export async function PATCH(
   });
 
   const logPartial = async (failedStep: string, error: string) => {
-    if (!renamed && !(moveDone && moved) && !(rule && rule.changed)) return;
+    if (
+      // A move is three writes, so a failed one may have left the step parked
+      // out of order. It always gets a row.
+      failedStep !== 'move' &&
+      !renamed &&
+      !(moveDone && moved) &&
+      !(rule && rule.changed)
+    )
+      return;
     await logAction({
       service,
       actor,
@@ -142,6 +150,7 @@ export async function PATCH(
       entityId: id,
       context: {
         ...baseContext(),
+        ...(failedStep === 'move' ? { move_failed: parsed.data.move } : {}),
         partial: true,
         failed_step: failedStep,
         error,

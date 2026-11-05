@@ -318,6 +318,8 @@ describe('syncOneStudent — the Enrolled gate', () => {
       expect(writes).toEqual([
         { table: 'students', op: 'insert' },
         { table: 'section_students', op: 'insert' },
+        // What the sync changed, kept in the audit log.
+        { table: 'audit_log', op: 'insert' },
       ]);
     }
   );

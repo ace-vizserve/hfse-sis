@@ -93,6 +93,13 @@ export async function PATCH(
   }
   if (form) update.form = form;
 
+  // What the save replaces. Never blocks it: an empty read logs no differences.
+  const { data: prior } = await service
+    .from('parent_events')
+    .select(Object.keys(update).join(', ') || 'id')
+    .eq('id', id)
+    .maybeSingle();
+
   const { data, error } = await service
     .from('parent_events')
     .update(update)
@@ -123,7 +130,21 @@ export async function PATCH(
     action: 'parent_event.update',
     entityType: 'parent_event',
     entityId: id,
-    context: { details: !!details, form: !!form, ...(slug ? { slug } : {}) },
+    context: {
+      details: !!details,
+      form: !!form,
+      ...(slug ? { slug } : {}),
+      changes: Object.entries(update).flatMap(([field, to]) => {
+        const from = (prior as Record<string, unknown> | null)?.[field] ?? null;
+        // The two time columns come back in a different text form.
+        const same =
+          field === 'opens_at' || field === 'closes_at'
+            ? new Date(String(from)).getTime() ===
+              new Date(String(to)).getTime()
+            : JSON.stringify(from) === JSON.stringify(to ?? null);
+        return same ? [] : [{ field, from, to }];
+      }),
+    },
   });
 
   return NextResponse.json({

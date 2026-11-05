@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { getOutdatedApplications } from '@/lib/admissions/dashboard';
@@ -50,6 +51,10 @@ export async function GET(req: Request) {
   const filename = `admissions-outdated-${ayCode}-${new Date()
     .toISOString()
     .slice(0, 10)}.csv`;
+
+  await logDataAccess(auth, 'data.export', 'Outdated applications', {
+    file: filename,
+  });
 
   return new NextResponse(body, {
     status: 200,

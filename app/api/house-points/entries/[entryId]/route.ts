@@ -254,6 +254,21 @@ export async function DELETE(
     step = 'resolve identity';
     const identity = await resolveEntryIdentity(service, entry);
 
+    // The award goes with the entry, so the row keeps it.
+    let removedAward: unknown = null;
+    if (entry.place_id) {
+      step = 'load award';
+      const { data: placeRow, error: placeError } = await service
+        .from('house_point_places')
+        .select('label, rank, points')
+        .eq('id', entry.place_id)
+        .maybeSingle();
+      if (placeError) {
+        throw new Error(`house_point_places: ${placeError.message}`);
+      }
+      removedAward = placeRow;
+    }
+
     step = 'delete entry';
     const { error: deleteError } = await service
       .from('house_point_entries')
@@ -274,6 +289,7 @@ export async function DELETE(
         event_id: event.id,
         eventName: event.name,
         ...identity,
+        award: removedAward,
       },
     });
 

@@ -112,6 +112,10 @@ const SIS_AUDIT_ALLOWLIST = [
   'environment.demo_accounts_removed',
   // Session issuance (Phase 7 — visibility for security review)
   'user.login',
+  'user.login_failed',
+  'user.logout',
+  'data.export',
+  'data.view',
   'parent.session.issued',
   'parent.session.cleared',
   // Somebody with two jobs changed which view they are working in. Sits with

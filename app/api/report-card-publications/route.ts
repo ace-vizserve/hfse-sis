@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
   // gated on notified_at below).
   const { data: priorPub } = await service
     .from('report_card_publications')
-    .select('publish_from, publish_until')
+    .select('publish_from, publish_until, published_by, published_with_gaps')
     .eq('section_id', body.section_id)
     .eq('term_id', body.term_id)
     .maybeSingle();
@@ -225,8 +225,19 @@ export async function POST(request: NextRequest) {
 
   // Skip the audit row on an unchanged-window re-publish (true no-op). A real
   // window change still audits. We never skip when a notification actually
-  // fired — that's a meaningful event worth recording.
-  if (!windowUnchanged || (notification && notification.sent > 0)) {
+  // fired — that's a meaningful event worth recording. Nor when the same window
+  // overwrote who published it or the gaps it went out with: the upsert leaves
+  // no other record of those.
+  const overwroteDetails =
+    priorPub != null &&
+    (priorPub.published_by !== publishedBy ||
+      JSON.stringify(priorPub.published_with_gaps ?? null) !==
+        JSON.stringify(publishedWithGaps ?? null));
+  if (
+    !windowUnchanged ||
+    overwroteDetails ||
+    (notification && notification.sent > 0)
+  ) {
     // Which class and term, in words — the ids alone cannot be checked against
     // "parents in P5 Diamond say they can't see Term 2".
     const [sectionRes, termRes] = await Promise.all([
@@ -276,6 +287,8 @@ export async function POST(request: NextRequest) {
         // an upsert overwrites it, so this row is the only record of it.
         previous_publish_from: priorPub?.publish_from ?? null,
         previous_publish_until: priorPub?.publish_until ?? null,
+        previous_published_by: priorPub?.published_by ?? null,
+        previous_published_with_gaps: priorPub?.published_with_gaps ?? null,
         first_publish: priorPub == null,
         notification,
         overridden: readiness.softGaps.length > 0,

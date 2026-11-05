@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import {
@@ -58,6 +59,10 @@ export async function GET(
   const rows = await buildLifecycleDrillRows(ayCode, target, lens);
 
   if (format === 'csv') {
+    await logDataAccess(guard, 'data.export', `SIS list: ${target}`, {
+      ay_code: ayCode,
+      rows: rows.length,
+    });
     return csvResponse(rows, target, ayCode, columnsParam);
   }
 

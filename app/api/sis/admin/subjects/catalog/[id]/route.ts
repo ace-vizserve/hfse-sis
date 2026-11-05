@@ -263,13 +263,35 @@ export async function DELETE(
     },
   });
 
-  const fail = (step: string, message: string) =>
-    NextResponse.json(
+  const fail = async (step: string, message: string) => {
+    // The snapshot above reads as deleted, and it wasn't. This says so.
+    await logAction({
+      service,
+      actor: {
+        id: auth.user.id,
+        email: auth.user.email ?? null,
+        role: auth.role,
+      },
+      action: 'subject.delete',
+      entityType: 'subject',
+      entityId: subjectId,
+      context: {
+        subject_id: subjectId,
+        code: subject.code,
+        name: subject.name,
+        partial: true,
+        not_deleted: true,
+        failed_step: step,
+        error: message,
+      },
+    });
+    return NextResponse.json(
       {
         error: `Couldn't finish deleting ${subject.name} (${step}): ${message}. The subject is still in the catalog — try again.`,
       },
       { status: 500 }
     );
+  };
 
   // 2. Re-point each subject reporting under this one to report as itself.
   //    If it already has its self-map, the row pointing here just goes.

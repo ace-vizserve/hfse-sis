@@ -726,6 +726,27 @@ export async function saveRegistration(
   if (subErr) throw subErr;
   const submissionId = (sub as unknown as { id: string }).id;
 
+  // What this submit replaces, for the audit row: the other parent's answer for
+  // a child is overwritten here and isn't kept anywhere else.
+  const { data: priorRegs, error: priorErr } = await service
+    .from('parent_event_registrations')
+    .select('student_id, submission_id, status')
+    .eq('event_id', e.id)
+    .in(
+      'student_id',
+      prepared.map((p) => p.kid.studentId)
+    );
+  if (priorErr) throw priorErr;
+  const priorByStudent = new Map(
+    (
+      (priorRegs ?? []) as unknown as Array<{
+        student_id: string;
+        submission_id: string;
+        status: string;
+      }>
+    ).map((r) => [r.student_id, r])
+  );
+
   // A child already answered by the other parent keeps its row; this submit
   // overwrites it and points it at this parent's submission.
   const { error: regErr } = await service
@@ -744,7 +765,7 @@ export async function saveRegistration(
     );
   if (regErr) throw regErr;
 
-  // Counts only, never answers (a parent's reason can be personal).
+  // Who and what status, never answers (a parent's reason can be personal).
   const registered = prepared.filter((p) => p.status === 'registered').length;
   await logAction({
     service,
@@ -756,6 +777,17 @@ export async function saveRegistration(
       children: prepared.length,
       registered,
       notJoining: prepared.length - registered,
+      submission_id: submissionId,
+      registrations: prepared.map((p) => {
+        const prior = priorByStudent.get(p.kid.studentId);
+        return {
+          student_id: p.kid.studentId,
+          status: p.status,
+          previous_status: prior?.status ?? null,
+          // Another submission means the other parent had answered for them.
+          previous_submission_id: prior?.submission_id ?? null,
+        };
+      }),
     },
   });
 

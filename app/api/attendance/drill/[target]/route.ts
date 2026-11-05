@@ -19,6 +19,7 @@ import {
   type TopAbsentDrillRow,
   type VacationLeaveUsageRow,
 } from '@/lib/attendance/drill';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { buildCsv } from '@/lib/csv';
 import { getSchoolConfig } from '@/lib/sis/school-config';
@@ -97,6 +98,11 @@ export async function GET(
   });
 
   if (format === 'csv') {
+    await logDataAccess(guard, 'data.export', `Attendance list: ${target}`, {
+      ay_code: ayCode,
+      segment,
+      rows: rows.length,
+    });
     return csvResponse(rows, target, segment, ayCode, columnsParam);
   }
 

@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { logAction } from '@/lib/audit/log-action';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import {
   checkRecovery,
@@ -37,6 +38,14 @@ export async function POST(request: NextRequest) {
     const service = createServiceClient();
 
     if (parsed.data.action === 'check') {
+      await logDataAccess(
+        auth,
+        'data.view',
+        'Family emails for a recovery link',
+        {
+          enrolee_number: parsed.data.enroleeNumber,
+        }
+      );
       return NextResponse.json(
         await checkRecovery(service, parsed.data.enroleeNumber)
       );

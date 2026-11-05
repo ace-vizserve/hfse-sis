@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { listAyCodes } from '@/lib/academic-year';
 import { logAction } from '@/lib/audit/log-action';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { invalidateDrillTags } from '@/lib/cache/invalidate-drill-tags';
 import { listApplicationRows } from '@/lib/parent-portal/recovery';
@@ -42,6 +43,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    if (auth.role === 'superadmin')
+      await logDataAccess(auth, 'data.view', 'Working recovery links', {
+        ay_code: ayCode,
+      });
     return NextResponse.json({
       // ⚠ A link opens a family's form with no login. Viewers' rows are fetched
       // without it.

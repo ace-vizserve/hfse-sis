@@ -303,7 +303,9 @@ export async function POST(
     service,
     admissions,
     enroleeNumber,
-    ayCode
+    ayCode,
+    undefined,
+    { id: auth.user.id, email: auth.user.email ?? null, role: auth.role }
   );
   if (!syncResult.ok) {
     // Roll back the admissions UPDATE so a retry sees a clean state —

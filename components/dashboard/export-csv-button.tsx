@@ -3,6 +3,7 @@
 import { Download } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
+import { reportBrowserExport } from '@/lib/audit/report-browser-export';
 import { buildSectionedCsv } from '@/lib/csv';
 import type { DashboardExport } from '@/lib/export/dashboard-export';
 
@@ -38,6 +39,7 @@ export function ExportCsvButton({ data }: { data: DashboardExport }) {
     const a = document.createElement('a');
     a.href = url;
     a.download = data.filename;
+    reportBrowserExport(data.filename, null);
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

@@ -96,6 +96,7 @@ export default async function SisAuditLogPage({
     'level.alias.create',
     'level.alias.remap',
     'student.sync',
+    'student.sync.detail',
     'student.add',
     'student.section.transfer',
     'student.withdrawal.cascade',

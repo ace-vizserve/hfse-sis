@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { loadEffectiveAssignmentsForUser } from '@/lib/auth/teacher-assignments';
 import { buildCsv } from '@/lib/csv';
@@ -108,6 +109,11 @@ export async function GET(
   });
 
   if (format === 'csv') {
+    await logDataAccess(guard, 'data.export', `Markbook list: ${target}`, {
+      ay_code: ayCode,
+      segment,
+      rows: rows.length,
+    });
     return csvResponse(rows, target, segment, ayCode, columnsParam);
   }
 

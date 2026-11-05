@@ -334,9 +334,19 @@ export async function PATCH(
   // change hangs off the first entry on the sheet. `audit_log` has no such
   // constraint, and a totals change on a sheet nobody has scored yet is still
   // a change — so the diff is built with a placeholder and logged regardless.
-  // (A failed recompute has no anchor to offer either; the read that finds it
-  // is the recompute's own.)
-  const anchor = recompute?.anchorEntryId ?? null;
+  // A failed recompute has no anchor to offer, so a locked sheet reads its own.
+  let anchor = recompute?.anchorEntryId ?? null;
+  let anchorLost = false;
+  if (recomputeError && sheet.is_locked) {
+    const { data: first, error: firstErr } = await service
+      .from('grade_entries')
+      .select('id')
+      .eq('grading_sheet_id', sheetId)
+      .limit(1)
+      .maybeSingle();
+    anchor = (first as { id: string } | null)?.id ?? null;
+    anchorLost = !!firstErr;
+  }
   const totalsDiff = buildTotalsAuditRows(before, after, {
     grading_sheet_id: sheetId,
     grade_entry_id: anchor ?? '',
@@ -344,7 +354,7 @@ export async function PATCH(
     approval_reference,
   });
   if (totalsDiff.length > 0) {
-    let gradeAuditLogFailed = false;
+    let gradeAuditLogFailed = anchorLost;
     if (sheet.is_locked && anchor) {
       gradeAuditLogFailed = !(await writeAuditRows(service, totalsDiff));
     }
@@ -373,6 +383,30 @@ export async function PATCH(
   if (weightPatch) {
     const pct = (v: number | string | null) =>
       v == null ? null : Math.round(Number(v) * 100);
+    // Hard Rule #5: a post-lock change also reaches grade_audit_log, anchored
+    // like the totals above. A sheet with no entries has nothing to anchor to.
+    let weightGradeAuditFailed = anchorLost;
+    if (sheet.is_locked && anchor) {
+      weightGradeAuditFailed = !(await writeAuditRows(service, [
+        {
+          grading_sheet_id: sheetId,
+          grade_entry_id: anchor,
+          changed_by,
+          field_changed: 'weights',
+          old_value: JSON.stringify({
+            ww: pct(sheet.ww_weight),
+            pt: pct(sheet.pt_weight),
+            qa: pct(sheet.qa_weight),
+          }),
+          new_value: JSON.stringify({
+            ww: pct(weightPatch.ww_weight),
+            pt: pct(weightPatch.pt_weight),
+            qa: pct(weightPatch.qa_weight),
+          }),
+          approval_reference,
+        },
+      ]));
+    }
     await logAction({
       service,
       actor,
@@ -397,6 +431,7 @@ export async function PATCH(
         scope: 'this class only',
         ...lockContext,
         ...partialContext,
+        ...(weightGradeAuditFailed ? { grade_audit_log_failed: true } : {}),
       },
     });
   }

@@ -655,6 +655,33 @@ export async function PATCH(
         enroleeNumber: identity.enroleeNumber,
         ayCode: sectionAyCode,
       };
+      // This can move the application to Withdrawn and overwrite the reason,
+      // and the roster's own row says neither.
+      await logAction({
+        service,
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
+        action: 'student.withdrawal.cascade',
+        entityType: 'enrolment_status',
+        entityId: identity.enroleeNumber,
+        context: {
+          ay_code: sectionAyCode,
+          trigger: 'section_student.reason_corrected',
+          enroleeNumber: identity.enroleeNumber,
+          studentNumber: identity.studentNumber,
+          section_student_id: enrolmentId,
+          section_id: sectionId,
+          section_name: identity.sectionName,
+          applicationStatus_before:
+            (admRow as { applicationStatus: string | null } | null)
+              ?.applicationStatus ?? null,
+          withdrawal_reason_before: before.withdrawal_reason ?? null,
+          withdrawal_reason: patch.withdrawal_reason ?? null,
+        },
+      });
     }
   }
 
@@ -700,6 +727,12 @@ export async function PATCH(
       const rePrefix = `ay${reAyCode.replace(/^AY/i, '').toLowerCase()}`;
       const reAdmissions = createAdmissionsClient();
       const reNow = new Date().toISOString();
+      // Read first, so the row can tell Withdrawn → Enrolled from Cancelled.
+      const { data: reBefore } = await reAdmissions
+        .from(`${rePrefix}_enrolment_status`)
+        .select('applicationStatus')
+        .eq('enroleeNumber', reEnroleeNumber)
+        .maybeSingle();
       const { error: reErr } = await reAdmissions
         .from(`${rePrefix}_enrolment_status`)
         .update({
@@ -746,6 +779,9 @@ export async function PATCH(
           context: {
             ay_code: reAyCode,
             trigger: 'section_student.re-enrolled',
+            applicationStatus_before:
+              (reBefore as { applicationStatus: string | null } | null)
+                ?.applicationStatus ?? null,
             enroleeNumber: reEnroleeNumber,
             studentNumber: identity.studentNumber,
             ...(reStudentName ? { studentName: reStudentName } : {}),

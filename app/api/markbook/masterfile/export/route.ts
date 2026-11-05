@@ -1,5 +1,6 @@
 import { type NextRequest } from 'next/server';
 
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { requireCurrentAyCode } from '@/lib/academic-year';
 import { getAcademicOverview } from '@/lib/markbook/academic-overview';
@@ -142,6 +143,10 @@ export async function GET(req: NextRequest) {
   } else {
     // ?template=summary → the school-wide summary tables.
     const overview = await getAcademicOverview(ayCode, academicYearId);
+    await logDataAccess(auth, 'data.export', 'Academic overview', {
+      ay_code: ayCode,
+      format: asCsv ? 'csv' : 'xlsx',
+    });
     if (asCsv) {
       return new Response(overviewToCsv(overview), {
         status: 200,
@@ -202,6 +207,18 @@ export async function GET(req: NextRequest) {
           consolidatedTerms(payloads, filters),
           scope
         )
+  );
+
+  await logDataAccess(
+    auth,
+    'data.export',
+    reportBook ? 'Report Book masterfile' : 'Consolidated form',
+    {
+      ay_code: ayCode,
+      file: base,
+      format: asCsv ? 'csv' : 'xlsx',
+      classes: payloads.length,
+    }
   );
 
   if (asCsv) {

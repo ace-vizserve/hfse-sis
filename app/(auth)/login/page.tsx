@@ -16,6 +16,7 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
+import { reportAuthEvent } from '@/lib/audit/report-auth-event';
 import { LoginSchema, type LoginInput } from '@/lib/schemas/login';
 import { createClient } from '@/lib/supabase/client';
 
@@ -43,8 +44,14 @@ export default function LoginPage() {
     if (error) {
       form.setError('password', { message: error.message });
       toast.error(error.message);
+      reportAuthEvent({
+        event: 'sign_in_failed',
+        email: values.email,
+        reason: error.message,
+      });
       return;
     }
+    reportAuthEvent({ event: 'signed_in' });
     router.replace('/');
     router.refresh();
   }

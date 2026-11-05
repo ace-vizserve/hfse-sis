@@ -420,7 +420,12 @@ export async function resyncTermCalendarWindow(
   startIso: string,
   endIso: string,
   userId: string
-): Promise<{ deleted: number; inserted: number }> {
+): Promise<{
+  deleted: number;
+  inserted: number;
+  /** What went, for the audit row: holidays and labels aren't kept elsewhere. */
+  pruned: Array<Record<string, unknown>>;
+}> {
   const service = createServiceClient();
 
   // 1. Prune rows now outside [start,end] (every audience, every day_type).
@@ -429,7 +434,7 @@ export async function resyncTermCalendarWindow(
     .delete()
     .eq('term_id', termId)
     .or(`date.lt.${startIso},date.gt.${endIso}`)
-    .select('id');
+    .select('date, audience, day_type, label');
   if (delErr) {
     // Surface the failure — a swallowed prune would leave stale out-of-window
     // school days while the caller reports success. Let the route turn this
@@ -444,7 +449,11 @@ export async function resyncTermCalendarWindow(
   // 2. Backfill missing in-range weekday school_days (idempotent).
   const inserted = await ensureTermSeeded(termId, startIso, endIso, userId);
 
-  return { deleted: deletedRows?.length ?? 0, inserted };
+  return {
+    deleted: deletedRows?.length ?? 0,
+    inserted,
+    pruned: (deletedRows ?? []) as Array<Record<string, unknown>>,
+  };
 }
 
 // AY-wide aggregation — composes the per-term readers across all terms in an

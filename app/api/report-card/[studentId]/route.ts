@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { logDataAccess } from '@/lib/audit/log-data-access';
 import { requireRole } from '@/lib/auth/require-role';
 import { createServiceClient } from '@/lib/supabase/service';
 import { buildReportCard } from '@/lib/report-card/build-report-card';
@@ -50,6 +51,10 @@ export async function GET(
   }
 
   const { payload } = result;
+
+  await logDataAccess(auth, 'data.view', 'Report card', {
+    student_id: studentId,
+  });
 
   // Reshape to a flat API-friendly format keyed by term_number
   const attendanceByTerm: Record<

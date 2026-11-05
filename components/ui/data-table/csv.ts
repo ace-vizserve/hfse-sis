@@ -1,3 +1,5 @@
+import { reportBrowserExport } from '@/lib/audit/report-browser-export';
+
 type CsvColumn<TRow> = {
   header: string;
   accessor: (row: TRow) => string | number | null;
@@ -29,4 +31,5 @@ export function exportCsv<TRow>(
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+  reportBrowserExport(filename, rows.length);
 }

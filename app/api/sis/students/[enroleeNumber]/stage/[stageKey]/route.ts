@@ -1093,7 +1093,9 @@ export async function PATCH(
         supabase,
         admissions,
         enroleeNumber,
-        ayCode
+        ayCode,
+        undefined,
+        { id: auth.user.id, email: auth.user.email ?? null, role: auth.role }
       );
       autoSync = {
         change: result.change,
@@ -1172,6 +1174,27 @@ export async function PATCH(
       ayCode,
     });
     midTermEnrolment = placement.midTermEnrolment;
+    if (placement.enrollmentDateStamped) {
+      await logAction({
+        service: supabase,
+        actor: {
+          id: auth.user.id,
+          email: auth.user.email ?? null,
+          role: auth.role,
+        },
+        action: 'student.sync.detail',
+        entityType: 'sync_batch',
+        entityId: enroleeNumber,
+        context: {
+          ay_code: ayCode,
+          enroleeNumber,
+          section_student_id: placement.sectionStudentId,
+          index_number: placement.indexNumber,
+          enrollment_date_before: placement.enrollmentDateBefore,
+          enrollment_date_after: placement.enrollmentDateAfter,
+        },
+      });
+    }
   }
 
   // 6b) Fees just became Paid: the student is enrolled (KD #237). `status` is

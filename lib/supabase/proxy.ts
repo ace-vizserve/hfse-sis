@@ -18,7 +18,13 @@ import { getRoleFromClaims, isRouteAllowed } from '@/lib/auth/roles';
  * the whole email approval flow dies silently — the approver lands on a login
  * screen with no idea why.
  */
-const PUBLIC_PATHS = ['/login', '/api/auth/callback', '/change-requests/act'];
+const PUBLIC_PATHS = [
+  '/login',
+  '/api/auth/callback',
+  // A failed sign-in has no session by nature. Limited per address in the route.
+  '/api/auth/event',
+  '/change-requests/act',
+];
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });

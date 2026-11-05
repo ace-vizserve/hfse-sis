@@ -29,6 +29,9 @@ export const ALL_AUDIT_ACTIONS = [
   'entry.update',
   'totals.update',
   'student.sync',
+  // What one student's sync actually changed: renamed, joined a class, taken
+  // off another, attendance start date moved. `student.sync` only says it ran.
+  'student.sync.detail',
   'student.add',
   'student.section.transfer',
   'student.withdrawal.cascade',
@@ -93,6 +96,10 @@ export const ALL_AUDIT_ACTIONS = [
   'sis.profile.update',
   'sis.family.update',
   'sis.stage.update',
+  // A change to an admissions record from outside the SIS: the parent portal,
+  // its functions, scripts, Directus. Written by a database trigger (migration
+  // 207), never from app code; `context.source` says where it came from.
+  'sis.record.change',
   // A book or supply ticked as handed over, or the tick taken back
   // (migration 199). One row per item; entity_id is the supply_items id.
   'sis.supplies.given',
@@ -264,6 +271,15 @@ export const ALL_AUDIT_ACTIONS = [
   'approval_stage.approver.assign',
   'approval_stage.approver.revoke',
   'user.login',
+  // Reported by the login page, because the password check happens between the
+  // browser and Supabase. The typed address is kept; the password never leaves
+  // the form.
+  'user.login_failed',
+  'user.logout',
+  // Reads of personal data, which change nothing and so leave no other record:
+  // files downloaded, and report cards, invoices and recovery links opened.
+  'data.export',
+  'data.view',
   'parent.session.issued',
   'parent.session.cleared',
   // Somebody with two jobs changed which view they are looking at the app
@@ -296,6 +312,7 @@ export const ALL_AUDIT_ACTIONS = [
 export type AuditAction = (typeof ALL_AUDIT_ACTIONS)[number];
 
 export type AuditEntityType =
+  | 'data_access'
   | 'grading_sheet'
   | 'grade_entry'
   | 'section'
